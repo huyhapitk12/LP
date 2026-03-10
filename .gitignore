@@ -1,0 +1,23 @@
+# Build output
+build/
+*.exe
+*.o
+*.obj
+
+# Generated C output from LP compiler
+*.out.c
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
+__pycache__/
+*.pyc
