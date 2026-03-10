@@ -1,0 +1,115 @@
+[LP Build] Compiling LP compiler...
+[LP Build] Using MSYS2 UCRT64 GCC...
+compiler\src\main.c: In function 'show_error_context':
+compiler\src\main.c:115:9: warning: unused variable 'current_line' [-Wunused-variable]
+  115 |     int current_line = 1;
+      |         ^~~~~~~~~~~~
+compiler\src\main.c: In function 'main':
+compiler\src\main.c:653:17: warning: unused variable 'py_lib' [-Wunused-variable]
+  653 |     const char *py_lib = "";
+      |                 ^~~~~~
+compiler\src\main.c:652:17: warning: unused variable 'py_libdir' [-Wunused-variable]
+  652 |     const char *py_libdir = "";
+      |                 ^~~~~~~~~
+compiler\src\main.c:651:17: warning: unused variable 'py_inc' [-Wunused-variable]
+  651 |     const char *py_inc = "";
+      |                 ^~~~~~
+compiler\src\main.c: In function 'run_tests':
+compiler\src\main.c:774:77: warning: '\..\runtime' directive output may be truncated writing 11 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  774 |         if (rf) { fclose(rf); snprintf(runtime_inc, sizeof(runtime_inc), "%s\\..\\runtime", exe_dir); }
+      |                                                                             ^~~~~~~~~~~~~
+compiler\src\main.c:774:31: note: 'snprintf' output between 12 and 523 bytes into a destination of size 512
+  774 |         if (rf) { fclose(rf); snprintf(runtime_inc, sizeof(runtime_inc), "%s\\..\\runtime", exe_dir); }
+      |                               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+compiler\src\main.c:866:55: warning: '%s' directive output may be truncated writing up to 65535 bytes into a region of size 502 [-Wformat-truncation=]
+  866 |             snprintf(tmp_c, sizeof(tmp_c), "__lp_test_%s.c", test_names[t]);
+      |                                                       ^~
+compiler\src\main.c:866:13: note: 'snprintf' output between 13 and 65548 bytes into a destination of size 512
+  866 |             snprintf(tmp_c, sizeof(tmp_c), "__lp_test_%s.c", test_names[t]);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+compiler\src\main.c:893:61: warning: '%s' directive output may be truncated writing up to 65535 bytes into a region of size 502 [-Wformat-truncation=]
+  893 |             snprintf(exe_path, sizeof(exe_path), "__lp_test_%s.exe", test_names[t]);
+      |                                                             ^~
+compiler\src\main.c:893:13: note: 'snprintf' output between 15 and 65550 bytes into a destination of size 512
+  893 |             snprintf(exe_path, sizeof(exe_path), "__lp_test_%s.exe", test_names[t]);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+compiler\src\main.c: In function 'run_profile':
+compiler\src\main.c:1064:77: warning: '\..\runtime' directive output may be truncated writing 11 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+ 1064 |         if (rf) { fclose(rf); snprintf(runtime_inc, sizeof(runtime_inc), "%s\\..\\runtime", exe_dir_buf); }
+      |                                                                             ^~~~~~~~~~~~~
+compiler\src\main.c:1064:31: note: 'snprintf' output between 12 and 523 bytes into a destination of size 512
+ 1064 |         if (rf) { fclose(rf); snprintf(runtime_inc, sizeof(runtime_inc), "%s\\..\\runtime", exe_dir_buf); }
+      |                               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+compiler\src\main.c: In function 'run_watch':
+compiler\src\main.c:1143:61: warning: '..' directive output may be truncated writing 2 bytes into a region of size between 0 and 511 [-Wformat-truncation=]
+ 1143 |             snprintf(runtime_inc, sizeof(runtime_inc), "%s%c..%cruntime",
+      |                                                             ^~
+compiler\src\main.c:1143:13: note: 'snprintf' output between 12 and 523 bytes into a destination of size 512
+ 1143 |             snprintf(runtime_inc, sizeof(runtime_inc), "%s%c..%cruntime",
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 1144 |                      exe_dir, '\\', '\\');
+      |                      ~~~~~~~~~~~~~~~~~~~~
+compiler\src\main.c:1230:47: warning: '\_lp_watch_tmp.c' directive output may be truncated writing 16 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+ 1230 |             snprintf(tmp_c, sizeof(tmp_c), "%s\\_lp_watch_tmp.c", exe_dir);
+      |                                               ^~~~~~~~~~~~~~~~~
+compiler\src\main.c:1230:13: note: 'snprintf' output between 17 and 528 bytes into a destination of size 512
+ 1230 |             snprintf(tmp_c, sizeof(tmp_c), "%s\\_lp_watch_tmp.c", exe_dir);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+compiler\src\main.c:1231:51: warning: '\_lp_watch_tmp.exe' directive output may be truncated writing 18 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+ 1231 |             snprintf(tmp_exe, sizeof(tmp_exe), "%s\\_lp_watch_tmp.exe", exe_dir);
+      |                                                   ^~~~~~~~~~~~~~~~~~~
+compiler\src\main.c:1231:13: note: 'snprintf' output between 19 and 530 bytes into a destination of size 512
+ 1231 |             snprintf(tmp_exe, sizeof(tmp_exe), "%s\\_lp_watch_tmp.exe", exe_dir);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+compiler\src\main.c: In function 'main':
+compiler\src\main.c:452:53: warning: '\..\runtime\sqlite3.o' directive output may be truncated writing 21 bytes into a region of size between 1 and 512 [-Wformat-truncation=]
+  452 |             snprintf(sql_path, sizeof(sql_path), "%s\\..\\runtime\\sqlite3.o", exe_dir);
+      |                                                     ^~~~~~~~~~~~~~~~~~~~~~~~
+compiler\src\main.c:452:13: note: 'snprintf' output between 22 and 533 bytes into a destination of size 512
+  452 |             snprintf(sql_path, sizeof(sql_path), "%s\\..\\runtime\\sqlite3.o", exe_dir);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+compiler\src\main.c:591:61: warning: '..' directive output may be truncated writing 2 bytes into a region of size between 0 and 511 [-Wformat-truncation=]
+  591 |             snprintf(runtime_inc, sizeof(runtime_inc), "%s%c..%cruntime",
+      |                                                             ^~
+compiler\src\main.c:591:13: note: 'snprintf' output between 12 and 523 bytes into a destination of size 512
+  591 |             snprintf(runtime_inc, sizeof(runtime_inc), "%s%c..%cruntime",
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  592 |                      exe_dir, '\\', '\\');
+      |                      ~~~~~~~~~~~~~~~~~~~~
+compiler\src\main.c:622:45: warning: '__lp_' directive output may be truncated writing 5 bytes into a region of size between 0 and 511 [-Wformat-truncation=]
+  622 |         snprintf(tmp_c, sizeof(tmp_c), "%s%c__lp_%s.c", input_dir, '\\', basename);
+      |                                             ^~~~~
+compiler\src\main.c:622:9: note: 'snprintf' output between 9 and 775 bytes into a destination of size 512
+  622 |         snprintf(tmp_c, sizeof(tmp_c), "%s%c__lp_%s.c", input_dir, '\\', basename);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+compiler\src\main.c:643:51: warning: '__lp_' directive output may be truncated writing 5 bytes into a region of size between 0 and 511 [-Wformat-truncation=]
+  643 |         snprintf(exe_path, sizeof(exe_path), "%s%c__lp_%s.exe", input_dir, '\\', basename);
+      |                                                   ^~~~~
+compiler\src\main.c:643:9: note: 'snprintf' output between 11 and 777 bytes into a destination of size 512
+  643 |         snprintf(exe_path, sizeof(exe_path), "%s%c__lp_%s.exe", input_dir, '\\', basename);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+compiler\src\codegen.c: In function 'codegen_generate':
+compiler\src\codegen.c:1888:87: error: passing argument 1 of 'type_from_annotation' from incompatible pointer type [-Wincompatible-pointer-types]
+ 1888 |             LpType ret = stmt->func_def.ret_type ? type_from_annotation(stmt->func_def.ret_type) : LP_VOID;
+      |                                                                         ~~~~~~~~~~~~~~^~~~~~~~~
+      |                                                                                       |
+      |                                                                                       char *
+compiler\src\codegen.c:77:45: note: expected 'CodeGen *' but argument is of type 'char *'
+   77 | static LpType type_from_annotation(CodeGen *cg, const char *ann) {
+      |                                    ~~~~~~~~~^~
+compiler\src\codegen.c:1888:52: error: too few arguments to function 'type_from_annotation'; expected 2, have 1
+ 1888 |             LpType ret = stmt->func_def.ret_type ? type_from_annotation(stmt->func_def.ret_type) : LP_VOID;
+      |                                                    ^~~~~~~~~~~~~~~~~~~~
+compiler\src\codegen.c:77:15: note: declared here
+   77 | static LpType type_from_annotation(CodeGen *cg, const char *ann) {
+      |               ^~~~~~~~~~~~~~~~~~~~
+compiler\src\codegen.c: At top level:
+compiler\src\codegen.c:141:12: warning: 'is_module_alias' defined but not used [-Wunused-function]
+  141 | static int is_module_alias(CodeGen *cg, const char *name) {
+      |            ^~~~~~~~~~~~~~~
+[LP Build] Success: build\lp.exe
+
+Usage:
+  lp file.lp            Run directly
+  lp file.lp -o out.c   Generate C code
+  lp file.lp -c out.exe Compile to executable

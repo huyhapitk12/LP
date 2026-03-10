@@ -1,0 +1,94 @@
+{
+  "name": "lp-language",
+  "displayName": "LP Language",
+  "description": "Language support for LP — Python Syntax, C Performance",
+  "version": "0.1.0",
+  "publisher": "lp-lang",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lp-lang/vscode-lp"
+  },
+  "activationEvents": [
+    "onLanguage:lp"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "lp",
+        "aliases": ["LP", "lp"],
+        "extensions": [".lp"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/lp-file-light.svg",
+          "dark": "./icons/lp-file-dark.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "lp",
+        "scopeName": "source.lp",
+        "path": "./syntaxes/lp.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "lp",
+        "path": "./snippets/lp.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "lp.run",
+        "title": "LP: Run Current File",
+        "icon": "$(play)"
+      },
+      {
+        "command": "lp.runRepl",
+        "title": "LP: Open REPL"
+      },
+      {
+        "command": "lp.buildC",
+        "title": "LP: Generate C Code"
+      },
+      {
+        "command": "lp.compile",
+        "title": "LP: Compile to Executable"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "when": "resourceLangId == lp",
+          "command": "lp.run",
+          "group": "navigation"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "lp.run",
+        "key": "ctrl+shift+r",
+        "when": "resourceLangId == lp"
+      }
+    ],
+    "configuration": {
+      "title": "LP Language",
+      "properties": {
+        "lp.compilerPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the LP compiler executable (lp.exe). Leave empty for auto-detection."
+        }
+      }
+    }
+  }
+}

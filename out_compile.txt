@@ -1,0 +1,20 @@
+examples\__lp_02_oop_game_engine.c:31:12: error: duplicate member 'lp_x'
+   31 |     double lp_x;
+      |            ^~~~
+examples\__lp_02_oop_game_engine.c:32:12: error: duplicate member 'lp_y'
+   32 |     double lp_y;
+      |            ^~~~
+examples\__lp_02_oop_game_engine.c: In function 'lp_Enemy_attack':
+examples\__lp_02_oop_game_engine.c:57:21: error: request for member 'take_damage' in something not a structure or union
+   57 |     return lp_target.take_damage(lp_self->lp_damage);
+      |                     ^
+examples\__lp_02_oop_game_engine.c: In function 'lp_main':
+examples\__lp_02_oop_game_engine.c:70:41: error: passing argument 2 of 'lp_Enemy_attack' makes integer from pointer without a cast [-Wint-conversion]
+   70 |     lp_Enemy_attack((LpObj_Enemy*)lp_e, lp_p);
+      |                                         ^~~~
+      |                                         |
+      |                                         LpObj_Player *
+examples\__lp_02_oop_game_engine.c:56:140: note: expected 'int64_t' {aka 'long long int'} but argument is of type 'LpObj_Player *'
+   56 | __attribute__((hot, optimize("O3,unroll-loops,strict-aliasing,omit-frame-pointer"))) int64_t lp_Enemy_attack(LpObj_Enemy* lp_self, int64_t lp_target) {
+      |                                                                                                                                    ~~~~~~~~^~~~~~~~~
+[LP] Compilation failed (gcc exit 1)

@@ -17,6 +17,7 @@ typedef enum {
     NODE_SUBSCRIPT, NODE_ATTRIBUTE,
     NODE_TRY, NODE_RAISE,
     NODE_LIST_COMP, NODE_DICT_COMP, NODE_LAMBDA, NODE_YIELD,
+    NODE_PARALLEL_FOR,
 } NodeType;
 
 typedef struct AstNode AstNode;
@@ -45,13 +46,13 @@ struct AstNode {
     int line;
     union {
         struct { NodeList stmts; } program;
-        struct { char *name; ParamList params; char *ret_type; NodeList body; } func_def;
-        struct { char *name; NodeList body; } class_def;
+        struct { char *name; ParamList params; char *ret_type; NodeList body; TokenType access; } func_def;
+        struct { char *name; char *base_class; NodeList body; } class_def;
         struct { AstNode *cond; NodeList then_body; AstNode *else_branch; } if_stmt;
         struct { char *var; AstNode *iter; NodeList body; } for_stmt;
         struct { AstNode *cond; NodeList body; } while_stmt;
         struct { AstNode *value; } return_stmt;
-        struct { char *name; char *type_ann; AstNode *value; } assign;
+        struct { char *name; char *type_ann; AstNode *value; TokenType access; } assign;
         struct { char *name; TokenType op; AstNode *value; } aug_assign;
         struct { AstNode *expr; } expr_stmt;
         struct { char *name; AstNode *value; } const_decl;
@@ -83,8 +84,8 @@ struct AstNode {
         struct { AstNode *expr; char *var; AstNode *iter; AstNode *cond; } list_comp;
         /* Dict comprehension: {key: val for var in iter if cond} */
         struct { AstNode *key; AstNode *value; char *var; AstNode *iter; AstNode *cond; } dict_comp;
-        /* Lambda: lambda params: expr */
-        struct { ParamList params; AstNode *body; } lambda_expr;
+        /* Lambda: lambda params: expr  OR  lambda params:\n            block */
+        struct { ParamList params; AstNode *body; NodeList body_stmts; int is_multiline; } lambda_expr;
         /* Yield */
         struct { AstNode *value; } yield_expr;
     };

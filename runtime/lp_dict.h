@@ -15,13 +15,18 @@
 #define LP_DICT_INITIAL_CAPACITY 16
 #define LP_DICT_LOAD_FACTOR 0.75
 
+typedef struct LpDict LpDict;
+typedef struct LpList LpList;
+
 /* Type wrapper for values in the dict */
 typedef enum {
     LP_VAL_INT,
     LP_VAL_FLOAT,
     LP_VAL_STRING,
     LP_VAL_BOOL,
-    LP_VAL_NULL
+    LP_VAL_NULL,
+    LP_VAL_DICT,
+    LP_VAL_LIST
 } LpValType;
 
 typedef struct {
@@ -31,8 +36,18 @@ typedef struct {
         double f;
         char *s;
         int b;
+        LpDict *d;
+        LpList *l;
     } as;
 } LpVal;
+
+struct LpList {
+    LpVal *items;
+    int64_t len;
+    int64_t cap;
+};
+
+static inline void lp_list_free(LpList *l);
 
 static inline LpVal lp_val_int(int64_t i) { LpVal v; v.type = LP_VAL_INT; v.as.i = i; return v; }
 static inline LpVal lp_val_float(double f) { LpVal v; v.type = LP_VAL_FLOAT; v.as.f = f; return v; }
@@ -41,6 +56,8 @@ static inline LpVal lp_val_str(const char *s) {
 }
 static inline LpVal lp_val_bool(int b) { LpVal v; v.type = LP_VAL_BOOL; v.as.b = b; return v; }
 static inline LpVal lp_val_null(void) { LpVal v; v.type = LP_VAL_NULL; v.as.i = 0; return v; }
+static inline LpVal lp_val_dict(LpDict *d) { LpVal v; v.type = LP_VAL_DICT; v.as.d = d; return v; }
+static inline LpVal lp_val_list(LpList *l) { LpVal v; v.type = LP_VAL_LIST; v.as.l = l; return v; }
 
 /* Dict Entry */
 typedef struct {
@@ -50,11 +67,11 @@ typedef struct {
 } LpDictEntry;
 
 /* The Dictionary */
-typedef struct {
+struct LpDict {
     LpDictEntry *entries;
     int64_t capacity;
     int64_t count;
-} LpDict;
+};
 
 /* Hash function (FNV-1a) */
 static inline uint32_t lp_hash(const char* key) {
@@ -74,6 +91,41 @@ static inline LpDict* lp_dict_new(void) {
     return d;
 }
 
+static inline LpList* lp_list_new(void) {
+    LpList *l = (LpList*)malloc(sizeof(LpList));
+    l->cap = 8;
+    l->len = 0;
+    l->items = (LpVal*)malloc(sizeof(LpVal) * l->cap);
+    return l;
+}
+
+static inline void lp_dict_free(LpDict *d);
+
+static inline void lp_list_free(LpList *l) {
+    if (!l) return;
+    for (int64_t i = 0; i < l->len; i++) {
+        if (l->items[i].type == LP_VAL_STRING) free(l->items[i].as.s);
+        else if (l->items[i].type == LP_VAL_DICT) lp_dict_free(l->items[i].as.d);
+        else if (l->items[i].type == LP_VAL_LIST) lp_list_free(l->items[i].as.l);
+    }
+    free(l->items);
+    free(l);
+}
+
+static inline void lp_list_append(LpList *l, LpVal value) {
+    if (l->len >= l->cap) {
+        l->cap *= 2;
+        l->items = (LpVal*)realloc(l->items, sizeof(LpVal) * l->cap);
+    }
+    if (value.type == LP_VAL_STRING) {
+        LpVal vcopy = value;
+        vcopy.as.s = strdup(value.as.s);
+        l->items[l->len++] = vcopy;
+    } else {
+        l->items[l->len++] = value; /* Deep copy for dict/list isn't done yet, assume ownership transfer or shared */
+    }
+}
+
 static inline void lp_dict_free(LpDict *d) {
     if (!d) return;
     for (int64_t i = 0; i < d->capacity; i++) {
@@ -81,6 +133,10 @@ static inline void lp_dict_free(LpDict *d) {
             free(d->entries[i].key);
             if (d->entries[i].value.type == LP_VAL_STRING) {
                 free(d->entries[i].value.as.s);
+            } else if (d->entries[i].value.type == LP_VAL_DICT) {
+                lp_dict_free(d->entries[i].value.as.d);
+            } else if (d->entries[i].value.type == LP_VAL_LIST) {
+                lp_list_free(d->entries[i].value.as.l);
             }
         }
     }
@@ -171,6 +227,8 @@ static inline int lp_dict_contains(LpDict *d, const char *key) {
     return 0;
 }
 
+static inline void lp_list_print(LpList *l);
+
 static inline void lp_dict_print(LpDict *d) {
     printf("{");
     int first = 1;
@@ -184,11 +242,30 @@ static inline void lp_dict_print(LpDict *d) {
                 case LP_VAL_STRING: printf("\"%s\"", d->entries[i].value.as.s); break;
                 case LP_VAL_BOOL: printf(d->entries[i].value.as.b ? "True" : "False"); break;
                 case LP_VAL_NULL: printf("None"); break;
+                case LP_VAL_DICT: lp_dict_print(d->entries[i].value.as.d); break;
+                case LP_VAL_LIST: lp_list_print(d->entries[i].value.as.l); break;
             }
             first = 0;
         }
     }
     printf("}");
+}
+
+static inline void lp_list_print(LpList *l) {
+    printf("[");
+    for (int64_t i = 0; i < l->len; i++) {
+        if (i > 0) printf(", ");
+        switch (l->items[i].type) {
+            case LP_VAL_INT: printf("%lld", (long long)l->items[i].as.i); break;
+            case LP_VAL_FLOAT: printf("%f", l->items[i].as.f); break;
+            case LP_VAL_STRING: printf("\"%s\"", l->items[i].as.s); break;
+            case LP_VAL_BOOL: printf(l->items[i].as.b ? "True" : "False"); break;
+            case LP_VAL_NULL: printf("None"); break;
+            case LP_VAL_DICT: lp_dict_print(l->items[i].as.d); break;
+            case LP_VAL_LIST: lp_list_print(l->items[i].as.l); break;
+        }
+    }
+    printf("]");
 }
 
 /* Merge another dict into this one (for **kwargs unpacking) */

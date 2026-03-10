@@ -1,0 +1,418 @@
+/*
+ * LP REPL (Read-Eval-Print Loop) — Interactive Mode
+ *
+ * Strategy:
+ *   - Accumulate all state (variables, functions, classes) as C source
+ *   - Each new input is appended, then the whole program is recompiled & run
+ *   - Multi-line blocks detected by trailing colon (:) on def/class/if/for/while
+ *   - Special commands: .help, .clear, .exit
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <process.h>
+#include "parser.h"
+#include "codegen.h"
+#include "repl.h"
+
+/* ─── ANSI color codes ─── */
+#define C_RESET   "\033[0m"
+#define C_GREEN   "\033[32m"
+#define C_CYAN    "\033[36m"
+#define C_YELLOW  "\033[33m"
+#define C_RED     "\033[31m"
+#define C_BOLD    "\033[1m"
+#define C_DIM     "\033[2m"
+
+/* ─── Dynamic string buffer (for accumulating source) ─── */
+typedef struct {
+    char *data;
+    int len;
+    int cap;
+} ReplBuf;
+
+static void rbuf_init(ReplBuf *b) {
+    b->cap = 4096;
+    b->data = (char *)malloc(b->cap);
+    b->data[0] = '\0';
+    b->len = 0;
+}
+
+static void rbuf_append(ReplBuf *b, const char *s) {
+    int slen = (int)strlen(s);
+    while (b->len + slen + 1 > b->cap) {
+        b->cap *= 2;
+        b->data = (char *)realloc(b->data, b->cap);
+    }
+    memcpy(b->data + b->len, s, slen);
+    b->len += slen;
+    b->data[b->len] = '\0';
+}
+
+static void rbuf_free(ReplBuf *b) {
+    free(b->data);
+    b->data = NULL;
+    b->len = b->cap = 0;
+}
+
+/* ─── GCC finder (same logic as main.c) ─── */
+static const char *repl_find_gcc(void) {
+    FILE *f = fopen("C:\\msys64\\ucrt64\\bin\\gcc.exe", "rb");
+    if (f) {
+        fclose(f);
+        const char *old = getenv("PATH");
+        char *new_path = (char *)malloc(strlen(old ? old : "") + 100);
+        sprintf(new_path, "PATH=C:\\msys64\\ucrt64\\bin;%s", old ? old : "");
+        _putenv(new_path);
+        free(new_path);
+        return "C:\\msys64\\ucrt64\\bin\\gcc.exe";
+    }
+    if (system("gcc --version >nul 2>&1") == 0) return "gcc";
+    return NULL;
+}
+
+/* ─── Find runtime include directory ─── */
+static int repl_find_runtime(const char *argv0, char *out, int outsize) {
+    char exe_dir[512];
+    const char *sep = strrchr(argv0, '\\');
+    if (!sep) sep = strrchr(argv0, '/');
+    if (sep) {
+        int len = (int)(sep - argv0);
+        if (len >= (int)sizeof(exe_dir)) len = (int)sizeof(exe_dir) - 1;
+        memcpy(exe_dir, argv0, len);
+        exe_dir[len] = '\0';
+    } else {
+        exe_dir[0] = '.'; exe_dir[1] = '\0';
+    }
+
+    /* Try relative: ../runtime */
+    char try_path[600];
+    snprintf(try_path, sizeof(try_path), "%s\\..\\runtime\\lp_runtime.h", exe_dir);
+    FILE *rf = fopen(try_path, "r");
+    if (rf) {
+        fclose(rf);
+        snprintf(out, outsize, "%s\\..\\runtime", exe_dir);
+        return 1;
+    }
+
+    /* Try known paths */
+    const char *candidates[] = { "d:\\LP\\runtime", "d:/LP/runtime" };
+    for (int i = 0; i < 2; i++) {
+        snprintf(try_path, sizeof(try_path), "%s\\lp_runtime.h", candidates[i]);
+        rf = fopen(try_path, "r");
+        if (rf) { fclose(rf); snprintf(out, outsize, "%s", candidates[i]); return 1; }
+        snprintf(try_path, sizeof(try_path), "%s/lp_runtime.h", candidates[i]);
+        rf = fopen(try_path, "r");
+        if (rf) { fclose(rf); snprintf(out, outsize, "%s", candidates[i]); return 1; }
+    }
+    return 0;
+}
+
+/* ─── Check if line starts a block (needs continuation) ─── */
+static int is_block_starter(const char *line) {
+    /* Skip leading whitespace */
+    while (*line == ' ' || *line == '\t') line++;
+    /* Skip empty lines and comments */
+    if (*line == '\0' || *line == '#') return 0;
+    /* Check for block-starting keywords */
+    if (strncmp(line, "def ", 4) == 0) return 1;
+    if (strncmp(line, "class ", 6) == 0) return 1;
+    if (strncmp(line, "if ", 3) == 0) return 1;
+    if (strncmp(line, "elif ", 5) == 0) return 1;
+    if (strncmp(line, "else:", 5) == 0) return 1;
+    if (strncmp(line, "for ", 4) == 0) return 1;
+    if (strncmp(line, "while ", 6) == 0) return 1;
+    if (strncmp(line, "try:", 4) == 0) return 1;
+    if (strncmp(line, "except", 6) == 0) return 1;
+    if (strncmp(line, "finally:", 8) == 0) return 1;
+    if (strncmp(line, "with ", 5) == 0) return 1;
+    return 0;
+}
+
+/* ─── Check if line is only whitespace ─── */
+static int is_blank(const char *line) {
+    while (*line) {
+        if (*line != ' ' && *line != '\t' && *line != '\r' && *line != '\n') return 0;
+        line++;
+    }
+    return 1;
+}
+
+/* ─── Try to compile and run accumulated source ─── */
+static int repl_eval(const char *source, const char *gcc, const char *runtime_inc) {
+    /* Parse */
+    Parser parser;
+    parser_init(&parser, source);
+    AstNode *program = parser_parse(&parser);
+
+    if (parser.had_error) {
+        fprintf(stderr, C_RED "  Parse error: %s" C_RESET "\n", parser.error_msg);
+        ast_free(program);
+        return -1;
+    }
+
+    /* Generate C code */
+    CodeGen cg;
+    codegen_init(&cg);
+    codegen_generate(&cg, program);
+    char *c_code = codegen_get_output(&cg);
+
+    if (cg.had_error) {
+        fprintf(stderr, C_RED "  Codegen error: %s" C_RESET "\n", cg.error_msg);
+        free(c_code);
+        codegen_free(&cg);
+        ast_free(program);
+        return -1;
+    }
+
+    /* Write temp C file */
+    const char *tmp_c = "__lp_repl.c";
+    FILE *tmp = fopen(tmp_c, "w");
+    if (!tmp) {
+        fprintf(stderr, C_RED "  Error: cannot write temp file" C_RESET "\n");
+        free(c_code);
+        codegen_free(&cg);
+        ast_free(program);
+        return -1;
+    }
+    fputs(c_code, tmp);
+    fclose(tmp);
+
+    /* Compile */
+    char inc_flag[600];
+    snprintf(inc_flag, sizeof(inc_flag), "-I%s", runtime_inc);
+
+    const char *exe_path = "__lp_repl.exe";
+    int ret = (int)_spawnl(_P_WAIT, gcc, "gcc",
+        "-std=c99", "-O2", "-w", tmp_c, inc_flag, "-o", exe_path, "-lm", NULL);
+
+    if (ret != 0) {
+        fprintf(stderr, C_RED "  Compilation failed" C_RESET "\n");
+        remove(tmp_c);
+        free(c_code);
+        codegen_free(&cg);
+        ast_free(program);
+        return -1;
+    }
+
+    /* Execute */
+    fflush(stdout);
+    ret = (int)_spawnl(_P_WAIT, exe_path, exe_path, NULL);
+
+    /* Cleanup */
+    remove(tmp_c);
+    remove(exe_path);
+    free(c_code);
+    codegen_free(&cg);
+    ast_free(program);
+    return ret;
+}
+
+/* ─── Print help ─── */
+static void repl_help(void) {
+    printf("\n");
+    printf(C_BOLD "  LP Interactive Commands:" C_RESET "\n");
+    printf("    .help     Show this help message\n");
+    printf("    .clear    Clear all accumulated state\n");
+    printf("    .show     Show accumulated source code\n");
+    printf("    .exit     Exit the REPL (or Ctrl+C)\n");
+    printf("\n");
+    printf(C_BOLD "  LP Syntax:" C_RESET "\n");
+    printf("    x: int = 42            Variable declaration\n");
+    printf("    print(\"Hello!\")         Print output\n");
+    printf("    def foo(n: int) -> int: Function definition\n");
+    printf("        return n * 2        (multi-line with indentation)\n");
+    printf("                            (blank line to end block)\n");
+    printf("\n");
+}
+
+/* ─── Print banner ─── */
+static void repl_banner(void) {
+    printf("\n");
+    printf(C_BOLD C_CYAN "  ╔═══════════════════════════════════════╗" C_RESET "\n");
+    printf(C_BOLD C_CYAN "  ║" C_RESET C_BOLD "     LP Language v0.2 — Interactive     " C_CYAN "║" C_RESET "\n");
+    printf(C_BOLD C_CYAN "  ║" C_RESET C_DIM "     Type .help for commands            " C_CYAN "║" C_RESET "\n");
+    printf(C_BOLD C_CYAN "  ╚═══════════════════════════════════════╝" C_RESET "\n");
+    printf("\n");
+}
+
+/* ─── Read a line from stdin (with prompt) ─── */
+static char *read_line(const char *prompt) {
+    printf("%s", prompt);
+    fflush(stdout);
+
+    static char line[4096];
+    if (!fgets(line, sizeof(line), stdin)) return NULL;
+
+    /* Remove trailing newline */
+    int len = (int)strlen(line);
+    while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r'))
+        line[--len] = '\0';
+
+    return line;
+}
+
+/* ─── Check if line starts a definition (def/class/import) ─── */
+static int is_definition(const char *line) {
+    while (*line == ' ' || *line == '\t') line++;
+    if (strncmp(line, "def ", 4) == 0) return 1;
+    if (strncmp(line, "class ", 6) == 0) return 1;
+    if (strncmp(line, "import ", 7) == 0) return 1;
+    return 0;
+}
+
+/* ─── Main REPL loop ─── */
+int repl_run(const char *argv0) {
+    /* Setup */
+    const char *gcc = repl_find_gcc();
+    if (!gcc) {
+        fprintf(stderr, C_RED "Error: GCC not found. Install MSYS2 or MinGW." C_RESET "\n");
+        return 1;
+    }
+
+    char runtime_inc[512];
+    if (!repl_find_runtime(argv0, runtime_inc, sizeof(runtime_inc))) {
+        fprintf(stderr, C_RED "Error: Cannot find LP runtime headers." C_RESET "\n");
+        return 1;
+    }
+
+    /* Enable ANSI colors on Windows */
+#ifdef _WIN32
+    system(""); /* Trick to enable VT100 sequences on Windows 10+ */
+#endif
+
+    repl_banner();
+
+    /* 
+     * Two-buffer approach:
+     *   defs — function/class/import definitions (accumulated permanently)
+     *   exec — executable statements (accumulated, all re-run each time)
+     * 
+     * To avoid duplicate output, we track which exec statements have already
+     * been "seen" and suppress their output by wrapping old statements in a
+     * devnull redirect. Actually, a simpler approach: only run the NEW input,
+     * but inject variable initializations from previous execs.
+     *
+     * Simplest correct approach: accumulate everything, accept the re-run.
+     * But improve UX by only showing output from the LAST statement.
+     * We do this by redirecting stdout to /dev/null for old code, then
+     * restoring it for new code.
+     *
+     * Actually, the cleanest approach for a compiled language REPL:
+     * Keep ALL accumulated code and re-run everything. This is how
+     * many compiled-language REPLs work (e.g., Cling for C++).
+     * The key insight: each new input -> full recompile + run.
+     * Users expect this behavior from compiled language REPLs.
+     */
+    ReplBuf accumulated;
+    rbuf_init(&accumulated);
+
+    char prompt_main[64];
+    char prompt_cont[64];
+    snprintf(prompt_main, sizeof(prompt_main), C_GREEN C_BOLD ">>> " C_RESET);
+    snprintf(prompt_cont, sizeof(prompt_cont), C_YELLOW "... " C_RESET);
+
+    int running = 1;
+    while (running) {
+        char *line = read_line(prompt_main);
+        if (!line) { /* EOF (Ctrl+Z on Windows) */
+            printf("\n");
+            break;
+        }
+
+        /* Skip empty lines */
+        if (is_blank(line)) continue;
+
+        /* ── Handle dot commands ── */
+        if (line[0] == '.') {
+            if (strcmp(line, ".exit") == 0 || strcmp(line, ".quit") == 0) {
+                break;
+            } else if (strcmp(line, ".help") == 0) {
+                repl_help();
+                continue;
+            } else if (strcmp(line, ".clear") == 0) {
+                rbuf_free(&accumulated);
+                rbuf_init(&accumulated);
+                printf(C_DIM "  State cleared." C_RESET "\n");
+                continue;
+            } else if (strcmp(line, ".show") == 0) {
+                if (accumulated.len == 0) {
+                    printf(C_DIM "  (empty)" C_RESET "\n");
+                } else {
+                    printf(C_DIM "──────────────────────" C_RESET "\n");
+                    printf("%s\n", accumulated.data);
+                    printf(C_DIM "──────────────────────" C_RESET "\n");
+                }
+                continue;
+            } else {
+                printf(C_RED "  Unknown command: %s" C_RESET "\n", line);
+                continue;
+            }
+        }
+
+        /* ── Collect multi-line block if this is a block starter ── */
+        ReplBuf input;
+        rbuf_init(&input);
+        rbuf_append(&input, line);
+        rbuf_append(&input, "\n");
+
+        if (is_block_starter(line)) {
+            /* Read continuation lines until blank line */
+            while (1) {
+                char *cont = read_line(prompt_cont);
+                if (!cont) break;
+                if (is_blank(cont)) break;
+                rbuf_append(&input, cont);
+                rbuf_append(&input, "\n");
+            }
+        }
+
+        /* ── If it's a definition (def/class/import), just add it silently ── */
+        if (is_definition(input.data)) {
+            /* Try to compile definitions + new def to check for errors */
+            ReplBuf full;
+            rbuf_init(&full);
+            rbuf_append(&full, accumulated.data);
+            rbuf_append(&full, input.data);
+
+            /* Quick parse check */
+            Parser parser;
+            parser_init(&parser, full.data);
+            AstNode *program = parser_parse(&parser);
+
+            if (parser.had_error) {
+                fprintf(stderr, C_RED "  Parse error: %s" C_RESET "\n", parser.error_msg);
+            } else {
+                rbuf_append(&accumulated, input.data);
+            }
+            ast_free(program);
+            rbuf_free(&full);
+            rbuf_free(&input);
+            continue;
+        }
+
+        /* ── Build full source = accumulated + new input ── */
+        ReplBuf full;
+        rbuf_init(&full);
+        rbuf_append(&full, accumulated.data);
+        rbuf_append(&full, input.data);
+
+        /* ── Try to compile and run ── */
+        int result = repl_eval(full.data, gcc, runtime_inc);
+
+        if (result >= 0) {
+            /* Success: add new input to accumulated state */
+            rbuf_append(&accumulated, input.data);
+        }
+        /* If error, don't add to accumulated (so user can retry) */
+
+        rbuf_free(&input);
+        rbuf_free(&full);
+    }
+
+    printf(C_DIM "  Goodbye!" C_RESET "\n\n");
+    rbuf_free(&accumulated);
+    return 0;
+}
+

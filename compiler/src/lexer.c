@@ -52,6 +52,8 @@ static TokenType check_keyword(const char *s, int len) {
         {"try", TOK_TRY}, {"except", TOK_EXCEPT},
         {"finally", TOK_FINALLY}, {"raise", TOK_RAISE},
         {"lambda", TOK_LAMBDA}, {"yield", TOK_YIELD},
+        {"parallel", TOK_PARALLEL},
+        {"private", TOK_PRIVATE}, {"protected", TOK_PROTECTED},
         {NULL, TOK_ERROR}
     };
     for (int i = 0; keywords[i].kw; i++) {
@@ -286,6 +288,8 @@ const char *token_type_name(TokenType type) {
         "pass", "break", "continue",
         "const", "struct", "async", "await", "with",
         "try", "except", "finally", "raise",
+        "lambda", "yield", "parallel",
+        "private", "protected",
         "+", "-", "*", "/", "//", "**", "%",
         "=", "==", "!=", "<", ">", "<=", ">=",
         "+=", "-=", "*=", "/=", "->", "@",

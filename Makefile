@@ -16,7 +16,8 @@ SRCS := $(SRC_DIR)/main.c \
         $(SRC_DIR)/lexer.c \
         $(SRC_DIR)/ast.c \
         $(SRC_DIR)/parser.c \
-        $(SRC_DIR)/codegen.c
+        $(SRC_DIR)/codegen.c \
+        $(SRC_DIR)/repl.c
 
 TARGET := $(BUILD_DIR)/lp
 

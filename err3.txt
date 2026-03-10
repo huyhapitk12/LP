@@ -1,0 +1,10 @@
+examples\__lp_03_memory_arena.c: In function 'lp_simulate_particle':
+examples\__lp_03_memory_arena.c:18:28: error: implicit declaration of function 'lp_memory_cast' [-Wimplicit-function-declaration]
+   18 |     LpObj_Particle* lp_p = lp_memory_cast(lp_p_ptr, lp_Particle);
+      |                            ^~~~~~~~~~~~~~
+examples\__lp_03_memory_arena.c:18:53: error: 'lp_Particle' undeclared (first use in this function); did you mean 'LpObj_Particle'?
+   18 |     LpObj_Particle* lp_p = lp_memory_cast(lp_p_ptr, lp_Particle);
+      |                                                     ^~~~~~~~~~~
+      |                                                     LpObj_Particle
+examples\__lp_03_memory_arena.c:18:53: note: each undeclared identifier is reported only once for each function it appears in
+[LP] Compilation failed (gcc exit 1)

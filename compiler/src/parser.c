@@ -175,6 +175,9 @@ static AstNode *parse_primary(Parser *p) {
     if (match(p, TOK_LAMBDA)) {
         AstNode *n = ast_new(NODE_LAMBDA, line);
         param_list_init(&n->lambda_expr.params);
+        n->lambda_expr.is_multiline = 0;
+        n->lambda_expr.body = NULL;
+        node_list_init(&n->lambda_expr.body_stmts);
         /* Parse optional parameters */
         if (!check(p, TOK_COLON)) {
             do {
@@ -188,7 +191,13 @@ static AstNode *parse_primary(Parser *p) {
             } while (match(p, TOK_COMMA));
         }
         expect(p, TOK_COLON, "expected ':' in lambda");
-        n->lambda_expr.body = parse_expression(p);
+        /* Check for multiline lambda: lambda params:\n  block */
+        if (check(p, TOK_NEWLINE)) {
+            n->lambda_expr.is_multiline = 1;
+            parse_block(p, &n->lambda_expr.body_stmts);
+        } else {
+            n->lambda_expr.body = parse_expression(p);
+        }
         return n;
     }
     error(p, "expected expression");
@@ -401,6 +410,7 @@ static AstNode *parse_func_def(Parser *p) {
     param_list_init(&n->func_def.params);
     node_list_init(&n->func_def.body);
     n->func_def.ret_type = NULL;
+    n->func_def.access = 0;
 
     expect(p, TOK_LPAREN, "expected '('");
     if (!check(p, TOK_RPAREN)) {
@@ -447,12 +457,12 @@ static AstNode *parse_class_def(Parser *p) {
 
     AstNode *n = ast_new(NODE_CLASS_DEF, line);
     n->class_def.name = tok_to_str(p->previous);
+    n->class_def.base_class = NULL;
     node_list_init(&n->class_def.body);
 
-    /* Optional inheritance (MyClass(BaseClass)): Not implemented for Phase 3 initially, skip */
     if (match(p, TOK_LPAREN)) {
-        /* Accept but ignore for now */
-        parse_expression(p);
+        expect(p, TOK_IDENTIFIER, "expected base class name");
+        n->class_def.base_class = tok_to_str(p->previous);
         expect(p, TOK_RPAREN, "expected ')' after base class");
     }
 
@@ -492,6 +502,23 @@ static AstNode *parse_for_stmt(Parser *p) {
     expect(p, TOK_IDENTIFIER, "expected loop variable");
 
     AstNode *n = ast_new(NODE_FOR, line);
+    n->for_stmt.var = tok_to_str(p->previous);
+    node_list_init(&n->for_stmt.body);
+
+    expect(p, TOK_IN, "expected 'in'");
+    n->for_stmt.iter = parse_expression(p);
+    expect(p, TOK_COLON, "expected ':'");
+    parse_block(p, &n->for_stmt.body);
+    return n;
+}
+
+static AstNode *parse_parallel_for_stmt(Parser *p) {
+    int line = p->current.line;
+    advance(p); /* consume 'parallel' */
+    expect(p, TOK_FOR, "expected 'for' after 'parallel'");
+    expect(p, TOK_IDENTIFIER, "expected loop variable");
+
+    AstNode *n = ast_new(NODE_PARALLEL_FOR, line);
     n->for_stmt.var = tok_to_str(p->previous);
     node_list_init(&n->for_stmt.body);
 
@@ -562,7 +589,26 @@ static AstNode *parse_import_stmt(Parser *p) {
     expect(p, TOK_IDENTIFIER, "expected module name");
 
     AstNode *n = ast_new(NODE_IMPORT, line);
-    n->import_stmt.module = tok_to_str(p->previous);
+    
+    /* Accumulate dotted names */
+    int cap = 64;
+    char *mod_name = (char *)malloc(cap);
+    strcpy(mod_name, tok_to_str(p->previous));
+    
+    while (match(p, TOK_DOT)) {
+        expect(p, TOK_IDENTIFIER, "expected sub-module name after '.'");
+        char *sub = tok_to_str(p->previous);
+        int new_len = strlen(mod_name) + 1 + strlen(sub) + 1;
+        if (new_len > cap) {
+            cap = new_len * 2;
+            mod_name = (char *)realloc(mod_name, cap);
+        }
+        strcat(mod_name, ".");
+        strcat(mod_name, sub);
+        free(sub);
+    }
+    
+    n->import_stmt.module = mod_name;
     n->import_stmt.alias = NULL;
 
     if (match(p, TOK_AS)) {
@@ -649,6 +695,7 @@ static AstNode *parse_assign_or_expr(Parser *p) {
         
         n->assign.type_ann = NULL;
         n->assign.value = parse_expression(p);
+        n->assign.access = 0;
         free(expr);
         return n;
     }
@@ -690,6 +737,7 @@ static AstNode *parse_assign_or_expr(Parser *p) {
         expr->name_expr.name = NULL;
         n->assign.type_ann = type_ann;
         n->assign.value = NULL;
+        n->assign.access = 0;
         if (match(p, TOK_ASSIGN))
             n->assign.value = parse_expression(p);
         free(expr);
@@ -706,6 +754,13 @@ static AstNode *parse_statement(Parser *p) {
     skip_newlines(p);
     if (p->had_error || check(p, TOK_EOF)) return NULL;
 
+    TokenType access = 0;
+    if (match(p, TOK_PRIVATE)) {
+        access = TOK_PRIVATE;
+    } else if (match(p, TOK_PROTECTED)) {
+        access = TOK_PROTECTED;
+    }
+
     AstNode *stmt = NULL;
     switch (p->current.type) {
         case TOK_DEF:       stmt = parse_func_def(p); break;
@@ -719,10 +774,21 @@ static AstNode *parse_statement(Parser *p) {
         case TOK_WITH:      stmt = parse_with_stmt(p); break;
         case TOK_TRY:       stmt = parse_try_stmt(p); break;
         case TOK_RAISE:     stmt = parse_raise_stmt(p); break;
+        case TOK_PARALLEL:  stmt = parse_parallel_for_stmt(p); break;
         case TOK_PASS:      advance(p); stmt = ast_new(NODE_PASS, p->previous.line); break;
         case TOK_BREAK:     advance(p); stmt = ast_new(NODE_BREAK, p->previous.line); break;
         case TOK_CONTINUE:  advance(p); stmt = ast_new(NODE_CONTINUE, p->previous.line); break;
         default:            stmt = parse_assign_or_expr(p); break;
+    }
+
+    if (stmt) {
+        if (stmt->type == NODE_FUNC_DEF) {
+            stmt->func_def.access = access;
+        } else if (stmt->type == NODE_ASSIGN) {
+            stmt->assign.access = access;
+        } else if (access != 0) {
+            error(p, "access modifier only allowed on functions and assignments");
+        }
     }
 
     /* Consume trailing newline */
