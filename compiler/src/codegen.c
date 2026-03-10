@@ -37,13 +37,19 @@ static Scope *scope_new(Scope *parent) {
 }
 
 static void scope_free(Scope *s) {
-    for (int i = 0; i < s->count; i++) free(s->symbols[i].name);
+    for (int i = 0; i < s->count; i++) {
+        free(s->symbols[i].name);
+        free(s->symbols[i].class_name);
+        free(s->symbols[i].first_param_class_name);
+        free(s->symbols[i].owner_class);
+        free(s->symbols[i].base_class);
+    }
     free(s);
 }
 
 static Symbol *scope_lookup(Scope *s, const char *name) {
     for (; s; s = s->parent)
-        for (int i = 0; i < s->count; i++)
+        for (int i = s->count - 1; i >= 0; i--)
             if (strcmp(s->symbols[i].name, name) == 0)
                 return &s->symbols[i];
     return NULL;
@@ -57,6 +63,16 @@ static Symbol *scope_define(Scope *s, const char *name, LpType type) {
     sym->type = type;
     sym->class_name = NULL;
     sym->declared = 0;
+    sym->is_function = 0;
+    sym->is_variadic = 0;
+    sym->has_kwargs = 0;
+    sym->num_params = 0;
+    sym->first_param_type = LP_UNKNOWN;
+    sym->first_param_class_name = NULL;
+    sym->access = 0;
+    sym->owner_class = NULL;
+    sym->base_class = NULL;
+    sym->is_method = 0;
     return sym;
 }
 
@@ -69,13 +85,35 @@ static Symbol *scope_define_obj(Scope *s, const char *name, LpType type, const c
     return sym;
 }
 
+static void codegen_set_error(CodeGen *cg, const char *fmt, ...) {
+    va_list args;
+
+    if (cg->had_error) return;
+
+    va_start(args, fmt);
+    vsnprintf(cg->error_msg, sizeof(cg->error_msg), fmt, args);
+    va_end(args);
+    cg->had_error = 1;
+}
+
 /* --- Type mapping --- */
-static LpType type_from_annotation(const char *ann) {
+static LpType type_from_annotation(CodeGen *cg, const char *ann) {
     if (!ann) return LP_UNKNOWN;
     if (strcmp(ann, "int") == 0 || strcmp(ann, "i64") == 0) return LP_INT;
     if (strcmp(ann, "float") == 0 || strcmp(ann, "f64") == 0) return LP_FLOAT;
     if (strcmp(ann, "str") == 0) return LP_STRING;
     if (strcmp(ann, "bool") == 0) return LP_BOOL;
+    if (strcmp(ann, "ptr") == 0) return LP_PTR;
+    if (strcmp(ann, "pool") == 0) return LP_POOL;
+    if (strcmp(ann, "arena") == 0) return LP_ARENA;
+    if (strcmp(ann, "val") == 0) return LP_VAL;
+    if (strcmp(ann, "sqlite_db") == 0) return LP_SQLITE_DB;
+    if (strcmp(ann, "thread") == 0) return LP_THREAD;
+    if (strcmp(ann, "lock") == 0) return LP_LOCK;
+    if (cg) {
+        Symbol *s = scope_lookup(cg->scope, ann);
+        if (s && s->type == LP_CLASS) return LP_OBJECT;
+    }
     return LP_INT; /* default for unknown types */
 }
 
@@ -93,6 +131,13 @@ static const char *lp_type_to_c(LpType t) {
         case LP_SET:    return "LpSet*";
         case LP_TUPLE:  return "LpTuple*";
         case LP_FILE:   return "LpFile*";
+        case LP_VAL:    return "LpVal";
+        case LP_SQLITE_DB: return "sqlite3*";
+        case LP_THREAD: return "LpThread";
+        case LP_LOCK:   return "LpLock";
+        case LP_ARENA:  return "LpArena*";
+        case LP_POOL:   return "LpPool*";
+        case LP_PTR:    return "void*";
         default:        return "int64_t";
     }
 }
@@ -143,6 +188,9 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
             if (op == TOK_EQ || op == TOK_NEQ || op == TOK_LT || op == TOK_GT ||
                 op == TOK_LTE || op == TOK_GTE || op == TOK_AND || op == TOK_OR)
                 return LP_BOOL;
+            /* String + anything = string concat */
+            if (op == TOK_PLUS && (lt == LP_STRING || rt == LP_STRING))
+                return LP_STRING;
             if (lt == LP_FLOAT || rt == LP_FLOAT) return LP_FLOAT;
             if (op == TOK_SLASH) return LP_FLOAT;
             return LP_INT;
@@ -231,6 +279,32 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
                         if (strcmp(func_name, "getrecursionlimit") == 0) return LP_INT;
                         return LP_STRING;
                     }
+                    if (imp->tier == MOD_TIER1_HTTP) return LP_STRING;
+                    if (imp->tier == MOD_TIER1_HTTP) return LP_STRING;
+                    if (imp->tier == MOD_TIER1_JSON) return LP_VAL;
+                    if (imp->tier == MOD_TIER1_SQLITE) {
+                        if (strcmp(func_name, "connect") == 0) return LP_SQLITE_DB;
+                        if (strcmp(func_name, "execute") == 0) return LP_BOOL;
+                        if (strcmp(func_name, "query") == 0) return LP_VAL;
+                        return LP_VOID;
+                    }
+                    if (imp->tier == MOD_TIER1_THREAD) {
+                        if (strcmp(func_name, "spawn") == 0) return LP_THREAD;
+                        if (strcmp(func_name, "join") == 0) return LP_INT;
+                        if (strcmp(func_name, "lock_init") == 0) return LP_LOCK;
+                        return LP_VOID;
+                    }
+                    if (imp->tier == MOD_TIER1_MEMORY) {
+                        if (strcmp(func_name, "arena_new") == 0) return LP_ARENA;
+                        if (strcmp(func_name, "pool_new") == 0) return LP_POOL;
+                        if (strcmp(func_name, "arena_alloc") == 0) return LP_PTR;
+                        if (strcmp(func_name, "pool_alloc") == 0) return LP_PTR;
+                        if (strcmp(func_name, "cast") == 0) return LP_OBJECT;
+                        return LP_VOID;
+                    }
+                    if (imp->tier == MOD_TIER1_PLATFORM) {
+                        return LP_VAL;
+                    }
                     return LP_PYOBJ; /* Tier 3 */
                 }
             }
@@ -278,6 +352,16 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
             }
             return LP_UNKNOWN;
         }
+        case NODE_SUBSCRIPT: {
+            LpType obj_type = infer_type(cg, node->subscript.obj);
+            if (obj_type == LP_DICT || obj_type == LP_PYOBJ || obj_type == LP_VAL)
+                return LP_VAL;
+            if (obj_type == LP_ARRAY)
+                return LP_FLOAT;
+            if (obj_type == LP_STR_ARRAY || obj_type == LP_STRING)
+                return LP_STRING;
+            return LP_UNKNOWN;
+        }
         case NODE_KWARG:
             return infer_type(cg, node->kwarg.value);
         case NODE_LIST_COMP:
@@ -291,11 +375,128 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
 /* --- Code generation --- */
 static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node);
 static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent);
+static LpType infer_return_type(CodeGen *cg, NodeList *body);
+static void gen_thread_spawn_expr(CodeGen *cg, Buffer *buf, AstNode *node);
+static void populate_function_symbol(CodeGen *cg, Symbol *sym, AstNode *node, const char *owner_class);
 
 static void write_indent(Buffer *buf, int level) {
     for (int i = 0; i < level; i++) buf_write(buf, "    ");
 }
 
+static void gen_thread_spawn_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
+    AstNode *worker_node;
+    Symbol *worker_sym;
+    const char *worker_name;
+    const char *param_c_type;
+    char helper_name[64];
+    char ctx_name[64];
+    int adapter_id;
+
+    if (node->call.args.count < 1 || node->call.args.count > 2) {
+        codegen_set_error(cg, "thread.spawn expects a worker function and an optional single argument");
+        buf_write(buf, "NULL");
+        return;
+    }
+
+    worker_node = node->call.args.items[0];
+    if (!worker_node || worker_node->type != NODE_NAME) {
+        codegen_set_error(cg, "thread.spawn only supports named LP functions as workers");
+        buf_write(buf, "NULL");
+        return;
+    }
+
+    worker_name = worker_node->name_expr.name;
+    worker_sym = scope_lookup(cg->scope, worker_name);
+    if (!worker_sym || !worker_sym->is_function) {
+        codegen_set_error(cg, "thread.spawn worker '%s' must be a named LP function", worker_name);
+        buf_write(buf, "NULL");
+        return;
+    }
+
+    if (worker_sym->is_variadic || worker_sym->has_kwargs) {
+        codegen_set_error(cg, "thread.spawn worker '%s' cannot use *args or **kwargs", worker_name);
+        buf_write(buf, "NULL");
+        return;
+    }
+
+    if (worker_sym->num_params > 1) {
+        codegen_set_error(cg, "thread.spawn worker '%s' must accept 0 or 1 argument", worker_name);
+        buf_write(buf, "NULL");
+        return;
+    }
+
+    if (worker_sym->type != LP_INT && worker_sym->type != LP_VOID) {
+        codegen_set_error(cg, "thread.spawn worker '%s' must return int or void", worker_name);
+        buf_write(buf, "NULL");
+        return;
+    }
+
+    if (worker_sym->num_params == 0 && node->call.args.count != 1) {
+        codegen_set_error(cg, "thread.spawn worker '%s' does not accept an argument", worker_name);
+        buf_write(buf, "NULL");
+        return;
+    }
+
+    if (worker_sym->num_params == 1 && node->call.args.count != 2) {
+        codegen_set_error(cg, "thread.spawn worker '%s' requires exactly one argument", worker_name);
+        buf_write(buf, "NULL");
+        return;
+    }
+
+    if (worker_sym->num_params == 1) {
+        if (worker_sym->first_param_type == LP_UNKNOWN) {
+            codegen_set_error(cg, "thread.spawn worker '%s' has an unsupported argument type", worker_name);
+            buf_write(buf, "NULL");
+            return;
+        }
+        if (worker_sym->first_param_type == LP_OBJECT && !worker_sym->first_param_class_name) {
+            codegen_set_error(cg, "thread.spawn worker '%s' has an object argument with no class metadata", worker_name);
+            buf_write(buf, "NULL");
+            return;
+        }
+    }
+
+    adapter_id = cg->thread_adapter_count++;
+    snprintf(helper_name, sizeof(helper_name), "lp_thread_adapter_%d", adapter_id);
+    snprintf(ctx_name, sizeof(ctx_name), "LpThreadCtx_%d", adapter_id);
+
+    if (worker_sym->num_params == 0) {
+        buf_printf(&cg->helpers, "static int64_t %s(void *lp_raw_arg) {\n", helper_name);
+        buf_write(&cg->helpers, "    (void)lp_raw_arg;\n");
+        if (worker_sym->type == LP_VOID) {
+            buf_printf(&cg->helpers, "    lp_%s();\n", worker_name);
+            buf_write(&cg->helpers, "    return 0;\n");
+        } else {
+            buf_printf(&cg->helpers, "    return lp_%s();\n", worker_name);
+        }
+        buf_write(&cg->helpers, "}\n\n");
+
+        buf_printf(buf, "lp_thread_spawn(%s, NULL)", helper_name);
+        return;
+    }
+
+    param_c_type = lp_type_to_c_obj(worker_sym->first_param_type, worker_sym->first_param_class_name);
+
+    buf_printf(&cg->helpers, "typedef struct {\n    %s arg;\n} %s;\n\n", param_c_type, ctx_name);
+    buf_printf(&cg->helpers, "static int64_t %s(void *lp_raw_arg) {\n", helper_name);
+    buf_printf(&cg->helpers, "    %s *lp_ctx = (%s*)lp_raw_arg;\n", ctx_name, ctx_name);
+    buf_printf(&cg->helpers, "    %s lp_arg = lp_ctx->arg;\n", param_c_type);
+    buf_write(&cg->helpers, "    free(lp_ctx);\n");
+    if (worker_sym->type == LP_VOID) {
+        buf_printf(&cg->helpers, "    lp_%s(lp_arg);\n", worker_name);
+        buf_write(&cg->helpers, "    return 0;\n");
+    } else {
+        buf_printf(&cg->helpers, "    return lp_%s(lp_arg);\n", worker_name);
+    }
+    buf_write(&cg->helpers, "}\n\n");
+
+    buf_write(buf, "({ ");
+    buf_write(buf, "LpThread _lp_thread = NULL; ");
+    buf_printf(buf, "%s *_lp_ctx = (%s*)malloc(sizeof(%s)); ", ctx_name, ctx_name, ctx_name);
+    buf_write(buf, "if (_lp_ctx) { _lp_ctx->arg = ");
+    gen_expr(cg, buf, node->call.args.items[1]);
+    buf_printf(buf, "; _lp_thread = lp_thread_spawn(%s, _lp_ctx); if (!_lp_thread) free(_lp_ctx); } _lp_thread; })", helper_name);
+}
 static void emit_lp_val(CodeGen *cg, Buffer *buf, AstNode *expr) {
     LpType t = infer_type(cg, expr);
     switch (t) {
@@ -361,9 +562,9 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
             break;
         }
         case NODE_TUPLE_EXPR: {
-            buf_printf(buf, "({ LpTuple _t = lp_tuple_new(%d); ", node->tuple_expr.elems.count);
+            buf_printf(buf, "({ LpTuple *_t = lp_tuple_new(%d); ", node->tuple_expr.elems.count);
             for (int i = 0; i < node->tuple_expr.elems.count; i++) {
-                buf_printf(buf, "lp_tuple_set(&_t, %d, (void*)(intptr_t)", i);
+                buf_printf(buf, "lp_tuple_set(_t, %d, (void*)(intptr_t)", i);
                 gen_expr(cg, buf, node->tuple_expr.elems.items[i]);
                 buf_write(buf, "); ");
             }
@@ -400,6 +601,19 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 gen_expr(cg, buf, node->bin_op.right);
                 buf_write(buf, ")");
             } else {
+                /* Check for string concatenation: str + str => lp_str_concat */
+                if (op == TOK_PLUS) {
+                    LpType lt = infer_type(cg, node->bin_op.left);
+                    LpType rt = infer_type(cg, node->bin_op.right);
+                    if (lt == LP_STRING || rt == LP_STRING) {
+                        buf_write(buf, "lp_str_concat(");
+                        gen_expr(cg, buf, node->bin_op.left);
+                        buf_write(buf, ", ");
+                        gen_expr(cg, buf, node->bin_op.right);
+                        buf_write(buf, ")");
+                        break;
+                    }
+                }
                 const char *ops;
                 switch (op) {
                     case TOK_PLUS: ops = " + "; break;
@@ -464,7 +678,7 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 const char *func_name = node->call.func->attribute.attr;
                 ImportInfo *imp = find_import(cg, mod_alias);
                 if (imp) {
-                    /* ---- TIER 1: math → direct C <math.h> ---- */
+                    /* ---- TIER 1: math ??? direct C <math.h> ---- */
                     if (imp->tier == MOD_TIER1_MATH) {
                         buf_printf(buf, "lp_math_%s(", func_name);
                         for (int i = 0; i < node->call.args.count; i++) {
@@ -515,9 +729,82 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         buf_write(buf, ")");
                         break;
                     }
-                    /* ---- TIER 2: numpy → optimized C arrays ---- */
+                    /* ---- TIER 1: http ---- */
+                    if (imp->tier == MOD_TIER1_HTTP) {
+                        buf_printf(buf, "lp_http_%s(", func_name);
+                        for (int i = 0; i < node->call.args.count; i++) {
+                            if (i > 0) buf_write(buf, ", ");
+                            gen_expr(cg, buf, node->call.args.items[i]);
+                        }
+                        buf_write(buf, ")");
+                        break;
+                    }
+                    /* ---- TIER 1: json ---- */
+                    if (imp->tier == MOD_TIER1_JSON) {
+                        buf_printf(buf, "lp_json_%s(", func_name);
+                        for (int i = 0; i < node->call.args.count; i++) {
+                            if (i > 0) buf_write(buf, ", ");
+                            gen_expr(cg, buf, node->call.args.items[i]);
+                        }
+                        buf_write(buf, ")");
+                        break;
+                    }
+                    /* ---- TIER 1: sqlite ---- */
+                    if (imp->tier == MOD_TIER1_SQLITE) {
+                        buf_printf(buf, "lp_sqlite_%s(", func_name);
+                        for (int i = 0; i < node->call.args.count; i++) {
+                            if (i > 0) buf_write(buf, ", ");
+                            gen_expr(cg, buf, node->call.args.items[i]);
+                        }
+                        buf_write(buf, ")");
+                        break;
+                    }
+                    /* ---- TIER 1: thread ---- */
+                    if (imp->tier == MOD_TIER1_THREAD) {
+                        if (strcmp(func_name, "spawn") == 0) {
+                            gen_thread_spawn_expr(cg, buf, node);
+                            break;
+                        }
+                        buf_printf(buf, "lp_thread_%s(", func_name);
+                        for (int i = 0; i < node->call.args.count; i++) {
+                            if (i > 0) buf_write(buf, ", ");
+                            gen_expr(cg, buf, node->call.args.items[i]);
+                        }
+                        buf_write(buf, ")");
+                        break;
+                    }
+                    /* ---- TIER 1: memory ---- */
+                    if (imp->tier == MOD_TIER1_MEMORY) {
+                        /* memory.cast(ptr, Type) -> special handler */
+                        if (strcmp(func_name, "cast") == 0 && node->call.args.count == 2) {
+                            AstNode *type_arg = node->call.args.items[1];
+                            if (type_arg->type == NODE_NAME) {
+                                buf_printf(buf, "(LpObj_%s*)", type_arg->name_expr.name);
+                                gen_expr(cg, buf, node->call.args.items[0]);
+                                break;
+                            }
+                        }
+                        buf_printf(buf, "lp_memory_%s(", func_name);
+                        for (int i = 0; i < node->call.args.count; i++) {
+                            if (i > 0) buf_write(buf, ", ");
+                            gen_expr(cg, buf, node->call.args.items[i]);
+                        }
+                        buf_write(buf, ")");
+                        break;
+                    }
+                    /* ---- TIER 1: platform ---- */
+                    if (imp->tier == MOD_TIER1_PLATFORM) {
+                        buf_printf(buf, "lp_platform_%s(", func_name);
+                        for (int i = 0; i < node->call.args.count; i++) {
+                            if (i > 0) buf_write(buf, ", ");
+                            gen_expr(cg, buf, node->call.args.items[i]);
+                        }
+                        buf_write(buf, ")");
+                        break;
+                    }
+                    /* ---- TIER 2: numpy ??? optimized C arrays ---- */
                     if (imp->tier == MOD_TIER2_NUMPY) {
-                        /* np.array([1,2,3]) → from_doubles */
+                        /* np.array([1,2,3]) ??? from_doubles */
                         if (strcmp(func_name, "array") == 0 &&
                             node->call.args.count == 1 &&
                             node->call.args.items[0]->type == NODE_LIST_EXPR) {
@@ -579,7 +866,7 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             buf_write(buf, ")");
                             break;
                         }
-                        /* np.add, np.subtract, np.multiply → element-wise ops */
+                        /* np.add, np.subtract, np.multiply ??? element-wise ops */
                         if (strcmp(func_name, "add") == 0) {
                             buf_write(buf, "lp_np_add(");
                         } else if (strcmp(func_name, "subtract") == 0) {
@@ -599,7 +886,7 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         } else if (strcmp(func_name, "log") == 0) {
                             buf_write(buf, "lp_np_log_arr(");
                         } else {
-                            /* Generic numpy function — fallback */
+                            /* Generic numpy function ??? fallback */
                             buf_printf(buf, "lp_np_%s(", func_name);
                         }
                         for (int i = 0; i < node->call.args.count; i++) {
@@ -687,6 +974,7 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         case LP_PYOBJ:  buf_write(buf, "lp_py_print("); break;
                         case LP_DICT:   buf_write(buf, "lp_print_dict("); break;
                         case LP_SET:    buf_write(buf, "lp_print_set("); break;
+                        case LP_TUPLE:  buf_write(buf, "lp_print_tuple("); break;
                         default:        buf_write(buf, "lp_print_generic("); break;
                     }
                     gen_expr(cg, buf, node->call.args.items[i]);
@@ -734,8 +1022,14 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 node->call.func->attribute.obj->type == NODE_NAME) {
                 Symbol *s = scope_lookup(cg->scope, node->call.func->attribute.obj->name_expr.name);
                 if (s && s->type == LP_OBJECT && s->class_name) {
-                    buf_printf(buf, "lp_%s_%s(", s->class_name, node->call.func->attribute.attr);
-                    buf_printf(buf, "lp_%s", s->name); /* Pass 'self' as first arg */
+                    const char *target_class = s->class_name;
+                    char method_key[256];
+                    snprintf(method_key, sizeof(method_key), "%s.%s", s->class_name, node->call.func->attribute.attr);
+                    Symbol *ms = scope_lookup(cg->scope, method_key);
+                    if (ms && ms->owner_class) target_class = ms->owner_class;
+
+                    buf_printf(buf, "lp_%s_%s(", target_class, node->call.func->attribute.attr);
+                    buf_printf(buf, "(LpObj_%s*)lp_%s", target_class, s->name); /* Pass 'self' casted properly */
                     for (int i = 0; i < node->call.args.count; i++) {
                         buf_write(buf, ", ");
                         gen_expr(cg, buf, node->call.args.items[i]);
@@ -809,7 +1103,7 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             emit_lp_val(cg, buf, arg->kwarg.value);
                             buf_write(buf, "); ");
                         } else if (node->call.is_unpacked_dict && node->call.is_unpacked_dict[i]) {
-                            /* **dict_var unpacking — merge into _kwargs */
+                            /* **dict_var unpacking ??? merge into _kwargs */
                             buf_write(buf, "lp_dict_merge(_kwargs, ");
                             gen_expr(cg, buf, arg);
                             buf_write(buf, "); ");
@@ -888,7 +1182,7 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
             break;
         }
         case NODE_KWARG:
-            /* Keyword argument — only used inline when not packed into dict */
+            /* Keyword argument ??? only used inline when not packed into dict */
             gen_expr(cg, buf, node->kwarg.value);
             break;
         case NODE_LIST_COMP: {
@@ -945,40 +1239,96 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
             char fname[64];
             snprintf(fname, sizeof(fname), "_lp_lambda_%d", lambda_counter++);
 
-            /* Determine return type from body expression */
-            LpType body_ret = infer_type(cg, node->lambda_expr.body);
-            if (body_ret == LP_UNKNOWN) body_ret = LP_FLOAT;
+            LpType body_ret;
+            if (node->lambda_expr.is_multiline) {
+                /* Infer return type from body statements */
+                body_ret = infer_return_type(cg, &node->lambda_expr.body_stmts);
+                if (body_ret == LP_UNKNOWN) body_ret = LP_INT;
+            } else {
+                body_ret = infer_type(cg, node->lambda_expr.body);
+                if (body_ret == LP_UNKNOWN) body_ret = LP_FLOAT;
+            }
 
             /* Generate the lambda function definition */
             buf_printf(&cg->funcs, "static %s %s(", lp_type_to_c(body_ret), fname);
             for (int i = 0; i < node->lambda_expr.params.count; i++) {
                 if (i > 0) buf_write(&cg->funcs, ", ");
                 Param *lp = &node->lambda_expr.params.items[i];
-                LpType pt = lp->type_ann ? type_from_annotation(lp->type_ann) : LP_FLOAT;
+                LpType pt = lp->type_ann ? type_from_annotation(cg, lp->type_ann) : LP_FLOAT;
                 buf_printf(&cg->funcs, "%s lp_%s", lp_type_to_c(pt), lp->name);
             }
             if (node->lambda_expr.params.count == 0) {
                 buf_write(&cg->funcs, "void");
             }
-            buf_write(&cg->funcs, ") { return ");
-            gen_expr(cg, &cg->funcs, node->lambda_expr.body);
-            buf_write(&cg->funcs, "; }\n\n");
+            buf_write(&cg->funcs, ") {\n");
+
+            if (node->lambda_expr.is_multiline) {
+                /* Multiline lambda: generate full body */
+                for (int i = 0; i < node->lambda_expr.body_stmts.count; i++)
+                    gen_stmt(cg, &cg->funcs, node->lambda_expr.body_stmts.items[i], 1);
+            } else {
+                /* Single expression lambda */
+                buf_write(&cg->funcs, "    return ");
+                gen_expr(cg, &cg->funcs, node->lambda_expr.body);
+                buf_write(&cg->funcs, ";\n");
+            }
+            buf_write(&cg->funcs, "}\n\n");
 
             /* Emit the function name as the expression */
             buf_write(buf, fname);
             break;
         }
-        case NODE_SUBSCRIPT:
-            gen_expr(cg, buf, node->subscript.obj);
-            buf_write(buf, "[");
-            gen_expr(cg, buf, node->subscript.index);
-            buf_write(buf, "]");
+        case NODE_SUBSCRIPT: {
+            LpType obj_type = infer_type(cg, node->subscript.obj);
+            if (obj_type == LP_DICT || obj_type == LP_PYOBJ || obj_type == LP_VAL) {
+                LpType key_type = infer_type(cg, node->subscript.index);
+                if (key_type == LP_STRING) {
+                    buf_write(buf, "lp_val_getitem_str(");
+                    gen_expr(cg, buf, node->subscript.obj);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->subscript.index);
+                    buf_write(buf, ")");
+                } else {
+                    buf_write(buf, "lp_val_getitem_int(");
+                    gen_expr(cg, buf, node->subscript.obj);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->subscript.index);
+                    buf_write(buf, ")");
+                }
+            } else {
+                gen_expr(cg, buf, node->subscript.obj);
+                buf_write(buf, "[");
+                gen_expr(cg, buf, node->subscript.index);
+                buf_write(buf, "]");
+            }
             break;
+        }
         case NODE_ATTRIBUTE: {
             /* Object instance method or property access */
             if (node->attribute.obj->type == NODE_NAME) {
                 Symbol *s = scope_lookup(cg->scope, node->attribute.obj->name_expr.name);
                 if (s && s->type == LP_OBJECT) {
+                    if (s->class_name) {
+                        char field_key[256];
+                        snprintf(field_key, sizeof(field_key), "%s.%s", s->class_name, node->attribute.attr);
+                        Symbol *mem = scope_lookup(cg->scope, field_key);
+                        if (mem) {
+                            if (mem->access == TOK_PRIVATE) {
+                                if (!cg->current_class || strcmp(cg->current_class, mem->owner_class) != 0) {
+                                    snprintf(cg->error_msg, sizeof(cg->error_msg), 
+                                        "Cannot access private member '%s' of class '%s'", node->attribute.attr, s->class_name);
+                                    cg->had_error = 1;
+                                }
+                            } else if (mem->access == TOK_PROTECTED) {
+                                /* In future: check inheritance. For now, same class only */
+                                if (!cg->current_class || strcmp(cg->current_class, mem->owner_class) != 0) {
+                                    snprintf(cg->error_msg, sizeof(cg->error_msg), 
+                                        "Cannot access protected member '%s' of class '%s'", node->attribute.attr, s->class_name);
+                                    cg->had_error = 1;
+                                }
+                            }
+                        }
+                    }
                     /* Access property/method:  obj->attr */
                     gen_expr(cg, buf, node->attribute.obj);
                     buf_write(buf, "->lp_");
@@ -999,7 +1349,7 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                                    imp->alias, node->attribute.attr);
                         break;
                     }
-                    /* Tier 1: os, sys — attribute access */
+                    /* Tier 1: os, sys ??? attribute access */
                     if (imp->tier == MOD_TIER1_OS || imp->tier == MOD_TIER1_SYS) {
                         buf_printf(buf, "lp_%s_%s", imp->module, node->attribute.attr);
                         break;
@@ -1029,7 +1379,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
         case NODE_ASSIGN: {
             LpType t = LP_UNKNOWN;
             if (node->assign.type_ann)
-                t = type_from_annotation(node->assign.type_ann);
+                t = type_from_annotation(cg, node->assign.type_ann);
             else if (node->assign.value)
                 t = infer_type(cg, node->assign.value);
             if (t == LP_UNKNOWN) t = LP_INT;
@@ -1058,10 +1408,25 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     } else if (t == LP_OBJECT && node->assign.value->type == NODE_NAME) {
                         Symbol *os = scope_lookup(cg->scope, node->assign.value->name_expr.name);
                         if (os) class_name = os->class_name;
+                    } else if (t == LP_OBJECT && node->assign.value->type == NODE_CALL &&
+                               node->assign.value->call.func->type == NODE_ATTRIBUTE &&
+                               node->assign.value->call.func->attribute.obj->type == NODE_NAME &&
+                               strcmp(node->assign.value->call.func->attribute.obj->name_expr.name, "memory") == 0 &&
+                               strcmp(node->assign.value->call.func->attribute.attr, "cast") == 0 &&
+                               node->assign.value->call.args.count == 2) {
+                        AstNode *type_arg = node->assign.value->call.args.items[1];
+                        if (type_arg->type == NODE_NAME) {
+                            class_name = type_arg->name_expr.name;
+                        }
                     }
                     scope_define_obj(cg->scope, node->assign.name, t, class_name);
                     write_indent(buf, indent);
-                    buf_printf(buf, "%s lp_%s", lp_type_to_c_obj(t, class_name), node->assign.name);
+                    /* Lambda: use __auto_type for function pointer inference */
+                    if (node->assign.value && node->assign.value->type == NODE_LAMBDA) {
+                        buf_printf(buf, "__auto_type lp_%s", node->assign.name);
+                    } else {
+                        buf_printf(buf, "%s lp_%s", lp_type_to_c_obj(t, class_name), node->assign.name);
+                    }
                     if (node->assign.value) {
                         buf_write(buf, " = ");
                         gen_expr(cg, buf, node->assign.value);
@@ -1165,10 +1530,23 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     buf_write(buf, ") {\n");
                 }
             } else {
-                write_indent(buf, indent);
-                buf_write(buf, "/* TODO: generic for loop */\n");
-                write_indent(buf, indent);
-                buf_write(buf, "{\n");
+                LpType iter_type = infer_type(cg, node->for_stmt.iter);
+                if (iter_type == LP_VAL) {
+                    scope_define(cg->scope, node->for_stmt.var, LP_VAL);
+                    write_indent(buf, indent);
+                    buf_write(buf, "for (int64_t __lp_i = 0; __lp_i < lp_val_len(");
+                    gen_expr(cg, buf, node->for_stmt.iter);
+                    buf_write(buf, "); __lp_i++) {\n");
+                    write_indent(buf, indent + 1);
+                    buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(", node->for_stmt.var);
+                    gen_expr(cg, buf, node->for_stmt.iter);
+                    buf_write(buf, ", __lp_i);\n");
+                } else {
+                    write_indent(buf, indent);
+                    buf_write(buf, "/* TODO: generic for loop */\n");
+                    write_indent(buf, indent);
+                    buf_write(buf, "{\n");
+                }
             }
             for (int i = 0; i < node->for_stmt.body.count; i++)
                 gen_stmt(cg, buf, node->for_stmt.body.items[i], indent + 1);
@@ -1186,6 +1564,45 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
             write_indent(buf, indent);
             buf_write(buf, "}\n");
             break;
+        case NODE_PARALLEL_FOR: {
+            /* Emit OpenMP parallel for pragma */
+            write_indent(buf, indent);
+            buf_write(buf, "#pragma omp parallel for\n");
+            /* Reuse NODE_FOR logic */
+            if (is_range_call(node->for_stmt.iter)) {
+                NodeList *args = &node->for_stmt.iter->call.args;
+                scope_define(cg->scope, node->for_stmt.var, LP_INT);
+                write_indent(buf, indent);
+                if (args->count == 1) {
+                    buf_printf(buf, "for (int64_t lp_%s = 0; lp_%s < ",
+                               node->for_stmt.var, node->for_stmt.var);
+                    gen_expr(cg, buf, args->items[0]);
+                    buf_printf(buf, "; lp_%s++) {\n", node->for_stmt.var);
+                } else if (args->count >= 2) {
+                    buf_printf(buf, "for (int64_t lp_%s = ", node->for_stmt.var);
+                    gen_expr(cg, buf, args->items[0]);
+                    buf_printf(buf, "; lp_%s < ", node->for_stmt.var);
+                    gen_expr(cg, buf, args->items[1]);
+                    if (args->count >= 3) {
+                        buf_printf(buf, "; lp_%s += ", node->for_stmt.var);
+                        gen_expr(cg, buf, args->items[2]);
+                    } else {
+                        buf_printf(buf, "; lp_%s++", node->for_stmt.var);
+                    }
+                    buf_write(buf, ") {\n");
+                }
+            } else {
+                write_indent(buf, indent);
+                buf_write(buf, "/* TODO: generic parallel for loop */\n");
+                write_indent(buf, indent);
+                buf_write(buf, "{\n");
+            }
+            for (int i = 0; i < node->for_stmt.body.count; i++)
+                gen_stmt(cg, buf, node->for_stmt.body.items[i], indent + 1);
+            write_indent(buf, indent);
+            buf_write(buf, "}\n");
+            break;
+        }
         case NODE_WITH: {
             write_indent(buf, indent);
             buf_write(buf, "{\n");
@@ -1311,27 +1728,123 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
     }
 }
 
-static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
-    LpType ret = node->func_def.ret_type ?
-                 type_from_annotation(node->func_def.ret_type) : LP_FLOAT; /* LP lacks full dynamic yet, default to float for sum */
+/* Infer function return type by scanning body for return statements */
+static LpType infer_return_type(CodeGen *cg, NodeList *body) {
+    for (int i = 0; i < body->count; i++) {
+        AstNode *stmt = body->items[i];
+        if (stmt->type == NODE_RETURN && stmt->return_stmt.value) {
+            LpType t = infer_type(cg, stmt->return_stmt.value);
+            if (t != LP_UNKNOWN) return t;
+        }
+        /* Check inside if-else blocks too */
+        if (stmt->type == NODE_IF) {
+            LpType t = infer_return_type(cg, &stmt->if_stmt.then_body);
+            if (t != LP_UNKNOWN) return t;
+        }
+    }
+    return LP_UNKNOWN;
+}
 
-    /* Find pre-registered function in parent scope */
-    Symbol *func_sym = scope_lookup(cg->scope, node->func_def.name);
-    if (!func_sym) {
-        func_sym = scope_define(cg->scope, node->func_def.name, ret);
-        if (func_sym) {
-            func_sym->is_variadic = 0;
-            func_sym->num_params = node->func_def.params.count;
-            func_sym->has_kwargs = 0;
-            for (int i = 0; i < node->func_def.params.count; i++) {
-                if (node->func_def.params.items[i].is_vararg) {
-                    func_sym->is_variadic = 1;
-                } else if (node->func_def.params.items[i].is_kwarg) {
-                    func_sym->has_kwargs = 1;
-                }
+static LpType infer_function_return_type(CodeGen *cg, AstNode *node) {
+    LpType ret;
+
+    if (node->func_def.ret_type) {
+        ret = type_from_annotation(cg, node->func_def.ret_type);
+    } else {
+        ret = infer_return_type(cg, &node->func_def.body);
+        if (ret == LP_UNKNOWN) ret = LP_VOID;
+    }
+
+    return ret;
+}
+
+static void populate_function_symbol(CodeGen *cg, Symbol *sym, AstNode *node, const char *owner_class) {
+    if (!sym || !node || node->type != NODE_FUNC_DEF) return;
+
+    sym->type = infer_function_return_type(cg, node);
+    sym->is_function = 1;
+    sym->is_variadic = 0;
+    sym->has_kwargs = 0;
+    sym->num_params = node->func_def.params.count;
+    sym->first_param_type = LP_UNKNOWN;
+    if (sym->first_param_class_name) {
+        free(sym->first_param_class_name);
+        sym->first_param_class_name = NULL;
+    }
+    sym->access = node->func_def.access;
+    if (sym->owner_class) {
+        free(sym->owner_class);
+        sym->owner_class = NULL;
+    }
+    sym->is_method = owner_class != NULL;
+    if (owner_class) {
+        sym->owner_class = strdup(owner_class);
+    }
+
+    for (int i = 0; i < node->func_def.params.count; i++) {
+        Param *p = &node->func_def.params.items[i];
+        LpType pt;
+
+        if (p->is_vararg) {
+            sym->is_variadic = 1;
+            continue;
+        }
+        if (p->is_kwarg) {
+            sym->has_kwargs = 1;
+            continue;
+        }
+
+        if (owner_class && strcmp(p->name, "self") == 0) {
+            pt = LP_OBJECT;
+        } else {
+            pt = type_from_annotation(cg, p->type_ann);
+            if (pt == LP_UNKNOWN) pt = LP_INT;
+        }
+
+        if (sym->first_param_type == LP_UNKNOWN) {
+            sym->first_param_type = pt;
+            if (pt == LP_OBJECT) {
+                const char *class_name = owner_class && strcmp(p->name, "self") == 0 ? owner_class : p->type_ann;
+                if (class_name) sym->first_param_class_name = strdup(class_name);
             }
         }
     }
+}
+
+static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
+    Symbol *func_sym = scope_lookup(cg->scope, node->func_def.name);
+    LpType ret;
+
+    if (!func_sym) {
+        func_sym = scope_define(cg->scope, node->func_def.name, LP_VOID);
+    }
+    populate_function_symbol(cg, func_sym, node, class_name);
+    ret = func_sym ? func_sym->type : infer_function_return_type(cg, node);
+
+    buf_printf(&cg->header, "%s lp_%s(", lp_type_to_c(ret), node->func_def.name);
+    for (int i = 0; i < node->func_def.params.count; i++) {
+        Param *p = &node->func_def.params.items[i];
+        if (i > 0) buf_write(&cg->header, ", ");
+        if (class_name && strcmp(p->name, "self") == 0) {
+            buf_printf(&cg->header, "LpObj_%s* lp_%s", class_name, p->name);
+        } else if (p->is_vararg) {
+            buf_printf(&cg->header, "LpArray lp_%s", p->name);
+        } else if (p->is_kwarg) {
+            buf_printf(&cg->header, "LpDict* lp_%s", p->name);
+        } else {
+            LpType pt = type_from_annotation(cg, p->type_ann);
+            if (pt == LP_UNKNOWN) pt = LP_INT;
+            if (pt == LP_OBJECT) {
+                buf_printf(&cg->header, "LpObj_%s* lp_%s", p->type_ann, p->name);
+            } else {
+                buf_printf(&cg->header, "%s lp_%s", lp_type_to_c(pt), p->name);
+            }
+        }
+    }
+    if (node->func_def.params.count == 0) {
+        buf_write(&cg->header, "void");
+    }
+    buf_write(&cg->header, ");\n");
 
     /* Function scope */
     Scope *func_scope = scope_new(cg->scope);
@@ -1353,10 +1866,15 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
             buf_printf(&cg->funcs, "LpDict* lp_%s", p->name);
             scope_define(func_scope, p->name, LP_DICT);
         } else {
-            LpType pt = type_from_annotation(p->type_ann);
+            LpType pt = type_from_annotation(cg, p->type_ann);
             if (pt == LP_UNKNOWN) pt = LP_INT;
-            buf_printf(&cg->funcs, "%s lp_%s", lp_type_to_c(pt), p->name);
-            scope_define(func_scope, p->name, pt);
+            if (pt == LP_OBJECT) {
+                buf_printf(&cg->funcs, "LpObj_%s* lp_%s", p->type_ann, p->name);
+                scope_define_obj(func_scope, p->name, pt, p->type_ann);
+            } else {
+                buf_printf(&cg->funcs, "%s lp_%s", lp_type_to_c(pt), p->name);
+                scope_define(func_scope, p->name, pt);
+            }
         }
     }
     buf_write(&cg->funcs, ") {\n");
@@ -1371,35 +1889,78 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
     cg->scope = func_scope->parent;
     scope_free(func_scope);
 }
-
 static void gen_class_def(CodeGen *cg, AstNode *node) {
-    /* 
-     * In Phase 3, a Python class translates to a C struct.
-     * We scan the class body for field assignments (e.g. name = "LP")
-     * and methods (def ...). 
-     */
     const char *class_name = node->class_def.name;
+    const char *base_class = node->class_def.base_class;
     
-    /* Register class in current scope */
-    scope_define(cg->scope, class_name, LP_CLASS);
+    Symbol *class_sym = scope_define(cg->scope, class_name, LP_CLASS);
+    if (class_sym && base_class) {
+        class_sym->base_class = strdup(base_class);
+    }
 
-    /* Collect fields for the struct */
     Buffer struct_def;
     buf_init(&struct_def);
     buf_printf(&struct_def, "typedef struct {\n");
     
+    if (base_class) {
+        for (Scope *sc = cg->scope; sc != NULL; sc = sc->parent) {
+            int initial_count = sc->count;
+            for (int i = 0; i < initial_count; i++) {
+                Symbol *sym = &sc->symbols[i];
+                size_t blen = strlen(base_class);
+                if (strncmp(sym->name, base_class, blen) == 0 && sym->name[blen] == '.') {
+                    char new_key[256];
+                    const char *dot = strchr(sym->name, '.');
+                    if (dot) {
+                        snprintf(new_key, sizeof(new_key), "%s%s", class_name, dot);
+                        Symbol *nsym = scope_define(cg->scope, new_key, sym->type);
+                        if (nsym) {
+                            nsym->access = sym->access;
+                            nsym->owner_class = sym->owner_class ? strdup(sym->owner_class) : NULL;
+                            nsym->is_method = sym->is_method;
+                            nsym->is_function = sym->is_function;
+                            nsym->is_variadic = sym->is_variadic;
+                            nsym->has_kwargs = sym->has_kwargs;
+                            nsym->num_params = sym->num_params;
+                            nsym->first_param_type = sym->first_param_type;
+                            if (sym->first_param_class_name) {
+                                nsym->first_param_class_name = strdup(sym->first_param_class_name);
+                            }
+                        }
+                        if (!sym->is_method) {
+                            buf_printf(&struct_def, "    %s lp_%s;\n", lp_type_to_c(sym->type), dot + 1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     for (int i = 0; i < node->class_def.body.count; i++) {
         AstNode *stmt = node->class_def.body.items[i];
         if (stmt->type == NODE_ASSIGN) {
-            LpType t = stmt->assign.type_ann ? type_from_annotation(stmt->assign.type_ann) : infer_type(cg, stmt->assign.value);
+            LpType t = stmt->assign.type_ann ? type_from_annotation(cg, stmt->assign.type_ann) : infer_type(cg, stmt->assign.value);
             if (t == LP_UNKNOWN) t = LP_INT;
             buf_printf(&struct_def, "    %s lp_%s;\n", lp_type_to_c(t), stmt->assign.name);
+            
+            /* Register field for access checking */
+            char field_key[256];
+            snprintf(field_key, sizeof(field_key), "%s.%s", class_name, stmt->assign.name);
+            Symbol *sym = scope_define(cg->scope, field_key, t);
+            if (sym) {
+                sym->access = stmt->assign.access;
+                sym->owner_class = strdup(class_name);
+                sym->is_method = 0;
+            }
         }
     }
     buf_printf(&struct_def, "} LpObj_%s;\n\n", class_name);
 
     /* Generate initialization function for the class */
     buf_printf(&struct_def, "static inline void %s_init(LpObj_%s* self) {\n", class_name, class_name);
+    if (base_class) {
+        buf_printf(&struct_def, "    %s_init((LpObj_%s*)self);\n", base_class, base_class);
+    }
     for (int i = 0; i < node->class_def.body.count; i++) {
         AstNode *stmt = node->class_def.body.items[i];
         if (stmt->type == NODE_ASSIGN) {
@@ -1414,13 +1975,24 @@ static void gen_class_def(CodeGen *cg, AstNode *node) {
     buf_write(&cg->header, struct_def.data);
     buf_free(&struct_def);
 
-    /* 
-     * Generate class methods 
-     * TBD Phase 3.2: We will pass `LpObj_Class* self` implicitly.
-     */
+    /* Generate class methods */
+    cg->current_class = (char*)malloc(strlen(class_name) + 1);
+    strcpy(cg->current_class, class_name);
+    
     for (int i = 0; i < node->class_def.body.count; i++) {
         AstNode *stmt = node->class_def.body.items[i];
         if (stmt->type == NODE_FUNC_DEF) {
+            /* Register method for access checking */
+            char method_key[256];
+            snprintf(method_key, sizeof(method_key), "%s.%s", class_name, stmt->func_def.name);
+            LpType rt = stmt->func_def.ret_type ? type_from_annotation(cg, stmt->func_def.ret_type) : LP_VOID;
+            Symbol *sym = scope_define(cg->scope, method_key, rt);
+            if (sym) {
+                sym->access = stmt->func_def.access;
+                sym->owner_class = strdup(class_name);
+                sym->is_method = 1;
+            }
+            
             /* Prefix method names with the class name */
             char method_name[256];
             snprintf(method_name, sizeof(method_name), "%s_%s", class_name, stmt->func_def.name);
@@ -1435,24 +2007,34 @@ static void gen_class_def(CodeGen *cg, AstNode *node) {
             stmt->func_def.name = old_name;
         }
     }
+    free(cg->current_class);
+    cg->current_class = NULL;
 }
 
 /* --- Public API --- */
 void codegen_init(CodeGen *cg) {
     buf_init(&cg->header);
+    buf_init(&cg->helpers);
     buf_init(&cg->funcs);
     buf_init(&cg->main_body);
     cg->scope = scope_new(NULL);
     cg->had_error = 0;
     cg->error_msg[0] = '\0';
+    cg->current_class = NULL;
     cg->import_count = 0;
     cg->uses_python = 0;
     cg->uses_native = 0;
     cg->uses_os = 0;
     cg->uses_sys = 0;
     cg->uses_strings = 0;
+    cg->uses_http = 0;
+    cg->uses_json = 0;
+    cg->uses_sqlite = 0;
+    cg->uses_thread = 0;
+    cg->uses_memory = 0;
+    cg->uses_platform = 0;
+    cg->thread_adapter_count = 0;
 }
-
 void codegen_generate(CodeGen *cg, AstNode *program) {
     buf_write(&cg->header, "/* Generated by LP Compiler */\n");
     buf_write(&cg->header, "#define LP_MAIN_FILE\n");
@@ -1474,6 +2056,12 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
             else if (strcmp(module, "os") == 0)       tier = MOD_TIER1_OS;
             else if (strcmp(module, "sys") == 0)      tier = MOD_TIER1_SYS;
             else if (strcmp(module, "string") == 0)   tier = MOD_TIER1_STRING;
+            else if (strcmp(module, "http") == 0)     tier = MOD_TIER1_HTTP;
+            else if (strcmp(module, "json") == 0)     tier = MOD_TIER1_JSON;
+            else if (strcmp(module, "sqlite") == 0)   tier = MOD_TIER1_SQLITE;
+            else if (strcmp(module, "thread") == 0)   tier = MOD_TIER1_THREAD;
+            else if (strcmp(module, "memory") == 0)   tier = MOD_TIER1_MEMORY;
+            else if (strcmp(module, "platform") == 0) tier = MOD_TIER1_PLATFORM;
             else                                     tier = MOD_TIER3_PYTHON;
 
             /* Register import */
@@ -1489,6 +2077,12 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
                 else if (tier == MOD_TIER1_OS) { cg->uses_native = 1; cg->uses_os = 1; }
                 else if (tier == MOD_TIER1_SYS) { cg->uses_native = 1; cg->uses_sys = 1; }
                 else if (tier == MOD_TIER1_STRING) { cg->uses_native = 1; cg->uses_strings = 1; }
+                else if (tier == MOD_TIER1_HTTP) { cg->uses_native = 1; cg->uses_http = 1; }
+                else if (tier == MOD_TIER1_JSON) { cg->uses_native = 1; cg->uses_json = 1; }
+                else if (tier == MOD_TIER1_SQLITE) { cg->uses_native = 1; cg->uses_sqlite = 1; }
+                else if (tier == MOD_TIER1_THREAD) { cg->uses_native = 1; cg->uses_thread = 1; }
+                else if (tier == MOD_TIER1_MEMORY) { cg->uses_native = 1; cg->uses_memory = 1; }
+                else if (tier == MOD_TIER1_PLATFORM) { cg->uses_native = 1; cg->uses_platform = 1; }
                 else cg->uses_native = 1;
             }
         }
@@ -1507,6 +2101,24 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
     if (cg->uses_strings) {
         buf_write(&cg->header, "#include \"lp_native_strings.h\"\n");
     }
+    if (cg->uses_http) {
+        buf_write(&cg->header, "#include \"lp_http.h\"\n");
+    }
+    if (cg->uses_json) {
+        buf_write(&cg->header, "#include \"lp_json.h\"\n");
+    }
+    if (cg->uses_sqlite) {
+        buf_write(&cg->header, "#include \"lp_sqlite.h\"\n");
+    }
+    if (cg->uses_thread) {
+        buf_write(&cg->header, "#include \"lp_thread.h\"\n");
+    }
+    if (cg->uses_memory) {
+        buf_write(&cg->header, "#include \"lp_memory.h\"\n");
+    }
+    if (cg->uses_platform) {
+        buf_write(&cg->header, "#include \"lp_platform.h\"\n");
+    }
     if (cg->uses_python) {
         buf_write(&cg->header, "#include \"lp_python.h\"\n");
     }
@@ -1516,23 +2128,12 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
     for (int i = 0; i < program->program.stmts.count; i++) {
         AstNode *stmt = program->program.stmts.items[i];
         if (stmt->type == NODE_FUNC_DEF) {
-            LpType ret = stmt->func_def.ret_type ? type_from_annotation(stmt->func_def.ret_type) : LP_VOID;
-            Symbol *func_sym = scope_define(cg->scope, stmt->func_def.name, ret);
+            Symbol *func_sym = scope_define(cg->scope, stmt->func_def.name, LP_VOID);
             if (func_sym) {
-                func_sym->is_variadic = 0;
-                func_sym->num_params = stmt->func_def.params.count;
-                func_sym->has_kwargs = 0;
-                for (int j = 0; j < stmt->func_def.params.count; j++) {
-                    if (stmt->func_def.params.items[j].is_vararg) {
-                        func_sym->is_variadic = 1;
-                    } else if (stmt->func_def.params.items[j].is_kwarg) {
-                        func_sym->has_kwargs = 1;
-                    }
-                }
+                populate_function_symbol(cg, func_sym, stmt, NULL);
             }
         }
     }
-
     /* Third pass: generate code */
     for (int i = 0; i < program->program.stmts.count; i++) {
         AstNode *stmt = program->program.stmts.items[i];
@@ -1548,11 +2149,56 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
     }
 }
 
+void codegen_generate_header(CodeGen *cg, AstNode *program, const char *header_path) {
+    FILE *f = fopen(header_path, "w");
+    if (!f) {
+        snprintf(cg->error_msg, sizeof(cg->error_msg), "Cannot open header path %s for writing", header_path);
+        cg->had_error = 1;
+        return;
+    }
+
+    fprintf(f, "#ifndef LP_EXPORTED_API_H\n");
+    fprintf(f, "#define LP_EXPORTED_API_H\n\n");
+    fprintf(f, "#include <stdint.h>\n\n");
+    fprintf(f, "#if defined(_WIN32)\n");
+    fprintf(f, "  #define LP_EXTERN __declspec(dllexport)\n");
+    fprintf(f, "#else\n");
+    fprintf(f, "  #define LP_EXTERN __attribute__((visibility(\"default\")))\n");
+    fprintf(f, "#endif\n\n");
+    fprintf(f, "#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n");
+
+    for (int i = 0; i < program->program.stmts.count; i++) {
+        AstNode *stmt = program->program.stmts.items[i];
+        if (stmt->type == NODE_FUNC_DEF) {
+            if (stmt->func_def.access == TOK_PRIVATE) continue;
+            if (stmt->func_def.name[0] == '_') continue; /* By convention, _ means private */
+
+            LpType ret = infer_function_return_type(cg, stmt);
+
+            fprintf(f, "LP_EXTERN %s lp_%s(", lp_type_to_c(ret), stmt->func_def.name);
+            for (int k = 0; k < stmt->func_def.params.count; k++) {
+                if (k > 0) fprintf(f, ", ");
+                LpType pt = stmt->func_def.params.items[k].type_ann ? 
+                    type_from_annotation(cg, stmt->func_def.params.items[k].type_ann) : LP_FLOAT;
+                fprintf(f, "%s lp_%s", lp_type_to_c(pt), stmt->func_def.params.items[k].name);
+            }
+            if (stmt->func_def.params.count == 0) {
+                fprintf(f, "void");
+            }
+            fprintf(f, ");\n");
+        }
+    }
+
+    fprintf(f, "\n#ifdef __cplusplus\n}\n#endif\n");
+    fprintf(f, "\n#endif /* LP_EXPORTED_API_H */\n");
+    fclose(f);
+}
+
 char *codegen_get_output(CodeGen *cg) {
     Buffer out;
     buf_init(&out);
     buf_write(&out, cg->header.data ? cg->header.data : "");
-    /* Forward declarations */
+    buf_write(&out, cg->helpers.data ? cg->helpers.data : "");
     buf_write(&out, cg->funcs.data ? cg->funcs.data : "");
     buf_write(&out, "int main(void) {\n");
 
@@ -1585,9 +2231,9 @@ char *codegen_get_output(CodeGen *cg) {
     buf_write(&out, "    return 0;\n}\n");
     return out.data;
 }
-
 void codegen_free(CodeGen *cg) {
     buf_free(&cg->header);
+    buf_free(&cg->helpers);
     buf_free(&cg->funcs);
     buf_free(&cg->main_body);
     if (cg->scope) scope_free(cg->scope);

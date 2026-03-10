@@ -1,0 +1,187 @@
+{
+  "Function Definition": {
+    "prefix": "def",
+    "body": [
+      "def ${1:name}(${2:params}) -> ${3:int}:",
+      "    ${0:pass}"
+    ],
+    "description": "Define a function"
+  },
+  "Function with Types": {
+    "prefix": "deft",
+    "body": [
+      "def ${1:name}(${2:x}: ${3:int}) -> ${4:int}:",
+      "    ${0:return $2}"
+    ],
+    "description": "Define a typed function"
+  },
+  "Class": {
+    "prefix": "class",
+    "body": [
+      "class ${1:Name}:",
+      "    ${2:attr} = ${3:0}",
+      "",
+      "    def ${4:method}(self):",
+      "        ${0:pass}"
+    ],
+    "description": "Define a class"
+  },
+  "Class with Inheritance": {
+    "prefix": "classi",
+    "body": [
+      "class ${1:Name}(${2:Parent}):",
+      "    def __init__(self, ${3:params}):",
+      "        ${0:pass}"
+    ],
+    "description": "Define a class with inheritance"
+  },
+  "If Statement": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition}:",
+      "    ${0}"
+    ],
+    "description": "If statement"
+  },
+  "If-Else": {
+    "prefix": "ife",
+    "body": [
+      "if ${1:condition}:",
+      "    ${2}",
+      "else:",
+      "    ${0}"
+    ],
+    "description": "If-else statement"
+  },
+  "If-Elif-Else": {
+    "prefix": "ifee",
+    "body": [
+      "if ${1:condition}:",
+      "    ${2}",
+      "elif ${3:condition}:",
+      "    ${4}",
+      "else:",
+      "    ${0}"
+    ],
+    "description": "If-elif-else statement"
+  },
+  "For Loop": {
+    "prefix": "for",
+    "body": [
+      "for ${1:i} in range(${2:n}):",
+      "    ${0}"
+    ],
+    "description": "For loop with range"
+  },
+  "While Loop": {
+    "prefix": "while",
+    "body": [
+      "while ${1:condition}:",
+      "    ${0}"
+    ],
+    "description": "While loop"
+  },
+  "Print": {
+    "prefix": "pr",
+    "body": "print(${1:\"$0\"})",
+    "description": "Print statement"
+  },
+  "Import": {
+    "prefix": "imp",
+    "body": "import ${0:module}",
+    "description": "Import module"
+  },
+  "Import As": {
+    "prefix": "impas",
+    "body": "import ${1:module} as ${0:alias}",
+    "description": "Import module with alias"
+  },
+  "Try-Except": {
+    "prefix": "try",
+    "body": [
+      "try:",
+      "    ${1}",
+      "except:",
+      "    ${0}"
+    ],
+    "description": "Try-except block"
+  },
+  "Try-Except-Finally": {
+    "prefix": "tryf",
+    "body": [
+      "try:",
+      "    ${1}",
+      "except:",
+      "    ${2}",
+      "finally:",
+      "    ${0}"
+    ],
+    "description": "Try-except-finally block"
+  },
+  "With Open": {
+    "prefix": "with",
+    "body": [
+      "with open(\"${1:file}\", \"${2:r}\") as ${3:f}:",
+      "    ${0}"
+    ],
+    "description": "Context manager with open"
+  },
+  "Variable Int": {
+    "prefix": "vi",
+    "body": "${1:name}: int = ${0:0}",
+    "description": "Integer variable"
+  },
+  "Variable Float": {
+    "prefix": "vf",
+    "body": "${1:name}: float = ${0:0.0}",
+    "description": "Float variable"
+  },
+  "Variable String": {
+    "prefix": "vs",
+    "body": "${1:name}: str = \"${0}\"",
+    "description": "String variable"
+  },
+  "Main Guard": {
+    "prefix": "main",
+    "body": [
+      "def main():",
+      "    ${0:pass}",
+      "",
+      "main()"
+    ],
+    "description": "Main function pattern"
+  },
+  "List Comprehension": {
+    "prefix": "lc",
+    "body": "[${1:x} for ${2:x} in ${3:10}]",
+    "description": "List comprehension"
+  },
+  "Lambda": {
+    "prefix": "lam",
+    "body": "lambda ${1:x}: ${0:x}",
+    "description": "Lambda expression"
+  },
+  "Assert": {
+    "prefix": "as",
+    "body": "assert ${1:condition}",
+    "description": "Assert statement"
+  },
+  "Parallel For": {
+    "prefix": "pfor",
+    "body": [
+      "parallel for ${1:i} in range(${2:n}):",
+      "    ${0}"
+    ],
+    "description": "Parallel for loop (multi-threaded)"
+  },
+  "Thread Spawn": {
+    "prefix": "thread",
+    "body": [
+      "import thread",
+      "",
+      "t = thread.spawn(${1:func}, ${0:args})",
+      "result = t.join()"
+    ],
+    "description": "Thread spawn and join"
+  }
+}

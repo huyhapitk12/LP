@@ -13,10 +13,10 @@ typedef struct {
     int count;
 } LpTuple;
 
-static inline LpTuple lp_tuple_new(int count) {
-    LpTuple t;
-    t.count = count;
-    t.items = (void **)calloc(count, sizeof(void *));
+static inline LpTuple* lp_tuple_new(int count) {
+    LpTuple *t = (LpTuple *)malloc(sizeof(LpTuple));
+    t->count = count;
+    t->items = (void **)calloc(count, sizeof(void *));
     return t;
 }
 
@@ -34,9 +34,9 @@ static inline void *lp_tuple_get(LpTuple *t, int index) {
 }
 
 static inline void lp_tuple_free(LpTuple *t) {
+    if (!t) return;
     free(t->items);
-    t->items = NULL;
-    t->count = 0;
+    free(t);
 }
 
 #endif

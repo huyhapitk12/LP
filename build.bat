@@ -15,6 +15,7 @@ if exist "C:\msys64\ucrt64\bin\gcc.exe" (
         compiler\src\ast.c ^
         compiler\src\parser.c ^
         compiler\src\codegen.c ^
+        compiler\src\repl.c ^
         -I compiler\src ^
         -I runtime ^
         -o build\lp.exe -lm

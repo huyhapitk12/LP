@@ -20,13 +20,16 @@ void buf_free(Buffer *b);
 typedef enum {
     LP_INT, LP_FLOAT, LP_STRING, LP_BOOL, LP_VOID,
     LP_PYOBJ, LP_ARRAY, LP_STR_ARRAY,
-    LP_DICT, LP_SET, LP_TUPLE, LP_FILE, LP_CLASS, LP_OBJECT, LP_UNKNOWN
+    LP_DICT, LP_SET, LP_TUPLE, LP_FILE, LP_CLASS, LP_OBJECT, LP_VAL, LP_SQLITE_DB,
+    LP_THREAD, LP_LOCK, LP_ARENA, LP_POOL, LP_PTR, LP_UNKNOWN
 } LpType;
 
 /* Module import tracking */
 typedef enum {
     MOD_TIER1_MATH, MOD_TIER1_RANDOM, MOD_TIER1_TIME,
     MOD_TIER1_OS, MOD_TIER1_SYS, MOD_TIER1_STRING,
+    MOD_TIER1_HTTP, MOD_TIER1_JSON, MOD_TIER1_SQLITE,
+    MOD_TIER1_THREAD, MOD_TIER1_MEMORY, MOD_TIER1_PLATFORM,
     MOD_TIER2_NUMPY,
     MOD_TIER3_PYTHON
 } ModTier;
@@ -42,9 +45,16 @@ typedef struct {
     LpType type;
     char *class_name; /* Only used if type == LP_OBJECT */
     int declared;
+    int is_function; /* True when symbol represents a function */
     int is_variadic; /* True if function accepts *args */
     int has_kwargs;  /* True if function accepts **kwargs */
     int num_params;  /* Number of total parameters defined */
+    LpType first_param_type; /* First positional parameter type for function metadata */
+    char *first_param_class_name; /* Class name when first_param_type == LP_OBJECT */
+    TokenType access;  /* TOK_PRIVATE, TOK_PROTECTED, or 0 (public) */
+    char *owner_class; /* Which class owns this member. NULL if global. */
+    char *base_class;  /* Parent class constraint if this symbol is an LP_CLASS */
+    int is_method;     /* True if the symbol is a class method rather than a field */
 } Symbol;
 
 typedef struct Scope Scope;
@@ -57,11 +67,13 @@ struct Scope {
 /* Code generator */
 typedef struct {
     Buffer header;    /* #include, forward decls */
+    Buffer helpers;   /* generated helper structs/wrappers */
     Buffer funcs;     /* function definitions */
-    Buffer main_body; /* top-level code → goes into main() */
+    Buffer main_body; /* top-level code goes into main() */
     Scope *scope;
     int had_error;
     char error_msg[512];
+    char *current_class; /* Name of the class currently being compiled (for access checks) */
     /* Module tracking */
     ImportInfo imports[64];
     int import_count;
@@ -70,10 +82,18 @@ typedef struct {
     int uses_os;      /* needs lp_native_os.h */
     int uses_sys;     /* needs lp_native_sys.h */
     int uses_strings; /* needs lp_native_strings.h */
+    int uses_http;    /* needs lp_http.h */
+    int uses_json;    /* needs lp_json.h */
+    int uses_sqlite;  /* needs lp_sqlite.h */
+    int uses_thread;  /* needs lp_thread.h */
+    int uses_memory;  /* needs lp_memory.h */
+    int uses_platform;/* needs lp_platform.h */
+    int thread_adapter_count;
 } CodeGen;
 
 void codegen_init(CodeGen *cg);
 void codegen_generate(CodeGen *cg, AstNode *program);
+void codegen_generate_header(CodeGen *cg, AstNode *program, const char *header_path);
 char *codegen_get_output(CodeGen *cg);  /* Returns full C source, caller frees */
 void codegen_free(CodeGen *cg);
 

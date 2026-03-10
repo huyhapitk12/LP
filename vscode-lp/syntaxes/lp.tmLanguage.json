@@ -1,0 +1,254 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "LP",
+  "scopeName": "source.lp",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#keywords" },
+    { "include": "#storage" },
+    { "include": "#constants" },
+    { "include": "#functions" },
+    { "include": "#classes" },
+    { "include": "#decorators" },
+    { "include": "#types" },
+    { "include": "#operators" },
+    { "include": "#numbers" },
+    { "include": "#builtins" },
+    { "include": "#variables" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.lp",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.triple.double.lp",
+          "begin": "\"\"\"",
+          "end": "\"\"\""
+        },
+        {
+          "name": "string.quoted.triple.single.lp",
+          "begin": "'''",
+          "end": "'''"
+        },
+        {
+          "name": "string.quoted.double.lp",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.lp",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.lp",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.lp",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.interpolated.lp",
+          "begin": "f\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.lp",
+              "match": "\\\\."
+            },
+            {
+              "name": "meta.embedded.expression.lp",
+              "begin": "\\{",
+              "end": "\\}",
+              "patterns": [
+                { "include": "#numbers" },
+                { "include": "#keywords" },
+                { "include": "#builtins" },
+                { "include": "#variables" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.flow.lp",
+          "match": "\\b(if|elif|else|for|while|break|continue|return|pass|yield)\\b"
+        },
+        {
+          "name": "keyword.control.import.lp",
+          "match": "\\b(import|from|as)\\b"
+        },
+        {
+          "name": "keyword.control.exception.lp",
+          "match": "\\b(try|except|finally|raise|with)\\b"
+        },
+        {
+          "name": "keyword.operator.logical.lp",
+          "match": "\\b(and|or|not|in|is)\\b"
+        },
+        {
+          "name": "keyword.other.lp",
+          "match": "\\b(parallel|async|await|const|struct|lambda)\\b"
+        },
+        {
+          "name": "keyword.access.lp",
+          "match": "\\b(private|protected)\\b"
+        },
+        {
+          "name": "keyword.memory.lp",
+          "match": "\\b(stack)\\b"
+        }
+      ]
+    },
+    "storage": {
+      "patterns": [
+        {
+          "name": "storage.type.function.lp",
+          "match": "\\b(def)\\b"
+        },
+        {
+          "name": "storage.type.class.lp",
+          "match": "\\b(class)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.true.lp",
+          "match": "\\bTrue\\b"
+        },
+        {
+          "name": "constant.language.boolean.false.lp",
+          "match": "\\bFalse\\b"
+        },
+        {
+          "name": "constant.language.none.lp",
+          "match": "\\bNone\\b"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "meta.function.definition.lp",
+          "match": "\\b(def)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(",
+          "captures": {
+            "1": { "name": "storage.type.function.lp" },
+            "2": { "name": "entity.name.function.lp" }
+          }
+        },
+        {
+          "name": "meta.function.call.lp",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(",
+          "captures": {
+            "1": { "name": "entity.name.function.call.lp" }
+          }
+        }
+      ]
+    },
+    "classes": {
+      "patterns": [
+        {
+          "name": "meta.class.definition.lp",
+          "match": "\\b(class)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.class.lp" },
+            "2": { "name": "entity.name.type.class.lp" }
+          }
+        }
+      ]
+    },
+    "decorators": {
+      "patterns": [
+        {
+          "name": "meta.decorator.lp",
+          "match": "@[a-zA-Z_][a-zA-Z0-9_]*",
+          "captures": {
+            "0": { "name": "entity.name.function.decorator.lp" }
+          }
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.lp",
+          "match": "\\b(int|float|str|bool|list|dict|set|tuple)\\b"
+        },
+        {
+          "name": "punctuation.separator.annotation.lp",
+          "match": "->"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.comparison.lp",
+          "match": "(==|!=|<=|>=|<|>)"
+        },
+        {
+          "name": "keyword.operator.assignment.augmented.lp",
+          "match": "(\\+=|-=|\\*=|/=)"
+        },
+        {
+          "name": "keyword.operator.assignment.lp",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.arithmetic.lp",
+          "match": "(\\+|-|\\*\\*|\\*|//|/|%)"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.lp",
+          "match": "\\b[0-9]+\\.[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.lp",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.lp",
+          "match": "\\b(print|len|range|input|type|abs|min|max|sum|sorted|reversed|enumerate|zip|map|filter|open|assert)\\b"
+        },
+        {
+          "name": "variable.language.self.lp",
+          "match": "\\bself\\b"
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        {
+          "name": "variable.other.lp",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    }
+  }
+}
