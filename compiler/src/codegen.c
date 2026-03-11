@@ -1250,29 +1250,29 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
             }
 
             /* Generate the lambda function definition */
-            buf_printf(&cg->funcs, "static %s %s(", lp_type_to_c(body_ret), fname);
+            buf_printf(&cg->helpers, "static %s %s(", lp_type_to_c(body_ret), fname);
             for (int i = 0; i < node->lambda_expr.params.count; i++) {
-                if (i > 0) buf_write(&cg->funcs, ", ");
+                if (i > 0) buf_write(&cg->helpers, ", ");
                 Param *lp = &node->lambda_expr.params.items[i];
                 LpType pt = lp->type_ann ? type_from_annotation(cg, lp->type_ann) : LP_FLOAT;
-                buf_printf(&cg->funcs, "%s lp_%s", lp_type_to_c(pt), lp->name);
+                buf_printf(&cg->helpers, "%s lp_%s", lp_type_to_c(pt), lp->name);
             }
             if (node->lambda_expr.params.count == 0) {
-                buf_write(&cg->funcs, "void");
+                buf_write(&cg->helpers, "void");
             }
-            buf_write(&cg->funcs, ") {\n");
+            buf_write(&cg->helpers, ") {\n");
 
             if (node->lambda_expr.is_multiline) {
                 /* Multiline lambda: generate full body */
                 for (int i = 0; i < node->lambda_expr.body_stmts.count; i++)
-                    gen_stmt(cg, &cg->funcs, node->lambda_expr.body_stmts.items[i], 1);
+                    gen_stmt(cg, &cg->helpers, node->lambda_expr.body_stmts.items[i], 1);
             } else {
                 /* Single expression lambda */
-                buf_write(&cg->funcs, "    return ");
-                gen_expr(cg, &cg->funcs, node->lambda_expr.body);
-                buf_write(&cg->funcs, ";\n");
+                buf_write(&cg->helpers, "    return ");
+                gen_expr(cg, &cg->helpers, node->lambda_expr.body);
+                buf_write(&cg->helpers, ";\n");
             }
-            buf_write(&cg->funcs, "}\n\n");
+            buf_write(&cg->helpers, "}\n\n");
 
             /* Emit the function name as the expression */
             buf_write(buf, fname);
