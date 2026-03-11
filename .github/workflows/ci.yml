@@ -4,13 +4,17 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build-and-smoke:
+    name: Host build and smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: [windows-latest, ubuntu-24.04, macos-15]
 
     steps:
       - name: Checkout
@@ -73,3 +77,72 @@ jobs:
         shell: cmd
         run: build\lp.exe test examples
 
+      - name: Regression Tests (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: ./build/lp test examples
+
+  cross-target-verify:
+    name: Cross-target verify (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: windows-x64
+            artifact: ci-cross-windows-x64.exe
+            expected_pattern: 'PE32\+ executable .* x86-64'
+          - os: ubuntu-24.04
+            target: linux-x64
+            artifact: ci-cross-linux-x64
+            expected_pattern: 'ELF 64-bit .* x86-64'
+          - os: ubuntu-24.04
+            target: linux-arm64
+            artifact: ci-cross-linux-arm64
+            expected_pattern: 'ELF 64-bit .* ARM aarch64'
+          - os: macos-15
+            target: macos-arm64
+            artifact: ci-cross-macos-arm64
+            expected_pattern: 'Mach-O 64-bit executable arm64'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Cross Toolchains (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            gcc-x86-64-linux-gnu \
+            gcc-aarch64-linux-gnu \
+            gcc-mingw-w64-x86-64 \
+            file
+
+      - name: Install macOS target shim
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p "$RUNNER_TEMP/toolchain-bin"
+          cat > "$RUNNER_TEMP/toolchain-bin/aarch64-apple-darwin-gcc" <<'EOF'
+          #!/usr/bin/env bash
+          exec clang -arch arm64 "$@"
+          EOF
+          chmod +x "$RUNNER_TEMP/toolchain-bin/aarch64-apple-darwin-gcc"
+          echo "$RUNNER_TEMP/toolchain-bin" >> "$GITHUB_PATH"
+
+      - name: Build host compiler
+        run: make
+
+      - name: Verify cross-target build output
+        shell: bash
+        run: |
+          cat > ci_cross.lp <<'EOF'
+          print(42)
+          EOF
+
+          ./build/lp build ci_cross.lp --target "${{ matrix.target }}" -o "${{ matrix.artifact }}"
+          test -f "${{ matrix.artifact }}"
+
+          file "${{ matrix.artifact }}" | tee ci_cross_file.txt
+          grep -E "${{ matrix.expected_pattern }}" ci_cross_file.txt
