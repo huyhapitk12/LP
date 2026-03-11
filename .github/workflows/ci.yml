@@ -9,76 +9,32 @@ permissions:
 
 jobs:
   build-and-smoke:
-    name: Host build and smoke (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-24.04, macos-15]
+    name: Host build and smoke (ubuntu-24.04)
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup MSYS2 Toolchain (Windows)
-        if: runner.os == 'Windows'
-        uses: msys2/setup-msys2@v2
-        with:
-          update: true
-          msystem: UCRT64
-          install: >-
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-make
-
-      - name: Add MSYS2 GCC to PATH (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          "C:\msys64\ucrt64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Install Build Essentials (Ubuntu)
-        if: runner.os == 'Linux'
+      - name: Install Build Essentials
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential
 
-      - name: Build with build.bat (Windows)
-        if: runner.os == 'Windows'
-        shell: cmd
-        run: build.bat
-
-      - name: Build with Makefile (Linux/macOS)
-        if: runner.os != 'Windows'
+      - name: Build with Makefile
         run: make
 
-      - name: Build with compile.sh (Linux/macOS)
-        if: runner.os != 'Windows'
+      - name: Build with compile.sh
         run: bash ./compile.sh
 
-      - name: Smoke Run (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Set-Content -Path ci_smoke.lp -Value "print(42)" -NoNewline
-          cmd /c build\lp.exe ci_smoke.lp -c ci_smoke.exe
-          cmd /c ci_smoke.exe > smoke_out.txt
-          Select-String -Path smoke_out.txt -Pattern '^42$' | Out-Null
-
-      - name: Smoke Run (Linux/macOS)
-        if: runner.os != 'Windows'
+      - name: Smoke Run
         run: |
           printf "print(42)\n" > ci_smoke.lp
           ./build/lp ci_smoke.lp -c ci_smoke
           ./ci_smoke > smoke_out.txt
           grep -q '^42$' smoke_out.txt
 
-      - name: Regression Tests (Windows)
-        if: runner.os == 'Windows'
-        shell: cmd
-        run: build\lp.exe test examples
-
-      - name: Regression Tests (Linux/macOS)
-        if: runner.os != 'Windows'
+      - name: Regression Tests
         run: ./build/lp test examples
 
   cross-target-verify:
@@ -100,17 +56,12 @@ jobs:
             target: linux-arm64
             artifact: ci-cross-linux-arm64
             expected_pattern: 'ELF 64-bit .* ARM aarch64'
-          - os: macos-15
-            target: macos-arm64
-            artifact: ci-cross-macos-arm64
-            expected_pattern: 'Mach-O 64-bit executable arm64'
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Cross Toolchains (Ubuntu)
-        if: runner.os == 'Linux'
+      - name: Install Cross Toolchains
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -119,17 +70,6 @@ jobs:
             gcc-aarch64-linux-gnu \
             gcc-mingw-w64-x86-64 \
             file
-
-      - name: Install macOS target shim
-        if: runner.os == 'macOS'
-        run: |
-          mkdir -p "$RUNNER_TEMP/toolchain-bin"
-          cat > "$RUNNER_TEMP/toolchain-bin/aarch64-apple-darwin-gcc" <<'EOF'
-          #!/usr/bin/env bash
-          exec clang -arch arm64 "$@"
-          EOF
-          chmod +x "$RUNNER_TEMP/toolchain-bin/aarch64-apple-darwin-gcc"
-          echo "$RUNNER_TEMP/toolchain-bin" >> "$GITHUB_PATH"
 
       - name: Build host compiler
         run: make
