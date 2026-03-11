@@ -1,24 +1,18 @@
-# Parallel Processing demonstration
 import math
-import thread
 
-def compute(idx: int) -> float:
-    # A heavy calculation isolated
-    res: float = math.sin(idx * 0.1) * math.cos(idx * 0.2)
-    return res
+def analyze_sample(sample_id: int) -> float:
+    baseline: float = math.sin(sample_id * 0.01)
+    smoothing: float = math.cos(sample_id * 0.015)
+    return baseline * smoothing
 
 def main():
-    print("Beginning 10,000,000 iteration computation")
-    
-    total: float = 0.0
-    
-    # Leverages Native Backend OpenMP Pragmas instantly scaling across CPU Hardware threads
-    parallel for i in range(10000000):
-        val: float = compute(i)
-        
-        # Parallel reductions aren't atomic automatically in LP right now, 
-        # but the looping structure natively maps to #pragma openmp parallel.
-        
-    print("Parallel processing complete!")
+    print("Processing one million independent samples...")
+
+    # This pattern is good for work items that do not need a shared accumulator.
+    # If you need reductions, aggregate explicitly after the loop.
+    parallel for sample_id in range(1000000):
+        analyze_sample(sample_id)
+
+    print("Finished sample processing.")
 
 main()

@@ -44,6 +44,10 @@ typedef struct {
 struct AstNode {
     NodeType type;
     int line;
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
     union {
         struct { NodeList stmts; } program;
         struct { char *name; ParamList params; char *ret_type; NodeList body; TokenType access; } func_def;
@@ -89,6 +93,9 @@ struct AstNode {
         /* Yield */
         struct { AstNode *value; } yield_expr;
     };
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 };
 
 /* NodeList helpers */

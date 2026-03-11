@@ -5,7 +5,8 @@
 #   make install  Install to /usr/local/bin (Linux/macOS)
 
 CC      ?= gcc
-CFLAGS  := -std=c99 -O2 -Wall
+WARNFLAGS ?= -Wall -Wextra -Wpedantic
+CFLAGS  := -std=c99 -O2 $(WARNFLAGS)
 LDFLAGS := -lm
 
 SRC_DIR := compiler/src

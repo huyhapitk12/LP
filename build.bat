@@ -4,12 +4,13 @@ REM Usage: build.bat
 
 echo [LP Build] Compiling LP compiler...
 if not exist "build" mkdir build
+set "CFLAGS=-std=c99 -O2 -Wall -Wextra -Wpedantic"
 
 REM Try MSYS2 UCRT64 GCC
 if exist "C:\msys64\ucrt64\bin\gcc.exe" (
     echo [LP Build] Using MSYS2 UCRT64 GCC...
     set "PATH=C:\msys64\ucrt64\bin;%PATH%"
-    gcc -std=c99 -O2 -Wall ^
+    gcc %CFLAGS% ^
         compiler\src\main.c ^
         compiler\src\lexer.c ^
         compiler\src\ast.c ^

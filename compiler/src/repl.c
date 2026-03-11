@@ -11,10 +11,99 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
 #include <process.h>
+#else
+#include <stdarg.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <errno.h>
+#endif
 #include "parser.h"
 #include "codegen.h"
 #include "repl.h"
+
+#if defined(_WIN32)
+#define LP_NULL_REDIRECT ">nul 2>&1"
+#define LP_HOST_EXE_EXT ".exe"
+#define LP_PATH_SEP_STR "\\"
+#else
+#define LP_NULL_REDIRECT ">/dev/null 2>&1"
+#define LP_HOST_EXE_EXT ""
+#define LP_PATH_SEP_STR "/"
+#endif
+
+#ifndef _WIN32
+#ifndef _P_WAIT
+#define _P_WAIT 0
+#endif
+
+static int lp_has_path_sep(const char *s) {
+    return s && (strchr(s, '/') != NULL || strchr(s, '\\') != NULL);
+}
+
+static int lp_wait_pid(pid_t pid) {
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno == EINTR) continue;
+        return -1;
+    }
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    return 1;
+}
+
+static void lp_exec_fallback(const char *file, char *const argv[], int search_path) {
+    if (search_path) execvp(file, argv);
+    else execv(file, argv);
+
+    if (!lp_has_path_sep(file)) {
+        char local_path[1024];
+        if (snprintf(local_path, sizeof(local_path), "./%s", file) > 0) {
+            execv(local_path, argv);
+        }
+    }
+    _exit(127);
+}
+
+static int _spawnv(int mode, const char *path, const char *const argv[]) {
+    pid_t pid;
+    (void)mode;
+    pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) lp_exec_fallback(path, (char *const *)argv, 0);
+    return lp_wait_pid(pid);
+}
+
+static int _spawnvp(int mode, const char *file, const char *const argv[]) {
+    pid_t pid;
+    (void)mode;
+    pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) lp_exec_fallback(file, (char *const *)argv, 1);
+    return lp_wait_pid(pid);
+}
+
+static int _spawnl(int mode, const char *path, const char *arg0, ...) {
+    const char *arg;
+    const char *argv[128];
+    int argc = 0;
+    va_list ap;
+
+    argv[argc++] = arg0;
+    va_start(ap, arg0);
+    while (argc < 127) {
+        arg = va_arg(ap, const char *);
+        if (!arg) break;
+        argv[argc++] = arg;
+    }
+    va_end(ap);
+    argv[argc] = NULL;
+
+    if (lp_has_path_sep(path)) return _spawnv(mode, path, argv);
+    return _spawnvp(mode, path, argv);
+}
+#endif
 
 /* ─── ANSI color codes ─── */
 #define C_RESET   "\033[0m"
@@ -31,6 +120,43 @@ typedef struct {
     int len;
     int cap;
 } ReplBuf;
+
+static int repl_copy_str(char *dst, size_t dst_size, const char *src) {
+    size_t len;
+    if (!dst || dst_size == 0 || !src) return 0;
+    len = strlen(src);
+    if (len >= dst_size) {
+        memcpy(dst, src, dst_size - 1);
+        dst[dst_size - 1] = '\0';
+        return 0;
+    }
+    memcpy(dst, src, len + 1);
+    return 1;
+}
+
+static int repl_append_str(char *dst, size_t dst_size, const char *suffix) {
+    size_t used, add;
+    if (!dst || dst_size == 0 || !suffix) return 0;
+    used = strlen(dst);
+    add = strlen(suffix);
+    if (used >= dst_size) return 0;
+    if (used + add >= dst_size) {
+        size_t room = dst_size - used - 1;
+        if (room > 0) memcpy(dst + used, suffix, room);
+        dst[dst_size - 1] = '\0';
+        return 0;
+    }
+    memcpy(dst + used, suffix, add + 1);
+    return 1;
+}
+
+static int repl_join2(char *dst, size_t dst_size, const char *a, const char *b) {
+    return repl_copy_str(dst, dst_size, a) && repl_append_str(dst, dst_size, b);
+}
+
+static int repl_make_include_flag(char *dst, size_t dst_size, const char *runtime_inc) {
+    return repl_join2(dst, dst_size, "-I", runtime_inc);
+}
 
 static void rbuf_init(ReplBuf *b) {
     b->cap = 4096;
@@ -58,17 +184,27 @@ static void rbuf_free(ReplBuf *b) {
 
 /* ─── GCC finder (same logic as main.c) ─── */
 static const char *repl_find_gcc(void) {
+#ifdef _WIN32
     FILE *f = fopen("C:\\msys64\\ucrt64\\bin\\gcc.exe", "rb");
     if (f) {
         fclose(f);
         const char *old = getenv("PATH");
-        char *new_path = (char *)malloc(strlen(old ? old : "") + 100);
-        sprintf(new_path, "PATH=C:\\msys64\\ucrt64\\bin;%s", old ? old : "");
+        size_t cap = strlen(old ? old : "") + 100;
+        char *new_path = (char *)malloc(cap);
+        if (!new_path) return "C:\\msys64\\ucrt64\\bin\\gcc.exe";
+        snprintf(new_path, cap, "PATH=C:\\msys64\\ucrt64\\bin;%s", old ? old : "");
         _putenv(new_path);
         free(new_path);
         return "C:\\msys64\\ucrt64\\bin\\gcc.exe";
     }
-    if (system("gcc --version >nul 2>&1") == 0) return "gcc";
+#endif
+    {
+        char cmd[256];
+        snprintf(cmd, sizeof(cmd), "gcc --version %s", LP_NULL_REDIRECT);
+        if (system(cmd) == 0) return "gcc";
+        snprintf(cmd, sizeof(cmd), "cc --version %s", LP_NULL_REDIRECT);
+        if (system(cmd) == 0) return "cc";
+    }
     return NULL;
 }
 
@@ -88,23 +224,24 @@ static int repl_find_runtime(const char *argv0, char *out, int outsize) {
 
     /* Try relative: ../runtime */
     char try_path[600];
-    snprintf(try_path, sizeof(try_path), "%s\\..\\runtime\\lp_runtime.h", exe_dir);
+    if (!repl_join2(try_path, sizeof(try_path), exe_dir, LP_PATH_SEP_STR ".." LP_PATH_SEP_STR "runtime" LP_PATH_SEP_STR "lp_runtime.h")) {
+        return 0;
+    }
     FILE *rf = fopen(try_path, "r");
     if (rf) {
         fclose(rf);
-        snprintf(out, outsize, "%s\\..\\runtime", exe_dir);
-        return 1;
+        return repl_join2(out, (size_t)outsize, exe_dir, LP_PATH_SEP_STR ".." LP_PATH_SEP_STR "runtime");
     }
 
     /* Try known paths */
-    const char *candidates[] = { "d:\\LP\\runtime", "d:/LP/runtime" };
-    for (int i = 0; i < 2; i++) {
-        snprintf(try_path, sizeof(try_path), "%s\\lp_runtime.h", candidates[i]);
+    const char *candidates[] = { "runtime", "./runtime", "d:\\LP\\runtime", "d:/LP/runtime" };
+    for (int i = 0; i < 4; i++) {
+        if (!repl_join2(try_path, sizeof(try_path), candidates[i], LP_PATH_SEP_STR "lp_runtime.h")) continue;
         rf = fopen(try_path, "r");
-        if (rf) { fclose(rf); snprintf(out, outsize, "%s", candidates[i]); return 1; }
+        if (rf) { fclose(rf); return repl_copy_str(out, (size_t)outsize, candidates[i]); }
         snprintf(try_path, sizeof(try_path), "%s/lp_runtime.h", candidates[i]);
         rf = fopen(try_path, "r");
-        if (rf) { fclose(rf); snprintf(out, outsize, "%s", candidates[i]); return 1; }
+        if (rf) { fclose(rf); return repl_copy_str(out, (size_t)outsize, candidates[i]); }
     }
     return 0;
 }
@@ -181,9 +318,24 @@ static int repl_eval(const char *source, const char *gcc, const char *runtime_in
 
     /* Compile */
     char inc_flag[600];
-    snprintf(inc_flag, sizeof(inc_flag), "-I%s", runtime_inc);
+    if (!repl_make_include_flag(inc_flag, sizeof(inc_flag), runtime_inc)) {
+        fprintf(stderr, C_RED "  Include path too long" C_RESET "\n");
+        remove(tmp_c);
+        free(c_code);
+        codegen_free(&cg);
+        ast_free(program);
+        return -1;
+    }
 
-    const char *exe_path = "__lp_repl.exe";
+    char exe_path[64];
+    if (!repl_join2(exe_path, sizeof(exe_path), "__lp_repl", LP_HOST_EXE_EXT)) {
+        fprintf(stderr, C_RED "  Output path too long" C_RESET "\n");
+        remove(tmp_c);
+        free(c_code);
+        codegen_free(&cg);
+        ast_free(program);
+        return -1;
+    }
     int ret = (int)_spawnl(_P_WAIT, gcc, "gcc",
         "-std=c99", "-O2", "-w", tmp_c, inc_flag, "-o", exe_path, "-lm", NULL);
 
@@ -313,8 +465,7 @@ int repl_run(const char *argv0) {
     snprintf(prompt_main, sizeof(prompt_main), C_GREEN C_BOLD ">>> " C_RESET);
     snprintf(prompt_cont, sizeof(prompt_cont), C_YELLOW "... " C_RESET);
 
-    int running = 1;
-    while (running) {
+    while (1) {
         char *line = read_line(prompt_main);
         if (!line) { /* EOF (Ctrl+Z on Windows) */
             printf("\n");
@@ -415,4 +566,3 @@ int repl_run(const char *argv0) {
     rbuf_free(&accumulated);
     return 0;
 }
-

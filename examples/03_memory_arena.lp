@@ -1,30 +1,45 @@
-# Performance Memory Parsing Engine
 import memory
-import math
 
 class Particle:
+    id: int = 0
     velocity: float = 0.0
-    life: int = 10
+    life: int = 0
 
-def simulate_particle(p_ptr: ptr) -> float:
-    # Memory blocks are mutated explicitly 
-    p = memory.cast(p_ptr, Particle)
-    p.life = p.life - 1
-    p.velocity = p.velocity * 1.5
-    return p.velocity
+def init_particle(slot: ptr, particle_id: int, velocity: float, life: int) -> int:
+    particle = memory.cast(slot, Particle)
+    particle.id = particle_id
+    particle.velocity = velocity
+    particle.life = life
+    return particle.id
+
+def tick_particle(slot: ptr) -> float:
+    particle = memory.cast(slot, Particle)
+    particle.life = particle.life - 1
+    particle.velocity = particle.velocity * 1.1
+    return particle.velocity
 
 def main():
-    print("Instantiating memory Arena!")
-    
-    # Grabs 100kb OS Memory Region for instant evaluations
-    arena: ptr = memory.arena_new(102400)
-    
-    # Populate the arena with Particle structs instantly without Garbage delays 
-    p1: ptr = memory.arena_alloc(arena, 16) # Allocate size footprint manually
-    
-    # Memory blocks get completely cleared manually at the end!
+    print("Allocating a frame arena...")
+
+    arena: ptr = memory.arena_new(256)
+
+    p1: ptr = memory.arena_alloc(arena, 16)
+    p2: ptr = memory.arena_alloc(arena, 16)
+
+    init_particle(p1, 1, 3.5, 5)
+    init_particle(p2, 2, 1.75, 4)
+
+    print(tick_particle(p1))
+    print(tick_particle(p2))
+
+    print("Resetting arena for the next frame.")
+    memory.arena_reset(arena)
+
+    p3: ptr = memory.arena_alloc(arena, 16)
+    init_particle(p3, 3, 9.0, 2)
+    print(tick_particle(p3))
+
     memory.arena_free(arena)
-    
-    print("Wiped Arena buffers without GC latency!")
+    print("Arena released.")
 
 main()

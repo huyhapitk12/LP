@@ -38,10 +38,17 @@ typedef struct {
     const char *start;
     int length;
     int line;
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
     union {
         int64_t int_val;
         double float_val;
     };
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 } Token;
 
 typedef struct {
