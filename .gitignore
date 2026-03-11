@@ -21,3 +21,12 @@ Thumbs.db
 *.log
 __pycache__/
 *.pyc
+
+# LP smoke/regression temp artifacts
+tmp_*
+watch_*.txt
+test_http_gen.c
+*.db-shm
+*.db-wal
+__lp_*.c
+__lp_*.exe

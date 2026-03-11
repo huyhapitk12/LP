@@ -1,123 +1,129 @@
-<div align="center">
-  <h1>🚀 LP Language</h1>
-  <p><b>Python Syntax • C Performance • Modern Systems Programming</b></p>
-</div>
+# LP Language
 
-**LP** is a high-performance, statically typed programming language that bridges the gap between Python's developer-friendly syntax and C's raw execution speed. By transpiling LP code to heavily optimized C and leveraging GCC `-O3` along with OpenMP, LP delivers highly optimized low-level machine code that scales efficiently across all your CPU cores.
+LP is a statically typed language with a Python-like surface syntax and a native C compilation pipeline. The compiler parses `.lp` source, generates C, and then uses a host toolchain to build a native executable.
 
-## ⚡ Performance Benchmarks
+This repository now uses a documentation layout with three goals:
 
-LP consistently offers dramatic speed improvements over interpreted languages like Python, often matching or exceeding standard C/C++ deployments thanks to its zero-overhead JIT compilation model and aggressively tuned backend.
+- teach LP from zero
+- document the real compiler and runtime behavior that exists today
+- call out partial, unsupported, and platform-specific behavior clearly
 
-| Benchmark Suite         | LP (Native) | Python 3 | Speedup Factor |
-| ----------------------- | ----------- | -------- | -------------- |
-| **Fibonacci (40)**      | `0.000s`    | `0.005s` | **∞***         |
-| **Sum of Squares (10M)**| `0.010s`    | `3.34s`  | **334x**       |
-| **Loop (100M)**         | `0.005s`    | `3.58s`  | **715x**       |
+## Highlights
 
-*(Numbers captured natively on an Intel x86_64 architecture with GCC `-O3` optimizations)*
+- Python-like syntax for `def`, `class`, `if`, `for`, `while`, `import`, and exceptions.
+- Native modules for `math`, `random`, `time`, `os`, `sys`, `http`, `json`, `sqlite`, `thread`, `memory`, and `platform`.
+- Compile-time checked `private` and `protected` members.
+- Built-in REPL, test runner, profiler, watch mode, build, package, and C API export commands.
+- Cross-target entrypoints for `windows-x64`, `linux-x64`, `linux-arm64`, and `macos-arm64`.
 
-## ✨ Key Technical Features
+## Requirements
 
-- **Blazing Fast Concurrency** — Native `parallel for` loops that map directly to OpenMP, instantly scaling across CPU hardware threads. Wait-free scaling made trivial.
-- **System-Level & Web Ready** — First-class integration for modern needs including HTTP fetching (`import http`), JSON parsing, SQLite databases (`import sqlite`), and OS-level APIs (`import platform`).
-- **Python-Compatible Syntax** — Write code with familiar paradigms: `def`, `class`, `for`, `if`, `import`, list comprehensions, `try/except/finally`.
-- **First-Class OOP** — Intuitive Object-Oriented Programming with classes, attributes, methods, and inheritance (e.g., `class Player(Entity)`).
-- **Hardened Memory & Multithreading** — Specialized memory arenas and native thread spawning/joining (`thread.spawn()`).
+- Windows: MSYS2 UCRT64 GCC is the supported local build path.
+- Linux: a system C compiler such as GCC.
+- macOS: Xcode Command Line Tools or another GCC-compatible toolchain.
 
-## 💻 Quick Start & Real-World Examples
+## Build The Compiler
 
-Experience scaling across CPU cores effortlessly:
-
-```python
-# parallel_demo.lp
-import math
-import thread
-
-def compute(idx: int) -> float:
-    return math.sin(idx * 0.1) * math.cos(idx * 0.2)
-
-def main():
-    print("Beginning 10,000,000 iteration computation")
-    
-    # Leverages Native Backend OpenMP Pragmas instantly scaling across CPU Hardware threads
-    parallel for i in range(10000000):
-        val: float = compute(i)
-        
-    print("Parallel processing complete!")
-
-main()
-```
-
-### Advanced System capabilities:
-
-```python
-# system_demo.lp
-import platform
-import sqlite
-
-def main():
-    os: val = platform.os()
-    cores: int = platform.cores()
-    
-    print("Initializing Database on " + os + " with " + str(cores) + " cores...")
-    db: sqlite_db = sqlite.connect("system.db")
-    
-    sqlite.execute(db, "CREATE TABLE IF NOT EXISTS sys_logs (os TEXT, cores INTEGER);")
-    sqlite.execute(db, "INSERT INTO sys_logs (os, cores) VALUES ('" + os + "', " + str(cores) + ");")
-    
-    print("Database persisted entries correctly.")
-
-main()
-```
-
-## 📦 Building & Running
-
-### Requirements
-- GCC (via MSYS2/MinGW on Windows, or system GCC on Linux/macOS)
-
-### Compiling the LP Compiler
 ```bash
 # Windows
 build.bat
 
-# Linux / macOS
+# POSIX shell path
+./compile.sh
+
+# Generic make path
 make
 ```
 
-### Using LP
+## Quick Start
+
+Create `hello.lp`:
+
+```lp
+def main():
+    print("Hello from LP")
+
+main()
+```
+
+Run it with the repo build output:
+
 ```bash
-# Add the build directory to PATH, then you can:
-lp your_file.lp          # Run directly (JIT-like transparency)
-lp your_file.lp -o out.c # Transpile to C source only
-lp your_file.lp -c out   # Compile fully to a native executable
+# Windows
+build\lp.exe hello.lp
+
+# Linux or macOS
+./build/lp hello.lp
 ```
 
-## 📁 Project Structure
+Generate C only:
 
-```text
-LP/
-├── compiler/src/    # Compiler architecture (Lexer, Parser, AST, Codegen)
-├── runtime/         # High-density C Runtime (OpenMP, HTTP, SQLite, Memory Arenas)
-├── examples/        # Real-world LP implementations (Web Servers, Physics, Games)
-├── docs/            # Comprehensive Language Specification & API references
-├── build.bat        # Windows build deployment
-├── compile.sh       # Linux build deployment
-└── Makefile         # Cross-platform build definitions
+```bash
+lp hello.lp -o hello.c
 ```
 
-## 📚 Documentation
+Compile a native executable:
 
-Dive into our comprehensive guides to mastering the LP language:
-- [01. Getting Started](docs/01_Getting_Started.md)
-- [02. Syntax and Semantics](docs/02_Syntax_and_Semantics.md)
-- [03. Object-Oriented Programming](docs/03_Object_Oriented.md)
-- [04. Memory Management](docs/04_Memory_Management.md)
-- [05. Multithreading](docs/05_Multithreading.md)
-- [06. Standard Library](docs/06_Standard_Library.md)
+```bash
+lp hello.lp -c hello.exe
+```
 
-*Looking for translated guides?*
-- [Hướng dẫn học LP (Tiếng Việt)](docs/guide_vi.md)
+Run regression tests:
 
-## 📄 License
-This project is open-sourced under the [MIT License](LICENSE).
+```bash
+lp test examples
+```
+
+## CLI Snapshot
+
+```bash
+lp file.lp
+lp file.lp -o out.c
+lp file.lp -c out.exe
+lp file.lp -asm out.s
+lp test examples
+lp profile file.lp
+lp watch file.lp
+lp build file.lp --release --strip
+lp package file.lp --format zip
+lp export file.lp -o api_name
+lp export file.lp --library -o api_name
+```
+
+## Cross-Target Snapshot
+
+```bash
+lp build file.lp --target windows-x64
+lp build file.lp --target linux-x64
+lp build file.lp --target linux-arm64
+lp build file.lp --target macos-arm64
+```
+
+If the requested cross-toolchain is missing, LP fails early with a clear toolchain error.
+
+## Documentation
+
+Start here:
+
+- [Documentation Map](docs/00_Documentation_Map.md)
+- [Installation and Setup](docs/01_Installation_and_Setup.md)
+- [First Programs](docs/02_First_Programs.md)
+- [Language Basics](docs/03_Language_Basics.md)
+- [Runtime Modules](docs/08_Runtime_Modules.md)
+- [CLI and Tooling](docs/09_CLI_and_Tooling.md)
+- [Language Reference](docs/14_Language_Reference.md)
+- [Huong dan tieng Viet](docs/guide_vi.md)
+
+## Accuracy Notes
+
+The docs describe the compiler and runtime as they exist in this repository today.
+
+- `http.get(...)` is supported. `http.post(...)` is not.
+- `json.loads(...)` and `json.dumps(...)` are supported. `json.parse(...)` is not.
+- `thread.spawn(...)` currently accepts only named LP functions, with at most one argument, and the worker must return `int` or `void`.
+- `parallel for` emits OpenMP-style code, but actual parallel execution depends on an OpenMP-capable toolchain configuration.
+- `lp export --library` currently emits a `.dll` library name even outside Windows-oriented workflows.
+
+## License
+
+This project is released under the [MIT License](LICENSE).

@@ -96,6 +96,56 @@ static void codegen_set_error(CodeGen *cg, const char *fmt, ...) {
     cg->had_error = 1;
 }
 
+static int is_class_or_subclass(CodeGen *cg, const char *class_name, const char *target_class) {
+    const char *current = class_name;
+
+    while (current && target_class) {
+        Symbol *sym;
+
+        if (strcmp(current, target_class) == 0) return 1;
+        sym = scope_lookup(cg->scope, current);
+        if (!sym || sym->type != LP_CLASS || !sym->base_class) break;
+        current = sym->base_class;
+    }
+
+    return 0;
+}
+
+static int can_access_member(CodeGen *cg, Symbol *mem) {
+    if (!mem || !mem->access) return 1;
+    if (!cg->current_class || !mem->owner_class) return 0;
+    if (mem->access == TOK_PRIVATE) return strcmp(cg->current_class, mem->owner_class) == 0;
+    if (mem->access == TOK_PROTECTED) return is_class_or_subclass(cg, cg->current_class, mem->owner_class);
+    return 1;
+}
+
+static void buf_write_c_string_literal(Buffer *buf, const char *s) {
+    buf_write(buf, "\"");
+    while (*s) {
+        unsigned char ch = (unsigned char)*s++;
+        switch (ch) {
+            case '\\': buf_write(buf, "\\\\"); break;
+            case '"': buf_write(buf, "\\\""); break;
+            case '\n': buf_write(buf, "\\n"); break;
+            case '\r': buf_write(buf, "\\r"); break;
+            case '\t': buf_write(buf, "\\t"); break;
+            default:
+                if (ch < 32) {
+                    char tmp[8];
+                    snprintf(tmp, sizeof(tmp), "\\x%02x", ch);
+                    buf_write(buf, tmp);
+                } else {
+                    char tmp[2];
+                    tmp[0] = (char)ch;
+                    tmp[1] = '\0';
+                    buf_write(buf, tmp);
+                }
+                break;
+        }
+    }
+    buf_write(buf, "\"");
+}
+
 /* --- Type mapping --- */
 static LpType type_from_annotation(CodeGen *cg, const char *ann) {
     if (!ann) return LP_UNKNOWN;
@@ -160,10 +210,6 @@ static ImportInfo *find_import(CodeGen *cg, const char *alias) {
     return NULL;
 }
 
-/* Check if a name is a known module alias */
-static int is_module_alias(CodeGen *cg, const char *name) {
-    return find_import(cg, name) != NULL;
-}
 
 /* --- Infer expression type --- */
 static LpType infer_type(CodeGen *cg, AstNode *node) {
@@ -279,9 +325,15 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
                         if (strcmp(func_name, "getrecursionlimit") == 0) return LP_INT;
                         return LP_STRING;
                     }
-                    if (imp->tier == MOD_TIER1_HTTP) return LP_STRING;
-                    if (imp->tier == MOD_TIER1_HTTP) return LP_STRING;
-                    if (imp->tier == MOD_TIER1_JSON) return LP_VAL;
+                    if (imp->tier == MOD_TIER1_HTTP) {
+                        if (strcmp(func_name, "get") == 0) return LP_STRING;
+                        return LP_UNKNOWN;
+                    }
+                    if (imp->tier == MOD_TIER1_JSON) {
+                        if (strcmp(func_name, "loads") == 0) return LP_VAL;
+                        if (strcmp(func_name, "dumps") == 0) return LP_STRING;
+                        return LP_UNKNOWN;
+                    }
                     if (imp->tier == MOD_TIER1_SQLITE) {
                         if (strcmp(func_name, "connect") == 0) return LP_SQLITE_DB;
                         if (strcmp(func_name, "execute") == 0) return LP_BOOL;
@@ -518,7 +570,7 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
             buf_printf(buf, "%g", node->float_lit.value);
             break;
         case NODE_STRING_LIT:
-            buf_printf(buf, "\"%s\"", node->str_lit.value);
+            buf_write_c_string_literal(buf, node->str_lit.value);
             break;
         case NODE_BOOL_LIT:
             buf_write(buf, node->bool_lit.value ? "1" : "0");
@@ -601,18 +653,25 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 gen_expr(cg, buf, node->bin_op.right);
                 buf_write(buf, ")");
             } else {
+                LpType lt = infer_type(cg, node->bin_op.left);
+                LpType rt = infer_type(cg, node->bin_op.right);
+
                 /* Check for string concatenation: str + str => lp_str_concat */
-                if (op == TOK_PLUS) {
-                    LpType lt = infer_type(cg, node->bin_op.left);
-                    LpType rt = infer_type(cg, node->bin_op.right);
-                    if (lt == LP_STRING || rt == LP_STRING) {
-                        buf_write(buf, "lp_str_concat(");
-                        gen_expr(cg, buf, node->bin_op.left);
-                        buf_write(buf, ", ");
-                        gen_expr(cg, buf, node->bin_op.right);
-                        buf_write(buf, ")");
-                        break;
-                    }
+                if (op == TOK_PLUS && (lt == LP_STRING || rt == LP_STRING)) {
+                    buf_write(buf, "lp_str_concat(");
+                    gen_expr(cg, buf, node->bin_op.left);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->bin_op.right);
+                    buf_write(buf, ")");
+                    break;
+                }
+                if ((op == TOK_EQ || op == TOK_NEQ) && (lt == LP_STRING || rt == LP_STRING)) {
+                    buf_write(buf, "(strcmp(");
+                    gen_expr(cg, buf, node->bin_op.left);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->bin_op.right);
+                    buf_write(buf, op == TOK_EQ ? ") == 0)" : ") != 0)");
+                    break;
                 }
                 const char *ops;
                 switch (op) {
@@ -731,7 +790,12 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                     }
                     /* ---- TIER 1: http ---- */
                     if (imp->tier == MOD_TIER1_HTTP) {
-                        buf_printf(buf, "lp_http_%s(", func_name);
+                        if (strcmp(func_name, "get") != 0) {
+                            codegen_set_error(cg, "http.%s is not supported yet; only http.get is available", func_name);
+                            buf_write(buf, "\"\"");
+                            break;
+                        }
+                        buf_write(buf, "lp_http_get(");
                         for (int i = 0; i < node->call.args.count; i++) {
                             if (i > 0) buf_write(buf, ", ");
                             gen_expr(cg, buf, node->call.args.items[i]);
@@ -741,6 +805,11 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                     }
                     /* ---- TIER 1: json ---- */
                     if (imp->tier == MOD_TIER1_JSON) {
+                        if (strcmp(func_name, "loads") != 0 && strcmp(func_name, "dumps") != 0) {
+                            codegen_set_error(cg, "json.%s is not supported yet; only json.loads and json.dumps are available", func_name);
+                            buf_write(buf, strcmp(func_name, "dumps") == 0 ? "\"\"" : "lp_val_null()");
+                            break;
+                        }
                         buf_printf(buf, "lp_json_%s(", func_name);
                         for (int i = 0; i < node->call.args.count; i++) {
                             if (i > 0) buf_write(buf, ", ");
@@ -1026,6 +1095,13 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                     char method_key[256];
                     snprintf(method_key, sizeof(method_key), "%s.%s", s->class_name, node->call.func->attribute.attr);
                     Symbol *ms = scope_lookup(cg->scope, method_key);
+                    if (ms && !can_access_member(cg, ms)) {
+                        codegen_set_error(cg,
+                            "Cannot access %s member '%s' of class '%s'",
+                            ms->access == TOK_PRIVATE ? "private" : "protected",
+                            node->call.func->attribute.attr,
+                            ms->owner_class ? ms->owner_class : s->class_name);
+                    }
                     if (ms && ms->owner_class) target_class = ms->owner_class;
 
                     buf_printf(buf, "lp_%s_%s(", target_class, node->call.func->attribute.attr);
@@ -1312,21 +1388,12 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         char field_key[256];
                         snprintf(field_key, sizeof(field_key), "%s.%s", s->class_name, node->attribute.attr);
                         Symbol *mem = scope_lookup(cg->scope, field_key);
-                        if (mem) {
-                            if (mem->access == TOK_PRIVATE) {
-                                if (!cg->current_class || strcmp(cg->current_class, mem->owner_class) != 0) {
-                                    snprintf(cg->error_msg, sizeof(cg->error_msg), 
-                                        "Cannot access private member '%s' of class '%s'", node->attribute.attr, s->class_name);
-                                    cg->had_error = 1;
-                                }
-                            } else if (mem->access == TOK_PROTECTED) {
-                                /* In future: check inheritance. For now, same class only */
-                                if (!cg->current_class || strcmp(cg->current_class, mem->owner_class) != 0) {
-                                    snprintf(cg->error_msg, sizeof(cg->error_msg), 
-                                        "Cannot access protected member '%s' of class '%s'", node->attribute.attr, s->class_name);
-                                    cg->had_error = 1;
-                                }
-                            }
+                        if (mem && !can_access_member(cg, mem)) {
+                            codegen_set_error(cg,
+                                "Cannot access %s member '%s' of class '%s'",
+                                mem->access == TOK_PRIVATE ? "private" : "protected",
+                                node->attribute.attr,
+                                mem->owner_class ? mem->owner_class : s->class_name);
                         }
                     }
                     /* Access property/method:  obj->attr */
@@ -1377,6 +1444,8 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
     if (!node) return;
     switch (node->type) {
         case NODE_ASSIGN: {
+            Buffer *assign_buf = buf;
+            int assign_indent = indent;
             LpType t = LP_UNKNOWN;
             if (node->assign.type_ann)
                 t = type_from_annotation(cg, node->assign.type_ann);
@@ -1384,17 +1453,37 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 t = infer_type(cg, node->assign.value);
             if (t == LP_UNKNOWN) t = LP_INT;
 
+            if (cg->scope->parent == NULL && node->assign.value && node->assign.value->type == NODE_LAMBDA) {
+                assign_buf = &cg->helpers;
+                assign_indent = 0;
+            }
+
             /* Check if it's an attribute assignment (e.g. obj.attr) */
             char *dot = strchr(node->assign.name, '.');
             if (dot) {
                 *dot = '\0'; /* split into obj and attr */
                 const char *obj_name = node->assign.name;
                 const char *attr_name = dot + 1;
-                
-                write_indent(buf, indent);
-                buf_printf(buf, "lp_%s->lp_%s = ", obj_name, attr_name);
-                gen_expr(cg, buf, node->assign.value);
-                buf_write(buf, ";\n");
+                Symbol *obj_sym = scope_lookup(cg->scope, obj_name);
+
+                if (obj_sym && obj_sym->type == LP_OBJECT && obj_sym->class_name) {
+                    char field_key[256];
+                    Symbol *mem;
+                    snprintf(field_key, sizeof(field_key), "%s.%s", obj_sym->class_name, attr_name);
+                    mem = scope_lookup(cg->scope, field_key);
+                    if (mem && !can_access_member(cg, mem)) {
+                        codegen_set_error(cg,
+                            "Cannot access %s member '%s' of class '%s'",
+                            mem->access == TOK_PRIVATE ? "private" : "protected",
+                            attr_name,
+                            mem->owner_class ? mem->owner_class : obj_sym->class_name);
+                    }
+                }
+
+                write_indent(assign_buf, assign_indent);
+                buf_printf(assign_buf, "lp_%s->lp_%s = ", obj_name, attr_name);
+                gen_expr(cg, assign_buf, node->assign.value);
+                buf_write(assign_buf, ";\n");
                 
                 *dot = '.'; /* restore string */
             } else {
@@ -1420,23 +1509,45 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                         }
                     }
                     scope_define_obj(cg->scope, node->assign.name, t, class_name);
-                    write_indent(buf, indent);
-                    /* Lambda: use __auto_type for function pointer inference */
-                    if (node->assign.value && node->assign.value->type == NODE_LAMBDA) {
-                        buf_printf(buf, "__auto_type lp_%s", node->assign.name);
+                    if (assign_buf == &cg->helpers && node->assign.value && node->assign.value->type == NODE_LAMBDA) {
+                        Buffer lambda_expr_buf;
+                        buf_init(&lambda_expr_buf);
+                        gen_expr(cg, &lambda_expr_buf, node->assign.value);
+                        write_indent(assign_buf, assign_indent);
+                        buf_printf(assign_buf, "__auto_type lp_%s = ", node->assign.name);
+                        buf_write(assign_buf, lambda_expr_buf.data ? lambda_expr_buf.data : "");
+                        buf_write(assign_buf, ";\n");
+                        buf_free(&lambda_expr_buf);
                     } else {
-                        buf_printf(buf, "%s lp_%s", lp_type_to_c_obj(t, class_name), node->assign.name);
+                        write_indent(assign_buf, assign_indent);
+                        /* Lambda: use __auto_type for function pointer inference */
+                        if (node->assign.value && node->assign.value->type == NODE_LAMBDA) {
+                            buf_printf(assign_buf, "__auto_type lp_%s", node->assign.name);
+                        } else {
+                            buf_printf(assign_buf, "%s lp_%s", lp_type_to_c_obj(t, class_name), node->assign.name);
+                        }
+                        if (node->assign.value) {
+                            buf_write(assign_buf, " = ");
+                            gen_expr(cg, assign_buf, node->assign.value);
+                        }
+                        buf_write(assign_buf, ";\n");
                     }
-                    if (node->assign.value) {
-                        buf_write(buf, " = ");
-                        gen_expr(cg, buf, node->assign.value);
-                    }
-                    buf_write(buf, ";\n");
                 } else {
-                    write_indent(buf, indent);
-                    buf_printf(buf, "lp_%s = ", node->assign.name);
-                    gen_expr(cg, buf, node->assign.value);
-                    buf_write(buf, ";\n");
+                    if (assign_buf == &cg->helpers && node->assign.value && node->assign.value->type == NODE_LAMBDA) {
+                        Buffer lambda_expr_buf;
+                        buf_init(&lambda_expr_buf);
+                        gen_expr(cg, &lambda_expr_buf, node->assign.value);
+                        write_indent(assign_buf, assign_indent);
+                        buf_printf(assign_buf, "lp_%s = ", node->assign.name);
+                        buf_write(assign_buf, lambda_expr_buf.data ? lambda_expr_buf.data : "");
+                        buf_write(assign_buf, ";\n");
+                        buf_free(&lambda_expr_buf);
+                    } else {
+                        write_indent(assign_buf, assign_indent);
+                        buf_printf(assign_buf, "lp_%s = ", node->assign.name);
+                        gen_expr(cg, assign_buf, node->assign.value);
+                        buf_write(assign_buf, ";\n");
+                    }
                 }
             }
             break;
@@ -2039,6 +2150,7 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
     buf_write(&cg->header, "/* Generated by LP Compiler */\n");
     buf_write(&cg->header, "#define LP_MAIN_FILE\n");
     buf_write(&cg->header, "#include \"lp_runtime.h\"\n");
+    buf_write(&cg->header, "#include \"lp_native_strings.h\"\n");
 
     /* First pass: collect all imports to determine which headers to include */
     for (int i = 0; i < program->program.stmts.count; i++) {
@@ -2242,3 +2354,6 @@ void codegen_free(CodeGen *cg) {
         free(cg->imports[i].alias);
     }
 }
+
+
+

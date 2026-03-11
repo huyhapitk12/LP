@@ -11,11 +11,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <process.h>
-#include <io.h>
 #include <time.h>
 #include <sys/stat.h>
 #include <signal.h>
+#include <stdint.h>
+#ifdef _WIN32
+#include <process.h>
+#include <io.h>
+#else
+#include <dirent.h>
+#include <errno.h>
+#include <stdarg.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 /* We need Sleep() but can't include <windows.h> due to TokenType conflict */
 #ifdef _WIN32
 __declspec(dllimport) void __stdcall Sleep(unsigned long dwMilliseconds);
@@ -26,9 +36,296 @@ __declspec(dllimport) void __stdcall Sleep(unsigned long dwMilliseconds);
 
 #if defined(_WIN32)
   #define LP_LWINHTTP "-lwinhttp"
+  #define LP_HOST_EXE_EXT ".exe"
+  #define LP_PATH_SEP '\\'
+  #define LP_PATH_SEP_STR "\\"
+  #define LP_NULL_REDIRECT ">nul 2>&1"
+  #define LP_CLEAR_CMD "cls"
+  #define LP_TAR_CMD "tar.exe"
+  #define LP_STAT_STRUCT struct _stat
+  #define LP_STAT_CALL _stat
 #else
   #define LP_LWINHTTP "-lm" /* safe dummy for non-Windows */
+  #define LP_HOST_EXE_EXT ""
+  #define LP_PATH_SEP '/'
+  #define LP_PATH_SEP_STR "/"
+  #define LP_NULL_REDIRECT ">/dev/null 2>&1"
+  #define LP_CLEAR_CMD "clear"
+  #define LP_TAR_CMD "tar"
+  #define LP_STAT_STRUCT struct stat
+  #define LP_STAT_CALL stat
 #endif
+
+#ifndef _WIN32
+#ifndef _P_WAIT
+#define _P_WAIT 0
+#endif
+
+struct _finddata_t {
+    char name[260];
+};
+
+typedef struct {
+    DIR *dir;
+    char dir_path[512];
+    char prefix[128];
+    char suffix[128];
+} LpFindState;
+
+static int lp_wait_pid(pid_t pid) {
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno == EINTR) continue;
+        return -1;
+    }
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    return 1;
+}
+
+static int lp_has_path_sep(const char *s) {
+    return s && (strchr(s, '/') != NULL || strchr(s, '\\') != NULL);
+}
+
+static void lp_exec_fallback(const char *file, char *const argv[], int search_path) {
+    if (search_path) execvp(file, argv);
+    else execv(file, argv);
+
+    if (!lp_has_path_sep(file)) {
+        char local_path[1024];
+        if (snprintf(local_path, sizeof(local_path), "./%s", file) > 0) {
+            execv(local_path, argv);
+        }
+    }
+    _exit(127);
+}
+
+static int _spawnv(int mode, const char *path, const char *const argv[]) {
+    pid_t pid;
+    (void)mode;
+    pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        lp_exec_fallback(path, (char *const *)argv, 0);
+    }
+    return lp_wait_pid(pid);
+}
+
+static int _spawnvp(int mode, const char *file, const char *const argv[]) {
+    pid_t pid;
+    (void)mode;
+    pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        lp_exec_fallback(file, (char *const *)argv, 1);
+    }
+    return lp_wait_pid(pid);
+}
+
+static int _spawnl(int mode, const char *path, const char *arg0, ...) {
+    const char *arg;
+    const char *argv[128];
+    int argc = 0;
+    va_list ap;
+
+    argv[argc++] = arg0;
+    va_start(ap, arg0);
+    while (argc < 127) {
+        arg = va_arg(ap, const char *);
+        if (!arg) break;
+        argv[argc++] = arg;
+    }
+    va_end(ap);
+    argv[argc] = NULL;
+
+    if (lp_has_path_sep(path)) return _spawnv(mode, path, argv);
+    return _spawnvp(mode, path, argv);
+}
+
+static int _find_match(const char *name, const char *prefix, const char *suffix) {
+    size_t nlen = strlen(name);
+    size_t plen = strlen(prefix);
+    size_t slen = strlen(suffix);
+    if (nlen < plen + slen) return 0;
+    if (strncmp(name, prefix, plen) != 0) return 0;
+    if (slen == 0) return 1;
+    return strcmp(name + (nlen - slen), suffix) == 0;
+}
+
+static intptr_t _findfirst(const char *pattern, struct _finddata_t *fd) {
+    const char *slash = strrchr(pattern, '/');
+    const char *bslash = strrchr(pattern, '\\');
+    const char *sep = (slash && bslash) ? (slash > bslash ? slash : bslash) : (slash ? slash : bslash);
+    const char *mask = sep ? (sep + 1) : pattern;
+    const char *star = strchr(mask, '*');
+    LpFindState *st = (LpFindState *)calloc(1, sizeof(LpFindState));
+    if (!st) return -1;
+
+    if (sep) {
+        size_t dlen = (size_t)(sep - pattern);
+        if (dlen >= sizeof(st->dir_path)) dlen = sizeof(st->dir_path) - 1;
+        memcpy(st->dir_path, pattern, dlen);
+        st->dir_path[dlen] = '\0';
+    } else {
+        strcpy(st->dir_path, ".");
+    }
+
+    if (star) {
+        size_t plen = (size_t)(star - mask);
+        if (plen >= sizeof(st->prefix)) plen = sizeof(st->prefix) - 1;
+        memcpy(st->prefix, mask, plen);
+        st->prefix[plen] = '\0';
+        strncpy(st->suffix, star + 1, sizeof(st->suffix) - 1);
+        st->suffix[sizeof(st->suffix) - 1] = '\0';
+    } else {
+        strncpy(st->prefix, mask, sizeof(st->prefix) - 1);
+        st->prefix[sizeof(st->prefix) - 1] = '\0';
+        st->suffix[0] = '\0';
+    }
+
+    st->dir = opendir(st->dir_path);
+    if (!st->dir) {
+        free(st);
+        return -1;
+    }
+
+    while (1) {
+        struct dirent *ent = readdir(st->dir);
+        if (!ent) {
+            closedir(st->dir);
+            free(st);
+            return -1;
+        }
+        if (_find_match(ent->d_name, st->prefix, st->suffix)) {
+            strncpy(fd->name, ent->d_name, sizeof(fd->name) - 1);
+            fd->name[sizeof(fd->name) - 1] = '\0';
+            return (intptr_t)st;
+        }
+    }
+}
+
+static int _findnext(intptr_t handle, struct _finddata_t *fd) {
+    LpFindState *st = (LpFindState *)handle;
+    if (!st || !st->dir) return -1;
+
+    while (1) {
+        struct dirent *ent = readdir(st->dir);
+        if (!ent) return -1;
+        if (_find_match(ent->d_name, st->prefix, st->suffix)) {
+            strncpy(fd->name, ent->d_name, sizeof(fd->name) - 1);
+            fd->name[sizeof(fd->name) - 1] = '\0';
+            return 0;
+        }
+    }
+}
+
+static int _findclose(intptr_t handle) {
+    LpFindState *st = (LpFindState *)handle;
+    if (!st) return -1;
+    if (st->dir) closedir(st->dir);
+    free(st);
+    return 0;
+}
+
+static void Sleep(unsigned long ms) {
+    usleep(ms * 1000);
+}
+#endif
+
+static int lp_copy_str(char *dst, size_t dst_size, const char *src) {
+    size_t len;
+    if (!dst || dst_size == 0 || !src) return 0;
+    len = strlen(src);
+    if (len >= dst_size) {
+        memcpy(dst, src, dst_size - 1);
+        dst[dst_size - 1] = '\0';
+        return 0;
+    }
+    memcpy(dst, src, len + 1);
+    return 1;
+}
+
+static int lp_append_str(char *dst, size_t dst_size, const char *suffix) {
+    size_t used, add;
+    if (!dst || dst_size == 0 || !suffix) return 0;
+    used = strlen(dst);
+    if (used >= dst_size) return 0;
+    add = strlen(suffix);
+    if (used + add >= dst_size) {
+        size_t room = dst_size - used - 1;
+        if (room > 0) memcpy(dst + used, suffix, room);
+        dst[dst_size - 1] = '\0';
+        return 0;
+    }
+    memcpy(dst + used, suffix, add + 1);
+    return 1;
+}
+
+static int lp_append_char(char *dst, size_t dst_size, char ch) {
+    size_t used;
+    if (!dst || dst_size == 0) return 0;
+    used = strlen(dst);
+    if (used + 1 >= dst_size) {
+        if (dst_size > 0) dst[dst_size - 1] = '\0';
+        return 0;
+    }
+    dst[used] = ch;
+    dst[used + 1] = '\0';
+    return 1;
+}
+
+static int lp_join2(char *dst, size_t dst_size, const char *a, const char *b) {
+    return lp_copy_str(dst, dst_size, a) && lp_append_str(dst, dst_size, b);
+}
+
+static int lp_join3(char *dst, size_t dst_size, const char *a, const char *b, const char *c) {
+    return lp_copy_str(dst, dst_size, a) &&
+           lp_append_str(dst, dst_size, b) &&
+           lp_append_str(dst, dst_size, c);
+}
+
+static int lp_join_with_sep(char *dst, size_t dst_size, const char *a, char sep, const char *b) {
+    return lp_copy_str(dst, dst_size, a) &&
+           lp_append_char(dst, dst_size, sep) &&
+           lp_append_str(dst, dst_size, b);
+}
+
+static int lp_make_include_flag(char *dst, size_t dst_size, const char *path) {
+    return lp_join2(dst, dst_size, "-I", path);
+}
+
+static int lp_find_runtime_dir(const char *exe_dir, char *runtime_inc, size_t runtime_inc_size) {
+    const char *candidates[] = { "runtime", "./runtime", "d:\\LP\\runtime", "d:/LP/runtime" };
+    char try_path[600];
+    runtime_inc[0] = '\0';
+
+    if (lp_join2(try_path, sizeof(try_path), exe_dir, LP_PATH_SEP_STR ".." LP_PATH_SEP_STR "runtime" LP_PATH_SEP_STR "lp_runtime.h")) {
+        FILE *rf = fopen(try_path, "r");
+        if (rf) {
+            fclose(rf);
+            return lp_join2(runtime_inc, runtime_inc_size, exe_dir, LP_PATH_SEP_STR ".." LP_PATH_SEP_STR "runtime");
+        }
+    }
+
+    for (int i = 0; i < 4; i++) {
+        if (lp_join2(try_path, sizeof(try_path), candidates[i], LP_PATH_SEP_STR "lp_runtime.h")) {
+            FILE *rf = fopen(try_path, "r");
+            if (rf) {
+                fclose(rf);
+                return lp_copy_str(runtime_inc, runtime_inc_size, candidates[i]);
+            }
+        }
+
+        if (lp_join2(try_path, sizeof(try_path), candidates[i], "/lp_runtime.h")) {
+            FILE *rf = fopen(try_path, "r");
+            if (rf) {
+                fclose(rf);
+                return lp_copy_str(runtime_inc, runtime_inc_size, candidates[i]);
+            }
+        }
+    }
+
+    return 0;
+}
 
 static char *read_file(const char *path) {
     FILE *f = fopen(path, "rb");
@@ -45,21 +342,54 @@ static char *read_file(const char *path) {
 
 /* Find GCC path and ensure it's in PATH for DLL resolution */
 static const char *find_gcc(void) {
+#ifdef _WIN32
     /* Try MSYS2 UCRT64 first */
     FILE *f = fopen("C:\\msys64\\ucrt64\\bin\\gcc.exe", "rb");
     if (f) {
         fclose(f);
         /* Add GCC bin dir to PATH so spawned processes find DLLs */
         const char *old = getenv("PATH");
-        char *new_path = (char *)malloc(strlen(old) + 100);
-        sprintf(new_path, "PATH=C:\\msys64\\ucrt64\\bin;%s", old ? old : "");
-        _putenv(new_path);
+        size_t cap = strlen(old ? old : "") + 100;
+        char *new_path = (char *)malloc(cap);
+        if (!new_path) return "C:\\msys64\\ucrt64\\bin\\gcc.exe";
+        if (lp_join2(new_path, cap, "PATH=C:\\msys64\\ucrt64\\bin;", old ? old : "")) {
+            _putenv(new_path);
+        }
         free(new_path);
         return "C:\\msys64\\ucrt64\\bin\\gcc.exe";
     }
+#endif
     /* Try system gcc */
-    if (system("gcc --version >nul 2>&1") == 0) return "gcc";
+    {
+        char cmd[256];
+        snprintf(cmd, sizeof(cmd), "gcc --version %s", LP_NULL_REDIRECT);
+        if (system(cmd) == 0) return "gcc";
+        snprintf(cmd, sizeof(cmd), "cc --version %s", LP_NULL_REDIRECT);
+        if (system(cmd) == 0) return "cc";
+    }
     return NULL;
+}
+
+static const char *target_toolchain_for(const char *target_os) {
+    if (!target_os) return NULL;
+    if (strcmp(target_os, "windows-x64") == 0) return "x86_64-w64-mingw32-gcc";
+    if (strcmp(target_os, "linux-x64") == 0) return "x86_64-linux-gnu-gcc";
+    if (strcmp(target_os, "macos-arm64") == 0) return "aarch64-apple-darwin-gcc";
+    if (strcmp(target_os, "linux-arm64") == 0) return "aarch64-linux-gnu-gcc";
+    return NULL;
+}
+
+static int tool_exists(const char *tool) {
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "%s --version %s", tool, LP_NULL_REDIRECT);
+    return system(cmd) == 0;
+}
+
+static int run_tool_wait(const char *tool, const char *const *args) {
+    if (strchr(tool, '\\') || strchr(tool, '/') || strchr(tool, ':')) {
+        return (int)_spawnv(_P_WAIT, tool, args);
+    }
+    return (int)_spawnvp(_P_WAIT, tool, args);
 }
 
 /* Get directory of the running executable */
@@ -112,7 +442,7 @@ static void show_error_context(const char *source, const char *error_msg) {
 
     /* Show context: 2 lines before, error line, 1 line after */
     const char *p = source;
-    int current_line = 1;
+
     const char *line_starts[4096];
     int total_lines = 0;
     line_starts[0] = source;
@@ -206,11 +536,24 @@ int main(int argc, char **argv) {
         
         char exe_path[512];
         if (output_exe) {
-            snprintf(exe_path, sizeof(exe_path), "%s", output_exe);
+            if (!lp_copy_str(exe_path, sizeof(exe_path), output_exe)) {
+                fprintf(stderr, "[LP Build] Output path is too long.\n");
+                return 1;
+            }
         } else {
             char basename[256];
             get_basename(basename, sizeof(basename), input_file);
-            snprintf(exe_path, sizeof(exe_path), "%s.exe", basename);
+            if (target_os && strcmp(target_os, "windows-x64") != 0) {
+                if (!lp_copy_str(exe_path, sizeof(exe_path), basename)) {
+                    fprintf(stderr, "[LP Build] Output path is too long.\n");
+                    return 1;
+                }
+            } else {
+                if (!lp_join2(exe_path, sizeof(exe_path), basename, LP_HOST_EXE_EXT)) {
+                    fprintf(stderr, "[LP Build] Output path is too long.\n");
+                    return 1;
+                }
+            }
         }
         
         printf("[LP Build] Compiling '%s' -> '%s' (Release=%d, Static=%d, Strip=%d, GUI=%d)...\n", 
@@ -224,7 +567,7 @@ int main(int argc, char **argv) {
          */
         
         char tmp_c[512];
-        snprintf(tmp_c, sizeof(tmp_c), "__lp_build_tmp.c");
+        lp_copy_str(tmp_c, sizeof(tmp_c), "__lp_build_tmp.c");
         
         /* 1. Generate C code: lp.exe input.lp -o tmp.c */
         int r1 = (int)_spawnl(_P_WAIT, argv[0], argv[0], input_file, "-o", tmp_c, NULL);
@@ -236,10 +579,17 @@ int main(int argc, char **argv) {
         /* 2. Call GCC with requested flags */
         const char *gcc_path = find_gcc();
         if (target_os) {
-            if (strcmp(target_os, "windows-x64") == 0) gcc_path = "x86_64-w64-mingw32-gcc";
-            else if (strcmp(target_os, "linux-x64") == 0) gcc_path = "x86_64-linux-gnu-gcc";
-            else if (strcmp(target_os, "macos-arm64") == 0) gcc_path = "aarch64-apple-darwin-gcc";
-            else if (strcmp(target_os, "linux-arm64") == 0) gcc_path = "aarch64-linux-gnu-gcc";
+            gcc_path = target_toolchain_for(target_os);
+            if (!gcc_path) {
+                fprintf(stderr, "[LP Build] Unsupported target '%s'.\n", target_os);
+                remove(tmp_c);
+                return 1;
+            }
+            if (!tool_exists(gcc_path)) {
+                fprintf(stderr, "[LP Build] Target toolchain '%s' was not found in PATH for --target %s.\n", gcc_path, target_os);
+                remove(tmp_c);
+                return 1;
+            }
         }
         
         if (!gcc_path) {
@@ -252,7 +602,12 @@ int main(int argc, char **argv) {
         char inc_flag[600];
         char exe_dir[512];
         get_exe_dir(exe_dir, sizeof(exe_dir), argv[0]);
-        snprintf(inc_flag, sizeof(inc_flag), "-I%s\\..\\runtime", exe_dir);
+        if (!lp_join2(inc_flag, sizeof(inc_flag), "-I", exe_dir) ||
+            !lp_append_str(inc_flag, sizeof(inc_flag), LP_PATH_SEP_STR ".." LP_PATH_SEP_STR "runtime")) {
+            fprintf(stderr, "[LP Build] Runtime include path is too long.\n");
+            remove(tmp_c);
+            return 1;
+        }
 
         const char *args[30];
         int ac = 0;
@@ -266,7 +621,7 @@ int main(int argc, char **argv) {
         if (release) {
             args[ac++] = "-O3";
             args[ac++] = "-flto";
-            args[ac++] = "-march=native";
+            if (!target_os) args[ac++] = "-march=native";
             args[ac++] = "-fstrict-aliasing";
             args[ac++] = "-funroll-loops";
         } else {
@@ -290,18 +645,7 @@ int main(int argc, char **argv) {
         args[ac++] = NULL;
         
         printf("[LP Build] Running Compile Chain...\n");
-        int r2;
-        if (target_os) {
-            /* Fallback to system() for custom toolchains in PATH */
-            char system_cmd[2048] = {0};
-            for (int i=0; i<ac; i++) {
-                strcat(system_cmd, args[i]);
-                strcat(system_cmd, " ");
-            }
-            r2 = system(system_cmd);
-        } else {
-            r2 = (int)_spawnv(_P_WAIT, gcc_path, args);
-        }
+        int r2 = run_tool_wait(gcc_path, args);
         
         remove(tmp_c);
         
@@ -326,7 +670,10 @@ int main(int argc, char **argv) {
         get_basename(basename, sizeof(basename), input_file);
         
         char exe_path[512];
-        snprintf(exe_path, sizeof(exe_path), "%s.exe", basename);
+        if (!lp_join2(exe_path, sizeof(exe_path), basename, LP_HOST_EXE_EXT)) {
+            fprintf(stderr, "[LP Package] Output path is too long.\n");
+            return 1;
+        }
         
         printf("[LP Package] Building before packaging...\n");
         int r1 = (int)_spawnl(_P_WAIT, argv[0], argv[0], "build", input_file, "--release", "--strip", NULL);
@@ -337,10 +684,10 @@ int main(int argc, char **argv) {
         
         char pack_cmd[1024];
         if (strcmp(format, "zip") == 0) {
-            snprintf(pack_cmd, sizeof(pack_cmd), "tar.exe -a -c -f %s.zip %s", basename, exe_path);
+            snprintf(pack_cmd, sizeof(pack_cmd), "%s -a -c -f %s.zip %s", LP_TAR_CMD, basename, exe_path);
             printf("[LP Package] Archiving to %s.zip\n", basename);
         } else if (strcmp(format, "tar.gz") == 0) {
-            snprintf(pack_cmd, sizeof(pack_cmd), "tar.exe -czf %s.tar.gz %s", basename, exe_path);
+            snprintf(pack_cmd, sizeof(pack_cmd), "%s -czf %s.tar.gz %s", LP_TAR_CMD, basename, exe_path);
             printf("[LP Package] Archiving to %s.tar.gz\n", basename);
         } else {
             fprintf(stderr, "Unknown package format '%s'\n", format);
@@ -370,11 +717,17 @@ int main(int argc, char **argv) {
         
         char header_path[512], dll_path[512];
         if (output_name) {
-            snprintf(header_path, sizeof(header_path), "%s.h", output_name);
-            snprintf(dll_path, sizeof(dll_path), "%s.dll", output_name);
+            if (!lp_join2(header_path, sizeof(header_path), output_name, ".h") ||
+                !lp_join2(dll_path, sizeof(dll_path), output_name, ".dll")) {
+                fprintf(stderr, "[LP Export] Output name is too long.\n");
+                return 1;
+            }
         } else {
-            snprintf(header_path, sizeof(header_path), "%s.h", basename);
-            snprintf(dll_path, sizeof(dll_path), "%s.dll", basename);
+            if (!lp_join2(header_path, sizeof(header_path), basename, ".h") ||
+                !lp_join2(dll_path, sizeof(dll_path), basename, ".dll")) {
+                fprintf(stderr, "[LP Export] Output name is too long.\n");
+                return 1;
+            }
         }
         
         printf("[LP Export] Parsing '%s'...\n", input_file);
@@ -409,7 +762,7 @@ int main(int argc, char **argv) {
         
         /* Write the implementation C code */
         char tmp_c[512];
-        snprintf(tmp_c, sizeof(tmp_c), "__lp_export_tmp.c");
+        lp_copy_str(tmp_c, sizeof(tmp_c), "__lp_export_tmp.c");
         char *c_code = codegen_get_output(&cg);
         FILE *tmp = fopen(tmp_c, "w");
         if (!tmp) { fprintf(stderr, "Error: cannot write tmp_c\n"); return 1; }
@@ -426,15 +779,15 @@ int main(int argc, char **argv) {
         char inc_flag[600];
         char exe_dir[512];
         get_exe_dir(exe_dir, sizeof(exe_dir), argv[0]);
-        snprintf(inc_flag, sizeof(inc_flag), "-I%s\\..\\runtime", exe_dir);
-        
-        char sqlite_obj[600] = "-lm";
-        if (cg.uses_sqlite) {
-            snprintf(sqlite_obj, sizeof(sqlite_obj), "%s\\sqlite3.o", exe_dir); /* Wait, exe_dir matches runtime_inc logic */
-            /* Wait, runtime path is exe_dir\..\runtime in export logic! */
+        if (!lp_join2(inc_flag, sizeof(inc_flag), "-I", exe_dir) ||
+            !lp_append_str(inc_flag, sizeof(inc_flag), LP_PATH_SEP_STR ".." LP_PATH_SEP_STR "runtime")) {
+            fprintf(stderr, "[LP Export] Runtime include path is too long.\n");
+            remove(tmp_c);
+            return 1;
         }
         
         const char *args[22];
+        char sql_path[512];
         int ac = 0;
         args[ac++] = "gcc";
         args[ac++] = "-std=gnu99";
@@ -448,9 +801,16 @@ int main(int argc, char **argv) {
         args[ac++] = "-lm";
         args[ac++] = LP_LWINHTTP;
         if (cg.uses_sqlite) {
-            char sql_path[512];
-            snprintf(sql_path, sizeof(sql_path), "%s\\..\\runtime\\sqlite3.o", exe_dir);
-            args[ac++] = strdup(sql_path);
+            if (!lp_join2(sql_path, sizeof(sql_path), exe_dir, LP_PATH_SEP_STR ".." LP_PATH_SEP_STR "runtime" LP_PATH_SEP_STR "sqlite3.o")) {
+                fprintf(stderr, "[LP Export] SQLite object path is too long.\n");
+                remove(tmp_c);
+                free(c_code);
+                codegen_free(&cg);
+                ast_free(program);
+                free(source);
+                return 1;
+            }
+            args[ac++] = sql_path;
         }
         args[ac++] = NULL;
         
@@ -575,40 +935,13 @@ int main(int argc, char **argv) {
 
     /* Find runtime dir — try multiple locations */
     char runtime_inc[512];
-    runtime_inc[0] = '\0';
-    {
-        const char *candidates[] = {
-            "d:\\LP\\runtime",
-            "d:/LP/runtime",
-        };
-        char try_path[600];
-        /* First: relative to exe: ../runtime */
-        snprintf(try_path, sizeof(try_path), "%s%c..%cruntime%clp_runtime.h",
-                 exe_dir, '\\', '\\', '\\');
-        FILE *rf = fopen(try_path, "r");
-        if (rf) {
-            fclose(rf);
-            snprintf(runtime_inc, sizeof(runtime_inc), "%s%c..%cruntime",
-                     exe_dir, '\\', '\\');
-        }
-        /* Then try known paths */
-        if (!runtime_inc[0]) {
-            for (int ci = 0; ci < 2; ci++) {
-                snprintf(try_path, sizeof(try_path), "%s%clp_runtime.h",
-                         candidates[ci], '\\');
-                rf = fopen(try_path, "r");
-                if (rf) { fclose(rf); snprintf(runtime_inc, sizeof(runtime_inc), "%s", candidates[ci]); break; }
-                /* Try forward slash */
-                snprintf(try_path, sizeof(try_path), "%s/lp_runtime.h", candidates[ci]);
-                rf = fopen(try_path, "r");
-                if (rf) { fclose(rf); snprintf(runtime_inc, sizeof(runtime_inc), "%s", candidates[ci]); break; }
-            }
-        }
-        if (!runtime_inc[0]) {
-            fprintf(stderr, "Error: cannot find lp_runtime.h\n");
-            free(c_code); codegen_free(&cg); ast_free(program); free(source);
-            return 1;
-        }
+    if (!lp_find_runtime_dir(exe_dir, runtime_inc, sizeof(runtime_inc))) {
+        fprintf(stderr, "Error: cannot find lp_runtime.h\n");
+        free(c_code);
+        codegen_free(&cg);
+        ast_free(program);
+        free(source);
+        return 1;
     }
 
     char basename[256];
@@ -619,12 +952,28 @@ int main(int argc, char **argv) {
     {
         char input_dir[512];
         get_exe_dir(input_dir, sizeof(input_dir), input_file);
-        snprintf(tmp_c, sizeof(tmp_c), "%s%c__lp_%s.c", input_dir, '\\', basename);
+        if (!lp_join_with_sep(tmp_c, sizeof(tmp_c), input_dir, LP_PATH_SEP, "__lp_") ||
+            !lp_append_str(tmp_c, sizeof(tmp_c), basename) ||
+            !lp_append_str(tmp_c, sizeof(tmp_c), ".c")) {
+            fprintf(stderr, "Error: temp path is too long\n");
+            free(c_code);
+            codegen_free(&cg);
+            ast_free(program);
+            free(source);
+            return 1;
+        }
     }
     FILE *tmp = fopen(tmp_c, "w");
     if (!tmp) {
         /* Fallback: current directory */
-        snprintf(tmp_c, sizeof(tmp_c), "__lp_%s.c", basename);
+        if (!lp_join3(tmp_c, sizeof(tmp_c), "__lp_", basename, ".c")) {
+            fprintf(stderr, "Error: temp filename is too long\n");
+            free(c_code);
+            codegen_free(&cg);
+            ast_free(program);
+            free(source);
+            return 1;
+        }
         tmp = fopen(tmp_c, "w");
     }
     if (!tmp) { fprintf(stderr, "Error: cannot write temp file\n"); return 1; }
@@ -634,23 +983,55 @@ int main(int argc, char **argv) {
     /* Determine output exe path */
     char exe_path[512];
     if (emit_asm && output_asm) {
-        snprintf(exe_path, sizeof(exe_path), "%s", output_asm);
+        if (!lp_copy_str(exe_path, sizeof(exe_path), output_asm)) {
+            fprintf(stderr, "Error: output assembly path is too long\n");
+            remove(tmp_c);
+            free(c_code);
+            codegen_free(&cg);
+            ast_free(program);
+            free(source);
+            return 1;
+        }
     } else if (compile_only && output_exe) {
-        snprintf(exe_path, sizeof(exe_path), "%s", output_exe);
+        if (!lp_copy_str(exe_path, sizeof(exe_path), output_exe)) {
+            fprintf(stderr, "Error: output executable path is too long\n");
+            remove(tmp_c);
+            free(c_code);
+            codegen_free(&cg);
+            ast_free(program);
+            free(source);
+            return 1;
+        }
     } else {
         char input_dir[512];
         get_exe_dir(input_dir, sizeof(input_dir), input_file);
-        snprintf(exe_path, sizeof(exe_path), "%s%c__lp_%s.exe", input_dir, '\\', basename);
+        if (!lp_join_with_sep(exe_path, sizeof(exe_path), input_dir, LP_PATH_SEP, "__lp_") ||
+            !lp_append_str(exe_path, sizeof(exe_path), basename) ||
+            !lp_append_str(exe_path, sizeof(exe_path), LP_HOST_EXE_EXT)) {
+            fprintf(stderr, "Error: output executable path is too long\n");
+            remove(tmp_c);
+            free(c_code);
+            codegen_free(&cg);
+            ast_free(program);
+            free(source);
+            return 1;
+        }
     }
 
     /* Compile C → executable using _spawnl for proper stdio inheritance */
     char inc_flag[600];
-    snprintf(inc_flag, sizeof(inc_flag), "-I%s", runtime_inc);
+    if (!lp_make_include_flag(inc_flag, sizeof(inc_flag), runtime_inc)) {
+        fprintf(stderr, "Error: include path is too long\n");
+        remove(tmp_c);
+        free(c_code);
+        codegen_free(&cg);
+        ast_free(program);
+        free(source);
+        return 1;
+    }
 
     /* Python link arguments */
-    const char *py_inc = "";
-    const char *py_libdir = "";
-    const char *py_lib = "";
+
     char py_inc_arg[600] = "";
     char py_lib_arg[600] = "";
 
@@ -669,7 +1050,15 @@ int main(int argc, char **argv) {
 
     char sqlite_obj[600] = "-lm";
     if (cg.uses_sqlite) {
-        snprintf(sqlite_obj, sizeof(sqlite_obj), "%s\\sqlite3.o", runtime_inc);
+        if (!lp_join2(sqlite_obj, sizeof(sqlite_obj), runtime_inc, LP_PATH_SEP_STR "sqlite3.o")) {
+            fprintf(stderr, "Error: SQLite object path is too long\n");
+            remove(tmp_c);
+            free(c_code);
+            codegen_free(&cg);
+            ast_free(program);
+            free(source);
+            return 1;
+        }
         printf("[LP Build] SQLite module detected (Tier 1). Statically linking sqlite3.o...\n");
     }
 
@@ -750,7 +1139,9 @@ static int find_test_functions(AstNode *program, char names[][256], int max) {
 
 int run_tests(const char *argv0, const char *test_dir) {
     /* Enable ANSI on Windows */
+#ifdef _WIN32
     system("");
+#endif
 
     printf("\n\033[1m\033[36m  \xF0\x9F\xA7\xAA LP Test Runner\033[0m\n");
     printf("\033[2m  ────────────────────────\033[0m\n\n");
@@ -766,29 +1157,17 @@ int run_tests(const char *argv0, const char *test_dir) {
     char exe_dir[512];
     get_exe_dir(exe_dir, sizeof(exe_dir), argv0);
     char runtime_inc[512];
-    runtime_inc[0] = '\0';
-    {
-        char try_path[600];
-        snprintf(try_path, sizeof(try_path), "%s\\..\\runtime\\lp_runtime.h", exe_dir);
-        FILE *rf = fopen(try_path, "r");
-        if (rf) { fclose(rf); snprintf(runtime_inc, sizeof(runtime_inc), "%s\\..\\runtime", exe_dir); }
-        if (!runtime_inc[0]) {
-            const char *c[] = { "d:\\LP\\runtime", "d:/LP/runtime" };
-            for (int i = 0; i < 2; i++) {
-                snprintf(try_path, sizeof(try_path), "%s\\lp_runtime.h", c[i]);
-                rf = fopen(try_path, "r");
-                if (rf) { fclose(rf); snprintf(runtime_inc, sizeof(runtime_inc), "%s", c[i]); break; }
-            }
-        }
-    }
-    if (!runtime_inc[0]) {
+    if (!lp_find_runtime_dir(exe_dir, runtime_inc, sizeof(runtime_inc))) {
         fprintf(stderr, "\033[31mError: cannot find lp_runtime.h\033[0m\n");
         return 1;
     }
 
     /* Scan for test_*.lp files */
     char search_path[600];
-    snprintf(search_path, sizeof(search_path), "%s\\test_*.lp", test_dir);
+    if (!lp_join2(search_path, sizeof(search_path), test_dir, LP_PATH_SEP_STR "test_*.lp")) {
+        fprintf(stderr, "\033[31mError: test directory path is too long\033[0m\n");
+        return 1;
+    }
 
     struct _finddata_t fd;
     intptr_t hFind = _findfirst(search_path, &fd);
@@ -803,7 +1182,11 @@ int run_tests(const char *argv0, const char *test_dir) {
 
     do {
         char filepath[600];
-        snprintf(filepath, sizeof(filepath), "%s\\%s", test_dir, fd.name);
+        if (!lp_join_with_sep(filepath, sizeof(filepath), test_dir, LP_PATH_SEP, fd.name)) {
+            printf("    \033[31m\xE2\x9D\x8C Test file path too long\033[0m\n");
+            total_failed++;
+            continue;
+        }
 
         printf("  \033[1m%s\033[0m\n", fd.name);
 
@@ -863,7 +1246,13 @@ int run_tests(const char *argv0, const char *test_dir) {
 
             /* Write C code, replacing main() with our test caller */
             char tmp_c[512];
-            snprintf(tmp_c, sizeof(tmp_c), "__lp_test_%s.c", test_names[t]);
+            if (!lp_join3(tmp_c, sizeof(tmp_c), "__lp_test_", test_names[t], ".c")) {
+                printf("    \033[31m\xE2\x9D\x8C Test temp path too long\033[0m\n");
+                free(c_code);
+                codegen_free(&cg);
+                total_failed++;
+                continue;
+            }
             FILE *tmp = fopen(tmp_c, "w");
             if (!tmp) {
                 printf("    \033[31m\xE2\x9D\x8C Cannot write temp file\033[0m\n");
@@ -888,13 +1277,34 @@ int run_tests(const char *argv0, const char *test_dir) {
 
             /* Compile */
             char inc_flag[600];
-            snprintf(inc_flag, sizeof(inc_flag), "-I%s", runtime_inc);
+            if (!lp_make_include_flag(inc_flag, sizeof(inc_flag), runtime_inc)) {
+                printf("    \033[31m\xE2\x9D\x8C Include path too long\033[0m\n");
+                remove(tmp_c);
+                free(c_code);
+                codegen_free(&cg);
+                total_failed++;
+                continue;
+            }
             char exe_path[512];
-            snprintf(exe_path, sizeof(exe_path), "__lp_test_%s.exe", test_names[t]);
+            if (!lp_join3(exe_path, sizeof(exe_path), "__lp_test_", test_names[t], LP_HOST_EXE_EXT)) {
+                printf("    \033[31m\xE2\x9D\x8C Test output path too long\033[0m\n");
+                remove(tmp_c);
+                free(c_code);
+                codegen_free(&cg);
+                total_failed++;
+                continue;
+            }
 
             char sqlite_obj[600] = "-lm";
             if (cg.uses_sqlite) {
-                snprintf(sqlite_obj, sizeof(sqlite_obj), "%s\\sqlite3.o", runtime_inc);
+                if (!lp_join2(sqlite_obj, sizeof(sqlite_obj), runtime_inc, LP_PATH_SEP_STR "sqlite3.o")) {
+                    printf("    \033[31m\xE2\x9D\x8C SQLite object path too long\033[0m\n");
+                    remove(tmp_c);
+                    free(c_code);
+                    codegen_free(&cg);
+                    total_failed++;
+                    continue;
+                }
             }
 
             clock_t start = clock();
@@ -958,7 +1368,9 @@ int run_tests(const char *argv0, const char *test_dir) {
  * ══════════════════════════════════════════════════════════════ */
 
 int run_profile(const char *argv0, const char *input_file) {
+#ifdef _WIN32
     system(""); /* Enable ANSI */
+#endif
 
     printf("\n\033[1m\033[35m  LP Profiler\033[0m\n");
     printf("\033[2m  ────────────────────────\033[0m\n");
@@ -1056,26 +1468,37 @@ int run_profile(const char *argv0, const char *input_file) {
     char exe_dir_buf[512];
     get_exe_dir(exe_dir_buf, sizeof(exe_dir_buf), argv0);
     char runtime_inc[512];
-    runtime_inc[0] = '\0';
-    {
-        char try_path[600];
-        snprintf(try_path, sizeof(try_path), "%s\\..\\runtime\\lp_runtime.h", exe_dir_buf);
-        FILE *rf = fopen(try_path, "r");
-        if (rf) { fclose(rf); snprintf(runtime_inc, sizeof(runtime_inc), "%s\\..\\runtime", exe_dir_buf); }
-        if (!runtime_inc[0]) {
-            const char *c[] = { "d:\\LP\\runtime", "d:/LP/runtime" };
-            for (int i = 0; i < 2; i++) {
-                snprintf(try_path, sizeof(try_path), "%s\\lp_runtime.h", c[i]);
-                rf = fopen(try_path, "r");
-                if (rf) { fclose(rf); snprintf(runtime_inc, sizeof(runtime_inc), "%s", c[i]); break; }
-            }
-        }
+    if (!lp_find_runtime_dir(exe_dir_buf, runtime_inc, sizeof(runtime_inc))) {
+        fprintf(stderr, "\033[31mError: cannot find lp_runtime.h\033[0m\n");
+        remove(tmp_c);
+        free(c_code);
+        codegen_free(&cg);
+        ast_free(program);
+        free(source);
+        return 1;
     }
 
     /* Compile with profiling */
     char inc_flag[600];
-    snprintf(inc_flag, sizeof(inc_flag), "-I%s", runtime_inc);
-    const char *exe_path = "__lp_profile.exe";
+    if (!lp_make_include_flag(inc_flag, sizeof(inc_flag), runtime_inc)) {
+        fprintf(stderr, "\033[31mError: include path is too long\033[0m\n");
+        remove(tmp_c);
+        free(c_code);
+        codegen_free(&cg);
+        ast_free(program);
+        free(source);
+        return 1;
+    }
+    char exe_path[64];
+    if (!lp_join2(exe_path, sizeof(exe_path), "__lp_profile", LP_HOST_EXE_EXT)) {
+        fprintf(stderr, "\033[31mError: profile output path is too long\033[0m\n");
+        remove(tmp_c);
+        free(c_code);
+        codegen_free(&cg);
+        ast_free(program);
+        free(source);
+        return 1;
+    }
 
     printf("  \033[2mCompiling with profiling...\033[0m\n");
     int ret = (int)_spawnl(_P_WAIT, gcc, "gcc",
@@ -1115,7 +1538,7 @@ static void watch_signal_handler(int sig) {
 }
 
 int run_watch(const char *argv0, const char *input_file) {
-    struct _stat file_stat;
+    LP_STAT_STRUCT file_stat;
     time_t last_mtime = 0;
     int run_count = 0;
 
@@ -1132,25 +1555,9 @@ int run_watch(const char *argv0, const char *input_file) {
 
     /* Find runtime dir */
     char runtime_inc[512];
-    runtime_inc[0] = '\0';
-    {
-        char try_path[600];
-        snprintf(try_path, sizeof(try_path), "%s%c..%cruntime%clp_runtime.h",
-                 exe_dir, '\\', '\\', '\\');
-        FILE *rf = fopen(try_path, "r");
-        if (rf) {
-            fclose(rf);
-            snprintf(runtime_inc, sizeof(runtime_inc), "%s%c..%cruntime",
-                     exe_dir, '\\', '\\');
-        } else {
-            /* Try hardcoded paths */
-            const char *candidates[] = { "d:\\LP\\runtime", "d:/LP/runtime" };
-            for (int c = 0; c < 2; c++) {
-                snprintf(try_path, sizeof(try_path), "%s%clp_runtime.h", candidates[c], '\\');
-                rf = fopen(try_path, "r");
-                if (rf) { fclose(rf); strncpy(runtime_inc, candidates[c], sizeof(runtime_inc)-1); break; }
-            }
-        }
+    if (!lp_find_runtime_dir(exe_dir, runtime_inc, sizeof(runtime_inc))) {
+        fprintf(stderr, "Error: cannot find lp_runtime.h\n");
+        return 1;
     }
 
     /* Setup signal handler for clean exit */
@@ -1165,7 +1572,7 @@ int run_watch(const char *argv0, const char *input_file) {
 
     while (watch_running) {
         /* Check file modification time */
-        if (_stat(input_file, &file_stat) != 0) {
+        if (LP_STAT_CALL(input_file, &file_stat) != 0) {
             printf("\033[1;31m  Error: Cannot access file '%s'\033[0m\n", input_file);
             Sleep(1000);
             continue;
@@ -1177,7 +1584,7 @@ int run_watch(const char *argv0, const char *input_file) {
 
             if (run_count > 1) {
                 /* Clear screen for fresh output */
-                system("cls");
+                system(LP_CLEAR_CMD);
                 printf("\033[1;33m");
                 printf("  \xF0\x9F\x94\xA5 LP Hot Reload Mode\n");
                 printf("  \xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\n");
@@ -1227,8 +1634,16 @@ int run_watch(const char *argv0, const char *input_file) {
 
             /* Write temp C file */
             char tmp_c[512], tmp_exe[512];
-            snprintf(tmp_c, sizeof(tmp_c), "%s\\_lp_watch_tmp.c", exe_dir);
-            snprintf(tmp_exe, sizeof(tmp_exe), "%s\\_lp_watch_tmp.exe", exe_dir);
+            lp_copy_str(tmp_c, sizeof(tmp_c), "__lp_watch_tmp.c");
+            if (!lp_join2(tmp_exe, sizeof(tmp_exe), "__lp_watch_tmp", LP_HOST_EXE_EXT)) {
+                printf(" \033[1;31mOutput path too long\033[0m\n");
+                free(c_code);
+                codegen_free(&cg);
+                ast_free(program);
+                free(source);
+                Sleep(500);
+                continue;
+            }
 
             FILE *fp = fopen(tmp_c, "w");
             if (fp) {
@@ -1237,18 +1652,47 @@ int run_watch(const char *argv0, const char *input_file) {
             }
 
             /* Compile */
-            char compile_cmd[2048];
-            if (runtime_inc[0]) {
-                snprintf(compile_cmd, sizeof(compile_cmd),
-                         "\"%s\" -std=c99 -O2 -w -I\"%s\" \"%s\" -o \"%s\" -lm",
-                         gcc, runtime_inc, tmp_c, tmp_exe);
-            } else {
-                snprintf(compile_cmd, sizeof(compile_cmd),
-                         "\"%s\" -std=c99 -O2 -w \"%s\" -o \"%s\" -lm",
-                         gcc, tmp_c, tmp_exe);
-            }
+            char inc_flag[600];
+            char sql_path[600];
+            const char *args[16];
+            int ac = 0;
 
-            int compile_ret = system(compile_cmd);
+            args[ac++] = gcc;
+            args[ac++] = "-std=c99";
+            args[ac++] = "-O2";
+            args[ac++] = "-w";
+            if (runtime_inc[0]) {
+                if (!lp_make_include_flag(inc_flag, sizeof(inc_flag), runtime_inc)) {
+                    printf(" \033[1;31mInclude path too long\033[0m\n");
+                    free(c_code);
+                    codegen_free(&cg);
+                    ast_free(program);
+                    free(source);
+                    Sleep(500);
+                    continue;
+                }
+                args[ac++] = inc_flag;
+            }
+            args[ac++] = tmp_c;
+            args[ac++] = "-o";
+            args[ac++] = tmp_exe;
+            args[ac++] = "-lm";
+            args[ac++] = LP_LWINHTTP;
+            if (cg.uses_sqlite && runtime_inc[0]) {
+                if (!lp_join2(sql_path, sizeof(sql_path), runtime_inc, LP_PATH_SEP_STR "sqlite3.o")) {
+                    printf(" \033[1;31mSQLite path too long\033[0m\n");
+                    free(c_code);
+                    codegen_free(&cg);
+                    ast_free(program);
+                    free(source);
+                    Sleep(500);
+                    continue;
+                }
+                args[ac++] = sql_path;
+            }
+            args[ac++] = NULL;
+
+            int compile_ret = (int)_spawnv(_P_WAIT, gcc, args);
             clock_t t_end = clock();
             double compile_time = (double)(t_end - t_start) / CLOCKS_PER_SEC;
 
