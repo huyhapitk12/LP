@@ -9,6 +9,7 @@
 #include <math.h>
 #include <stdbool.h>
 
+#include "lp_compat.h"
 #include "lp_dict.h"
 #include "lp_set.h"
 #include "lp_tuple.h"

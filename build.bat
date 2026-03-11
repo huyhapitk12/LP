@@ -21,6 +21,11 @@ if exist "C:\msys64\ucrt64\bin\gcc.exe" (
         -I runtime ^
         -o build\lp.exe -lm
     if %ERRORLEVEL% EQU 0 (
+        gcc -O2 -c runtime\sqlite3.c -o runtime\sqlite3.o
+        if %ERRORLEVEL% NEQ 0 (
+            echo [LP Build] Failed to build runtime\sqlite3.o
+            exit /b 1
+        )
         echo [LP Build] Success: build\lp.exe
         echo.
         echo Usage:

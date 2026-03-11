@@ -30,5 +30,8 @@ gcc -std=c99 -O2 $WARN_FLAGS \
     -I runtime \
     -o "$OUT" -lm
 
+gcc -O2 -c runtime/sqlite3.c -o runtime/sqlite3.o
+
 echo "=== Build successful: $OUT ==="
 ls -la "$OUT"
+ls -la runtime/sqlite3.o

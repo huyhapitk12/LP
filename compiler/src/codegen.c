@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include "lp_compat.h"
 
 /* --- Buffer --- */
 void buf_init(Buffer *b) { b->data = NULL; b->len = 0; b->cap = 0; }

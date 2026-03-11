@@ -379,6 +379,16 @@ static const char *target_toolchain_for(const char *target_os) {
     return NULL;
 }
 
+static int lp_target_needs_pthread(int uses_thread, const char *target_os) {
+    if (!uses_thread) return 0;
+    if (target_os && strcmp(target_os, "windows-x64") == 0) return 0;
+#ifdef _WIN32
+    return 0;
+#else
+    return 1;
+#endif
+}
+
 static int tool_exists(const char *tool) {
     char cmd[512];
     snprintf(cmd, sizeof(cmd), "%s --version %s", tool, LP_NULL_REDIRECT);
@@ -639,6 +649,10 @@ int main(int argc, char **argv) {
         if (no_console) {
             args[ac++] = "-mwindows";
         }
+
+        if (lp_target_needs_pthread(1, target_os)) {
+            args[ac++] = "-pthread";
+        }
         
         args[ac++] = "-lm";
         args[ac++] = LP_LWINHTTP;
@@ -798,6 +812,9 @@ int main(int argc, char **argv) {
         args[ac++] = inc_flag;
         args[ac++] = "-o";
         args[ac++] = dll_path;
+        if (lp_target_needs_pthread(cg.uses_thread, NULL)) {
+            args[ac++] = "-pthread";
+        }
         args[ac++] = "-lm";
         args[ac++] = LP_LWINHTTP;
         if (cg.uses_sqlite) {
@@ -1063,22 +1080,33 @@ int main(int argc, char **argv) {
     }
 
     int ret;
-    if (emit_asm) {
-        if (cg.uses_python) {
-            ret = (int)_spawnl(_P_WAIT, gcc, "gcc",
-                "-std=gnu99", "-O3", "-march=native", "-fstrict-aliasing", "-funroll-loops", "-ffast-math", "-fomit-frame-pointer", "-S", tmp_c, inc_flag, py_inc_arg, "-o", exe_path, NULL);
-        } else {
-            ret = (int)_spawnl(_P_WAIT, gcc, "gcc",
-                "-std=gnu99", "-O3", "-march=native", "-fstrict-aliasing", "-funroll-loops", "-ffast-math", "-fomit-frame-pointer", "-S", tmp_c, inc_flag, "-o", exe_path, NULL);
+    {
+        const char *args[24];
+        int ac = 0;
+        args[ac++] = gcc;
+        args[ac++] = "-std=gnu99";
+        args[ac++] = "-O3";
+        args[ac++] = "-march=native";
+        if (!emit_asm) args[ac++] = "-flto";
+        args[ac++] = "-fstrict-aliasing";
+        args[ac++] = "-funroll-loops";
+        args[ac++] = "-ffast-math";
+        args[ac++] = "-fomit-frame-pointer";
+        if (emit_asm) args[ac++] = "-S";
+        args[ac++] = tmp_c;
+        args[ac++] = inc_flag;
+        if (cg.uses_python) args[ac++] = py_inc_arg;
+        args[ac++] = "-o";
+        args[ac++] = exe_path;
+        if (!emit_asm) {
+            if (cg.uses_python) args[ac++] = py_lib_arg;
+            if (lp_target_needs_pthread(cg.uses_thread, NULL)) args[ac++] = "-pthread";
+            args[ac++] = "-lm";
+            args[ac++] = LP_LWINHTTP;
+            args[ac++] = sqlite_obj;
         }
-    } else {
-        if (cg.uses_python) {
-            ret = (int)_spawnl(_P_WAIT, gcc, "gcc",
-                "-std=gnu99", "-O3", "-march=native", "-flto", "-fstrict-aliasing", "-funroll-loops", "-ffast-math", "-fomit-frame-pointer", tmp_c, inc_flag, py_inc_arg, "-o", exe_path, py_lib_arg, "-lm", LP_LWINHTTP, sqlite_obj, NULL);
-        } else {
-            ret = (int)_spawnl(_P_WAIT, gcc, "gcc",
-                "-std=gnu99", "-O3", "-march=native", "-flto", "-fstrict-aliasing", "-funroll-loops", "-ffast-math", "-fomit-frame-pointer", tmp_c, inc_flag, "-o", exe_path, "-lm", LP_LWINHTTP, sqlite_obj, NULL);
-        }
+        args[ac++] = NULL;
+        ret = (int)run_tool_wait(gcc, args);
     }
     
     if (ret != 0) {
@@ -1308,8 +1336,25 @@ int run_tests(const char *argv0, const char *test_dir) {
             }
 
             clock_t start = clock();
-            int ret = (int)_spawnl(_P_WAIT, gcc, "gcc",
-                "-std=c99", "-O2", "-w", tmp_c, inc_flag, "-o", exe_path, "-lm", LP_LWINHTTP, sqlite_obj, NULL);
+            int ret;
+            {
+                const char *args[16];
+                int ac = 0;
+                args[ac++] = gcc;
+                args[ac++] = "-std=c99";
+                args[ac++] = "-O2";
+                args[ac++] = "-w";
+                args[ac++] = tmp_c;
+                args[ac++] = inc_flag;
+                args[ac++] = "-o";
+                args[ac++] = exe_path;
+                if (lp_target_needs_pthread(cg.uses_thread, NULL)) args[ac++] = "-pthread";
+                args[ac++] = "-lm";
+                args[ac++] = LP_LWINHTTP;
+                args[ac++] = sqlite_obj;
+                args[ac++] = NULL;
+                ret = (int)run_tool_wait(gcc, args);
+            }
 
             if (ret != 0) {
                 printf("    \033[31m\xE2\x9D\x8C %s \033[2m(compile error)\033[0m\n", test_names[t]);
@@ -1501,8 +1546,23 @@ int run_profile(const char *argv0, const char *input_file) {
     }
 
     printf("  \033[2mCompiling with profiling...\033[0m\n");
-    int ret = (int)_spawnl(_P_WAIT, gcc, "gcc",
-        "-std=c99", "-O2", "-w", tmp_c, inc_flag, "-o", exe_path, "-lm", NULL);
+    int ret;
+    {
+        const char *args[14];
+        int ac = 0;
+        args[ac++] = gcc;
+        args[ac++] = "-std=c99";
+        args[ac++] = "-O2";
+        args[ac++] = "-w";
+        args[ac++] = tmp_c;
+        args[ac++] = inc_flag;
+        args[ac++] = "-o";
+        args[ac++] = exe_path;
+        if (lp_target_needs_pthread(cg.uses_thread, NULL)) args[ac++] = "-pthread";
+        args[ac++] = "-lm";
+        args[ac++] = NULL;
+        ret = (int)run_tool_wait(gcc, args);
+    }
 
     if (ret != 0) {
         fprintf(stderr, "\033[31m  Compilation failed\033[0m\n");
@@ -1676,6 +1736,9 @@ int run_watch(const char *argv0, const char *input_file) {
             args[ac++] = tmp_c;
             args[ac++] = "-o";
             args[ac++] = tmp_exe;
+            if (lp_target_needs_pthread(cg.uses_thread, NULL)) {
+                args[ac++] = "-pthread";
+            }
             args[ac++] = "-lm";
             args[ac++] = LP_LWINHTTP;
             if (cg.uses_sqlite && runtime_inc[0]) {

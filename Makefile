@@ -12,6 +12,7 @@ LDFLAGS := -lm
 SRC_DIR := compiler/src
 INC_DIR := -I compiler/src -I runtime
 BUILD_DIR := build
+SQLITE_OBJ := runtime/sqlite3.o
 
 SRCS := $(SRC_DIR)/main.c \
         $(SRC_DIR)/lexer.c \
@@ -32,18 +33,23 @@ endif
 
 .PHONY: all clean install
 
-all: $(TARGET)
+all: $(TARGET) $(SQLITE_OBJ)
 
 $(TARGET): $(SRCS)
 	$(MKDIR)
 	$(CC) $(CFLAGS) $(SRCS) $(INC_DIR) -o $(TARGET) $(LDFLAGS)
 	@echo "[LP] Build successful: $(TARGET)"
 
+$(SQLITE_OBJ): runtime/sqlite3.c runtime/sqlite3.h
+	$(CC) -O2 -c runtime/sqlite3.c -o $(SQLITE_OBJ)
+	@echo "[LP] Built runtime object: $(SQLITE_OBJ)"
+
 clean:
 ifeq ($(OS),Windows_NT)
 	if exist "$(BUILD_DIR)" rmdir /s /q "$(BUILD_DIR)"
 else
 	rm -rf $(BUILD_DIR)
+	rm -f $(SQLITE_OBJ)
 endif
 
 install: $(TARGET)

@@ -28,5 +28,6 @@ watch_*.txt
 test_http_gen.c
 *.db-shm
 *.db-wal
+thread_test.db
 __lp_*.c
 __lp_*.exe
