@@ -31,7 +31,7 @@ else
     MKDIR  := mkdir -p $(BUILD_DIR)
 endif
 
-.PHONY: all clean install
+.PHONY: all clean install test_unit
 
 all: $(TARGET) $(SQLITE_OBJ)
 
@@ -56,6 +56,9 @@ install: $(TARGET)
 	cp $(TARGET) /usr/local/bin/lp
 	@echo "[LP] Installed to /usr/local/bin/lp"
 
+test_unit: $(SRC_DIR)/test_ast_unit.c $(SRC_DIR)/ast.c $(SRC_DIR)/lexer.c
+	$(CC) $(CFLAGS) $(SRC_DIR)/test_ast_unit.c $(SRC_DIR)/ast.c $(SRC_DIR)/lexer.c $(INC_DIR) -o $(BUILD_DIR)/test_ast_unit $(LDFLAGS)
+	./$(BUILD_DIR)/test_ast_unit
 # Add a C test target
 test-c: tests/test_codegen.c compiler/src/codegen.c
 	$(CC) $(CFLAGS) $^ -I compiler/src -I runtime -o $(BUILD_DIR)/test_codegen $(LDFLAGS)
