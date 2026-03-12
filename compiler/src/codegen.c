@@ -24,17 +24,25 @@ void buf_printf(Buffer *b, const char *fmt, ...) {
     va_start(args, fmt);
     int len = vsnprintf(NULL, 0, fmt, args);
     va_end(args);
+    
     if (len < 0) return;
 
-    if (b->len + len >= b->cap) {
-        b->cap = (b->len + len + 1) * 2;
-        b->data = (char *)realloc(b->data, b->cap);
+    size_t needed = (size_t)b->len + (size_t)len + 1;
+    if (needed >= (size_t)b->cap) {
+        size_t new_cap = needed * 2;
+        if (new_cap < needed) return;
+        
+        char *new_data = (char *)realloc(b->data, new_cap);
+        if (!new_data) {
+            return; 
+        }
+        b->data = new_data;
+        b->cap = (int)new_cap;
     }
 
     va_start(args, fmt);
     vsnprintf(b->data + b->len, len + 1, fmt, args);
     va_end(args);
-
     b->len += len;
 }
 
@@ -857,11 +865,6 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             if (i > 0) buf_write(buf, ", ");
                             gen_expr(cg, buf, node->call.args.items[i]);
                         }
-                        if (strcmp(func_name, "execute") == 0 || strcmp(func_name, "query") == 0) {
-                            if (node->call.args.count == 2) {
-                                buf_write(buf, ", lp_val_null()");
-                            }
-                        }
                         buf_write(buf, ")");
                         break;
                     }
@@ -872,11 +875,6 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             if (i > 0) buf_write(buf, ", ");
                             gen_expr(cg, buf, node->call.args.items[i]);
                         }
-                        if (strcmp(func_name, "execute") == 0 || strcmp(func_name, "query") == 0) {
-                            if (node->call.args.count == 2) {
-                                buf_write(buf, ", lp_val_null()");
-                            }
-                        }
                         buf_write(buf, ")");
                         break;
                     }
@@ -886,11 +884,6 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         for (int i = 0; i < node->call.args.count; i++) {
                             if (i > 0) buf_write(buf, ", ");
                             gen_expr(cg, buf, node->call.args.items[i]);
-                        }
-                        if (strcmp(func_name, "execute") == 0 || strcmp(func_name, "query") == 0) {
-                            if (node->call.args.count == 2) {
-                                buf_write(buf, ", lp_val_null()");
-                            }
                         }
                         buf_write(buf, ")");
                         break;
@@ -903,11 +896,6 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             if (i > 0) buf_write(buf, ", ");
                             gen_expr(cg, buf, node->call.args.items[i]);
                         }
-                        if (strcmp(func_name, "execute") == 0 || strcmp(func_name, "query") == 0) {
-                            if (node->call.args.count == 2) {
-                                buf_write(buf, ", lp_val_null()");
-                            }
-                        }
                         buf_write(buf, ")");
                         break;
                     }
@@ -917,11 +905,6 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         for (int i = 0; i < node->call.args.count; i++) {
                             if (i > 0) buf_write(buf, ", ");
                             gen_expr(cg, buf, node->call.args.items[i]);
-                        }
-                        if (strcmp(func_name, "execute") == 0 || strcmp(func_name, "query") == 0) {
-                            if (node->call.args.count == 2) {
-                                buf_write(buf, ", lp_val_null()");
-                            }
                         }
                         buf_write(buf, ")");
                         break;
@@ -937,11 +920,6 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         for (int i = 0; i < node->call.args.count; i++) {
                             if (i > 0) buf_write(buf, ", ");
                             gen_expr(cg, buf, node->call.args.items[i]);
-                        }
-                        if (strcmp(func_name, "execute") == 0 || strcmp(func_name, "query") == 0) {
-                            if (node->call.args.count == 2) {
-                                buf_write(buf, ", lp_val_null()");
-                            }
                         }
                         buf_write(buf, ")");
                         break;
@@ -1982,19 +1960,24 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
             } else {
                 LpType iter_type = infer_type(cg, node->for_stmt.iter);
                 if (iter_type == LP_VAL || iter_type == LP_LIST || iter_type == LP_PYOBJ || iter_type == LP_ARRAY || iter_type == LP_STR_ARRAY || iter_type == LP_DICT || iter_type == LP_SET || iter_type == LP_TUPLE) {
-                    static int generic_loop_counter = 0;
-                    int cur_loop = generic_loop_counter++;
+                    static int generic_parallel_loop_counter = 0;
+                    int cur_loop = generic_parallel_loop_counter++;
+                    
                     write_indent(buf, indent);
-                    buf_printf(buf, "LpVal __lp_iter_%d = ", cur_loop);
+                    buf_printf(buf, "LpVal __lp_p_iter_%d = ", cur_loop);
                     emit_lp_val(cg, buf, node->for_stmt.iter);
                     buf_write(buf, ";\n");
                     write_indent(buf, indent);
-                    buf_printf(buf, "int64_t __lp_len_%d = lp_val_len(__lp_iter_%d);\n", cur_loop, cur_loop);
-                    scope_define(cg->scope, node->for_stmt.var, LP_VAL);
+                    buf_printf(buf, "int64_t __lp_p_len_%d = lp_val_len(__lp_p_iter_%d);\n", cur_loop, cur_loop);
                     write_indent(buf, indent);
-                    buf_printf(buf, "for (int64_t __lp_i_%d = 0; __lp_i_%d < __lp_len_%d; __lp_i_%d++) {\n", cur_loop, cur_loop, cur_loop, cur_loop);
+                    buf_write(buf, "#pragma omp parallel for\n");
+                    write_indent(buf, indent);
+                    buf_printf(buf, "for (int64_t __lp_p_i_%d = 0; __lp_p_i_%d < __lp_p_len_%d; __lp_p_i_%d++) {\n", 
+                               cur_loop, cur_loop, cur_loop, cur_loop);
                     write_indent(buf, indent + 1);
-                    buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(__lp_iter_%d, __lp_i_%d);\n", node->for_stmt.var, cur_loop, cur_loop);
+                    scope_define(cg->scope, node->for_stmt.var, LP_VAL);
+                    buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(__lp_p_iter_%d, __lp_p_i_%d);\n", 
+                               node->for_stmt.var, cur_loop, cur_loop);
                 } else {
                     write_indent(buf, indent);
                     buf_write(buf, "/* TODO: generic for loop */\n");
@@ -2063,11 +2046,11 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     static int generic_parallel_loop_counter = 0;
                     int cur_loop = generic_parallel_loop_counter++;
                     write_indent(buf, indent);
-                    buf_printf(buf, "LpVal __lp_iter_%d = ", cur_loop);
+                    buf_printf(buf, "LpVal __lp_p_iter_%d = ", cur_loop);
                     emit_lp_val(cg, buf, node->for_stmt.iter);
                     buf_write(buf, ";\n");
                     write_indent(buf, indent);
-                    buf_printf(buf, "int64_t __lp_len_%d = lp_val_len(__lp_iter_%d);\n", cur_loop, cur_loop);
+                    buf_printf(buf, "int64_t __lp_p_len_%d = lp_val_len(__lp_p_iter_%d);\n", cur_loop, cur_loop);
 
                     /* Emit OpenMP parallel for pragma */
                     write_indent(buf, indent);
@@ -2076,15 +2059,13 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     write_indent(buf, indent);
                     buf_printf(buf, "for (int64_t __lp_i_%d = 0; __lp_i_%d < __lp_len_%d; __lp_i_%d++) {\n", cur_loop, cur_loop, cur_loop, cur_loop);
                     write_indent(buf, indent + 1);
-                    if (!scope_lookup(cg->scope, node->for_stmt.var)) {
-                        scope_define(cg->scope, node->for_stmt.var, LP_VAL);
-                    }
+                    scope_define(cg->scope, node->for_stmt.var, LP_VAL);
                     /* For OpenMP threads, the loop variable must be explicitly declared locally to be private */
                     buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(__lp_iter_%d, __lp_i_%d);\n", node->for_stmt.var, cur_loop, cur_loop);
                 } else {
                     /* Emit OpenMP parallel for pragma */
                     write_indent(buf, indent);
-                    buf_write(buf, "#pragma omp parallel for\n");
+                    buf_write(buf, "#pragma omp parallel\n"); 
                     write_indent(buf, indent);
                     buf_write(buf, "/* TODO: generic parallel for loop */\n");
                     write_indent(buf, indent);
@@ -2624,32 +2605,39 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
 
             /* Register import */
             if (cg->import_count < 64) {
-                ImportInfo *info = &cg->imports[cg->import_count++];
                 size_t module_len = strlen(module);
-                info->module = (char *)malloc(module_len + 1);
-                if (info->module) {
-                    strncpy(info->module, module, module_len + 1);
-                    info->module[module_len] = '\0';
-                }
                 size_t alias_len = strlen(alias);
-                info->alias = (char *)malloc(alias_len + 1);
-                if (info->alias) {
-                    strncpy(info->alias, alias, alias_len + 1);
-                    info->alias[alias_len] = '\0';
-                }
-                info->tier = tier;
+                
+                char *mod_dup = (char *)malloc(module_len + 1);
+                char *alias_dup = (char *)malloc(alias_len + 1);
 
-                if (tier == MOD_TIER3_PYTHON) cg->uses_python = 1;
-                else if (tier == MOD_TIER1_OS) { cg->uses_native = 1; cg->uses_os = 1; }
-                else if (tier == MOD_TIER1_SYS) { cg->uses_native = 1; cg->uses_sys = 1; }
-                else if (tier == MOD_TIER1_STRING) { cg->uses_native = 1; cg->uses_strings = 1; }
-                else if (tier == MOD_TIER1_HTTP) { cg->uses_native = 1; cg->uses_http = 1; }
-                else if (tier == MOD_TIER1_JSON) { cg->uses_native = 1; cg->uses_json = 1; }
-                else if (tier == MOD_TIER1_SQLITE) { cg->uses_native = 1; cg->uses_sqlite = 1; }
-                else if (tier == MOD_TIER1_THREAD) { cg->uses_native = 1; cg->uses_thread = 1; }
-                else if (tier == MOD_TIER1_MEMORY) { cg->uses_native = 1; cg->uses_memory = 1; }
-                else if (tier == MOD_TIER1_PLATFORM) { cg->uses_native = 1; cg->uses_platform = 1; }
-                else cg->uses_native = 1;
+                if (mod_dup && alias_dup) {
+                    strncpy(mod_dup, module, module_len + 1);
+                    mod_dup[module_len] = '\0';
+                    
+                    strncpy(alias_dup, alias, alias_len + 1);
+                    alias_dup[alias_len] = '\0';
+
+                    ImportInfo *info = &cg->imports[cg->import_count++];
+                    info->module = mod_dup;
+                    info->alias = alias_dup;
+                    info->tier = tier;
+
+                    if (tier == MOD_TIER3_PYTHON) cg->uses_python = 1;
+                    else if (tier == MOD_TIER1_OS) { cg->uses_native = 1; cg->uses_os = 1; }
+                    else if (tier == MOD_TIER1_SYS) { cg->uses_native = 1; cg->uses_sys = 1; }
+                    else if (tier == MOD_TIER1_STRING) { cg->uses_native = 1; cg->uses_strings = 1; }
+                    else if (tier == MOD_TIER1_HTTP) { cg->uses_native = 1; cg->uses_http = 1; }
+                    else if (tier == MOD_TIER1_JSON) { cg->uses_native = 1; cg->uses_json = 1; }
+                    else if (tier == MOD_TIER1_SQLITE) { cg->uses_native = 1; cg->uses_sqlite = 1; }
+                    else if (tier == MOD_TIER1_THREAD) { cg->uses_native = 1; cg->uses_thread = 1; }
+                    else if (tier == MOD_TIER1_MEMORY) { cg->uses_native = 1; cg->uses_memory = 1; }
+                    else if (tier == MOD_TIER1_PLATFORM) { cg->uses_native = 1; cg->uses_platform = 1; }
+                    else cg->uses_native = 1;
+                } else {
+                    if (mod_dup) free(mod_dup);
+                    if (alias_dup) free(alias_dup);
+                }
             }
         }
     }
