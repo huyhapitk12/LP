@@ -17,6 +17,30 @@
 #else
   /* Basic POSIX HTTP using curl via popen for simplicity, or sockets later */
   #include <unistd.h>
+
+  /* Helper to escape shell arguments to prevent command injection */
+  static inline char* lp_escape_shell_arg(const char *arg) {
+      if (!arg) return NULL;
+      size_t len = strlen(arg);
+      /* Worst case: each char becomes 4 chars ('\'' -> '\'\\\'\''), plus 2 for outer quotes, plus null */
+      char *res = (char*)malloc(len * 4 + 3);
+      if (!res) return NULL;
+      char *p = res;
+      *p++ = '\'';
+      for (size_t i = 0; i < len; i++) {
+          if (arg[i] == '\'') {
+              *p++ = '\'';
+              *p++ = '\\';
+              *p++ = '\'';
+              *p++ = '\'';
+          } else {
+              *p++ = arg[i];
+          }
+      }
+      *p++ = '\'';
+      *p = '\0';
+      return res;
+  }
 #endif
 
 /* lp_http_get(url) returns a dynamically allocated string containing the response body */
@@ -107,9 +131,21 @@ static inline char* lp_http_get(const char *url) {
     return buffer;
 #else
     /* Fallback on Linux using curl */
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "curl -s \"%s\"", url);
+    char *escaped_url = lp_escape_shell_arg(url);
+    if (!escaped_url) return strdup("");
+
+    /* "curl -s " (8 chars) + escaped_url + null terminator */
+    size_t cmd_len = 8 + strlen(escaped_url) + 1;
+    char *cmd = (char*)malloc(cmd_len);
+    if (!cmd) {
+        free(escaped_url);
+        return strdup("");
+    }
+    snprintf(cmd, cmd_len, "curl -s %s", escaped_url);
+    free(escaped_url);
+
     FILE *fp = popen(cmd, "r");
+    free(cmd);
     if (!fp) return strdup("");
     
     char *buffer = (char*)malloc(1);
@@ -222,14 +258,37 @@ static inline char* lp_http_post(const char *url, const char *data) {
     return buffer;
 #else
     /* Fallback on Linux using curl */
-    char cmd[4096];
+    char *escaped_url = lp_escape_shell_arg(url);
+    if (!escaped_url) return strdup("");
+
+    char *cmd = NULL;
     if (data) {
-        /* In an actual implementation, data should be escaped for the shell */
-        snprintf(cmd, sizeof(cmd), "curl -s -X POST -d \"%s\" \"%s\"", data, url);
+        char *escaped_data = lp_escape_shell_arg(data);
+        if (!escaped_data) {
+            free(escaped_url);
+            return strdup("");
+        }
+        /* "curl -s -X POST -d " (19) + escaped_data + " " (1) + escaped_url + null terminator */
+        size_t cmd_len = 19 + strlen(escaped_data) + 1 + strlen(escaped_url) + 1;
+        cmd = (char*)malloc(cmd_len);
+        if (cmd) {
+            snprintf(cmd, cmd_len, "curl -s -X POST -d %s %s", escaped_data, escaped_url);
+        }
+        free(escaped_data);
     } else {
-        snprintf(cmd, sizeof(cmd), "curl -s -X POST \"%s\"", url);
+        /* "curl -s -X POST " (16) + escaped_url + null terminator */
+        size_t cmd_len = 16 + strlen(escaped_url) + 1;
+        cmd = (char*)malloc(cmd_len);
+        if (cmd) {
+            snprintf(cmd, cmd_len, "curl -s -X POST %s", escaped_url);
+        }
     }
+    free(escaped_url);
+
+    if (!cmd) return strdup("");
+
     FILE *fp = popen(cmd, "r");
+    free(cmd);
     if (!fp) return strdup("");
     
     char *buffer = (char*)malloc(1);
