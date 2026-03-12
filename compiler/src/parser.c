@@ -592,20 +592,25 @@ static AstNode *parse_import_stmt(Parser *p) {
     AstNode *n = ast_new(NODE_IMPORT, line);
     
     /* Accumulate dotted names */
-    int cap = 64;
+    char *first_sub = tok_to_str(p->previous);
+    size_t current_len = strlen(first_sub);
+    size_t cap = current_len + 64;
     char *mod_name = (char *)malloc(cap);
-    strcpy(mod_name, tok_to_str(p->previous));
+    memcpy(mod_name, first_sub, current_len + 1);
+    free(first_sub);
     
     while (match(p, TOK_DOT)) {
         expect(p, TOK_IDENTIFIER, "expected sub-module name after '.'");
         char *sub = tok_to_str(p->previous);
-        int new_len = strlen(mod_name) + 1 + strlen(sub) + 1;
-        if (new_len > cap) {
-            cap = new_len * 2;
+        size_t sub_len = strlen(sub);
+        size_t needed = current_len + 1 + sub_len + 1;
+        if (needed > cap) {
+            cap = needed * 2;
             mod_name = (char *)realloc(mod_name, cap);
         }
-        strcat(mod_name, ".");
-        strcat(mod_name, sub);
+        mod_name[current_len++] = '.';
+        memcpy(mod_name + current_len, sub, sub_len + 1);
+        current_len += sub_len;
         free(sub);
     }
     
@@ -672,9 +677,24 @@ static AstNode *parse_assign_or_expr(Parser *p) {
     AstNode *expr = parse_expression(p);
     if (p->had_error) return expr;
 
-    /* Check for assignment: NAME = value or OBJ.ATTR = value */
-    if (check(p, TOK_ASSIGN) && (expr->type == NODE_NAME || expr->type == NODE_ATTRIBUTE)) {
+    /* Check for assignment: NAME = value or OBJ.ATTR = value or OBJ[INDEX] = value */
+    if (check(p, TOK_ASSIGN) && (expr->type == NODE_NAME || expr->type == NODE_ATTRIBUTE || expr->type == NODE_SUBSCRIPT)) {
         advance(p);
+        
+        if (expr->type == NODE_SUBSCRIPT) {
+            AstNode *n = ast_new(NODE_SUBSCRIPT_ASSIGN, line);
+            n->subscript_assign.obj = expr->subscript.obj;
+            n->subscript_assign.index = expr->subscript.index;
+            n->subscript_assign.value = parse_expression(p);
+            n->subscript_assign.op = TOK_ASSIGN;
+            
+            /* Nullify to prevent double free */
+            expr->subscript.obj = NULL;
+            expr->subscript.index = NULL;
+            free(expr);
+            return n;
+        }
+
         AstNode *n = ast_new(NODE_ASSIGN, line);
         
         if (expr->type == NODE_NAME) {
@@ -701,12 +721,27 @@ static AstNode *parse_assign_or_expr(Parser *p) {
         return n;
     }
 
-    /* Check for augmented assignment: NAME += value or OBJ.ATTR += value */
+    /* Check for augmented assignment: NAME += value or OBJ.ATTR += value or OBJ[INDEX] += value */
     if ((check(p, TOK_PLUS_ASSIGN) || check(p, TOK_MINUS_ASSIGN) ||
          check(p, TOK_STAR_ASSIGN) || check(p, TOK_SLASH_ASSIGN)) &&
-        (expr->type == NODE_NAME || expr->type == NODE_ATTRIBUTE)) {
+        (expr->type == NODE_NAME || expr->type == NODE_ATTRIBUTE || expr->type == NODE_SUBSCRIPT)) {
         TokenType op = p->current.type;
         advance(p);
+        
+        if (expr->type == NODE_SUBSCRIPT) {
+            AstNode *n = ast_new(NODE_SUBSCRIPT_ASSIGN, line);
+            n->subscript_assign.obj = expr->subscript.obj;
+            n->subscript_assign.index = expr->subscript.index;
+            n->subscript_assign.value = parse_expression(p);
+            n->subscript_assign.op = op;
+            
+            /* Nullify to prevent double free */
+            expr->subscript.obj = NULL;
+            expr->subscript.index = NULL;
+            free(expr);
+            return n;
+        }
+
         AstNode *n = ast_new(NODE_AUG_ASSIGN, line);
         
         if (expr->type == NODE_NAME) {
