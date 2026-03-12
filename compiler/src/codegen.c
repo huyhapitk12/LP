@@ -1958,7 +1958,18 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 } else if (args->count >= 2) {
                     buf_printf(buf, "for (int64_t lp_%s = ", node->for_stmt.var);
                     gen_expr(cg, buf, args->items[0]);
-                    buf_printf(buf, "; lp_%s < ", node->for_stmt.var);
+
+                    /* If step is negative, use > instead of < */
+                    if (args->count >= 3 && args->items[2]->type == NODE_UNARY_OP && args->items[2]->unary_op.op == TOK_MINUS && args->items[2]->unary_op.operand->type == NODE_INT_LIT) {
+                        buf_printf(buf, "; lp_%s > ", node->for_stmt.var);
+                    } else if (args->count >= 3 && args->items[2]->type == NODE_INT_LIT && args->items[2]->int_lit.value < 0) {
+                        buf_printf(buf, "; lp_%s > ", node->for_stmt.var);
+                    } else if (args->count >= 3) {
+                        buf_printf(buf, "; lp_%s < ", node->for_stmt.var);
+                    } else {
+                        buf_printf(buf, "; lp_%s < ", node->for_stmt.var);
+                    }
+
                     gen_expr(cg, buf, args->items[1]);
                     if (args->count >= 3) {
                         buf_printf(buf, "; lp_%s += ", node->for_stmt.var);
@@ -2024,7 +2035,18 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 } else if (args->count >= 2) {
                     buf_printf(buf, "for (int64_t lp_%s = ", node->for_stmt.var);
                     gen_expr(cg, buf, args->items[0]);
-                    buf_printf(buf, "; lp_%s < ", node->for_stmt.var);
+
+                    /* If step is negative, use > instead of < */
+                    if (args->count >= 3 && args->items[2]->type == NODE_UNARY_OP && args->items[2]->unary_op.op == TOK_MINUS && args->items[2]->unary_op.operand->type == NODE_INT_LIT) {
+                        buf_printf(buf, "; lp_%s > ", node->for_stmt.var);
+                    } else if (args->count >= 3 && args->items[2]->type == NODE_INT_LIT && args->items[2]->int_lit.value < 0) {
+                        buf_printf(buf, "; lp_%s > ", node->for_stmt.var);
+                    } else if (args->count >= 3) {
+                        buf_printf(buf, "; lp_%s < ", node->for_stmt.var);
+                    } else {
+                        buf_printf(buf, "; lp_%s < ", node->for_stmt.var);
+                    }
+
                     gen_expr(cg, buf, args->items[1]);
                     if (args->count >= 3) {
                         buf_printf(buf, "; lp_%s += ", node->for_stmt.var);
