@@ -22,16 +22,18 @@ SRCS := $(SRC_DIR)/main.c \
         $(SRC_DIR)/repl.c
 
 TARGET := $(BUILD_DIR)/lp
+TEST_TARGET := $(BUILD_DIR)/test_codegen
 
 # Windows detection
 ifeq ($(OS),Windows_NT)
     TARGET := $(BUILD_DIR)/lp.exe
+    TEST_TARGET := $(BUILD_DIR)/test_codegen.exe
     MKDIR  := if not exist "$(BUILD_DIR)" mkdir "$(BUILD_DIR)"
 else
     MKDIR  := mkdir -p $(BUILD_DIR)
 endif
 
-.PHONY: all clean install
+.PHONY: all clean install test-c
 
 all: $(TARGET) $(SQLITE_OBJ)
 
@@ -43,6 +45,14 @@ $(TARGET): $(SRCS)
 $(SQLITE_OBJ): runtime/sqlite3.c runtime/sqlite3.h
 	$(CC) -O2 -c runtime/sqlite3.c -o $(SQLITE_OBJ)
 	@echo "[LP] Built runtime object: $(SQLITE_OBJ)"
+
+test-c: $(SRC_DIR)/codegen.c compiler/tests/test_codegen.c
+	$(MKDIR)
+	$(CC) $(CFLAGS) $(INC_DIR) -c $(SRC_DIR)/codegen.c -o $(BUILD_DIR)/codegen.o
+	$(CC) $(CFLAGS) $(INC_DIR) -c compiler/tests/test_codegen.c -o $(BUILD_DIR)/test_codegen.o
+	$(CC) $(CFLAGS) $(BUILD_DIR)/codegen.o $(BUILD_DIR)/test_codegen.o -o $(TEST_TARGET)
+	@echo "[LP] Running C tests..."
+	@$(TEST_TARGET)
 
 clean:
 ifeq ($(OS),Windows_NT)

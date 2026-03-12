@@ -9,9 +9,11 @@
 void buf_init(Buffer *b) { b->data = NULL; b->len = 0; b->cap = 0; }
 
 void buf_write(Buffer *b, const char *s) {
+    if (!s) return;
     int slen = (int)strlen(s);
     if (b->len + slen >= b->cap) {
-        b->cap = (b->len + slen + 1) * 2;
+        b->cap = b->cap < 64 ? 64 : b->cap * 2;
+        if (b->cap < b->len + slen + 1) b->cap = b->len + slen + 1;
         b->data = (char *)realloc(b->data, b->cap);
     }
     memcpy(b->data + b->len, s, slen);
