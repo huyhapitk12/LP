@@ -31,7 +31,7 @@ else
     MKDIR  := mkdir -p $(BUILD_DIR)
 endif
 
-.PHONY: all clean install
+.PHONY: all clean install test_unit
 
 all: $(TARGET) $(SQLITE_OBJ)
 
