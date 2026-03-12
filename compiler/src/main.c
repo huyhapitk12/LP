@@ -402,6 +402,25 @@ static int run_tool_wait(const char *tool, const char *const *args) {
     return (int)_spawnvp(_P_WAIT, tool, args);
 }
 
+typedef struct {
+    const char *args[64];
+    int ac;
+} ArgList;
+
+static void al_init(ArgList *al) {
+    al->ac = 0;
+}
+
+static void al_add(ArgList *al, const char *arg) {
+    if (al->ac < 63) {
+        al->args[al->ac++] = arg;
+    }
+}
+
+static void al_finish(ArgList *al) {
+    al->args[al->ac] = NULL;
+}
+
 /* Get directory of the running executable */
 static void get_exe_dir(char *buf, int bufsize, const char *argv0) {
     /* Try to find the last separator */
@@ -619,47 +638,47 @@ int main(int argc, char **argv) {
             return 1;
         }
 
-        const char *args[30];
-        int ac = 0;
-        args[ac++] = gcc_path;
-        args[ac++] = "-std=gnu99";
-        args[ac++] = tmp_c;
-        args[ac++] = inc_flag;
-        args[ac++] = "-o";
-        args[ac++] = exe_path;
+        ArgList al;
+        al_init(&al);
+        al_add(&al, gcc_path);
+        al_add(&al, "-std=gnu99");
+        al_add(&al, tmp_c);
+        al_add(&al, inc_flag);
+        al_add(&al, "-o");
+        al_add(&al, exe_path);
         
         if (release) {
-            args[ac++] = "-O3";
-            args[ac++] = "-flto";
-            if (!target_os) args[ac++] = "-march=native";
-            args[ac++] = "-fstrict-aliasing";
-            args[ac++] = "-funroll-loops";
+            al_add(&al, "-O3");
+            al_add(&al, "-flto");
+            if (!target_os) al_add(&al, "-march=native");
+            al_add(&al, "-fstrict-aliasing");
+            al_add(&al, "-funroll-loops");
         } else {
-            args[ac++] = "-O2";
+            al_add(&al, "-O2");
         }
         
         if (static_link) {
-            args[ac++] = "-static";
+            al_add(&al, "-static");
         }
         
         if (strip) {
-            args[ac++] = "-s";
+            al_add(&al, "-s");
         }
         
         if (no_console) {
-            args[ac++] = "-mwindows";
+            al_add(&al, "-mwindows");
         }
 
         if (lp_target_needs_pthread(1, target_os)) {
-            args[ac++] = "-pthread";
+            al_add(&al, "-pthread");
         }
         
-        args[ac++] = "-lm";
-        args[ac++] = LP_LWINHTTP;
-        args[ac++] = NULL;
+        al_add(&al, "-lm");
+        al_add(&al, LP_LWINHTTP);
+        al_finish(&al);
         
         printf("[LP Build] Running Compile Chain...\n");
-        int r2 = run_tool_wait(gcc_path, args);
+        int r2 = run_tool_wait(gcc_path, al.args);
         
         remove(tmp_c);
         
@@ -800,23 +819,23 @@ int main(int argc, char **argv) {
             return 1;
         }
         
-        const char *args[22];
+        ArgList al;
         char sql_path[512];
-        int ac = 0;
-        args[ac++] = "gcc";
-        args[ac++] = "-std=gnu99";
-        args[ac++] = "-shared";
-        args[ac++] = "-fPIC";
-        args[ac++] = "-O3";
-        args[ac++] = tmp_c;
-        args[ac++] = inc_flag;
-        args[ac++] = "-o";
-        args[ac++] = dll_path;
+        al_init(&al);
+        al_add(&al, "gcc");
+        al_add(&al, "-std=gnu99");
+        al_add(&al, "-shared");
+        al_add(&al, "-fPIC");
+        al_add(&al, "-O3");
+        al_add(&al, tmp_c);
+        al_add(&al, inc_flag);
+        al_add(&al, "-o");
+        al_add(&al, dll_path);
         if (lp_target_needs_pthread(cg.uses_thread, NULL)) {
-            args[ac++] = "-pthread";
+            al_add(&al, "-pthread");
         }
-        args[ac++] = "-lm";
-        args[ac++] = LP_LWINHTTP;
+        al_add(&al, "-lm");
+        al_add(&al, LP_LWINHTTP);
         if (cg.uses_sqlite) {
             if (!lp_join2(sql_path, sizeof(sql_path), exe_dir, LP_PATH_SEP_STR ".." LP_PATH_SEP_STR "runtime" LP_PATH_SEP_STR "sqlite3.o")) {
                 fprintf(stderr, "[LP Export] SQLite object path is too long.\n");
@@ -827,12 +846,12 @@ int main(int argc, char **argv) {
                 free(source);
                 return 1;
             }
-            args[ac++] = sql_path;
+            al_add(&al, sql_path);
         }
-        args[ac++] = NULL;
+        al_finish(&al);
         
         printf("[LP Export] Compiling shared library: %s\n", dll_path);
-        int r2 = (int)_spawnv(_P_WAIT, gcc_path, args);
+        int r2 = (int)_spawnv(_P_WAIT, gcc_path, al.args);
         remove(tmp_c);
         
         free(c_code);
@@ -1081,32 +1100,32 @@ int main(int argc, char **argv) {
 
     int ret;
     {
-        const char *args[24];
-        int ac = 0;
-        args[ac++] = gcc;
-        args[ac++] = "-std=gnu99";
-        args[ac++] = "-O3";
-        args[ac++] = "-march=native";
-        if (!emit_asm) args[ac++] = "-flto";
-        args[ac++] = "-fstrict-aliasing";
-        args[ac++] = "-funroll-loops";
-        args[ac++] = "-ffast-math";
-        args[ac++] = "-fomit-frame-pointer";
-        if (emit_asm) args[ac++] = "-S";
-        args[ac++] = tmp_c;
-        args[ac++] = inc_flag;
-        if (cg.uses_python) args[ac++] = py_inc_arg;
-        args[ac++] = "-o";
-        args[ac++] = exe_path;
+        ArgList al;
+        al_init(&al);
+        al_add(&al, gcc);
+        al_add(&al, "-std=gnu99");
+        al_add(&al, "-O3");
+        al_add(&al, "-march=native");
+        if (!emit_asm) al_add(&al, "-flto");
+        al_add(&al, "-fstrict-aliasing");
+        al_add(&al, "-funroll-loops");
+        al_add(&al, "-ffast-math");
+        al_add(&al, "-fomit-frame-pointer");
+        if (emit_asm) al_add(&al, "-S");
+        al_add(&al, tmp_c);
+        al_add(&al, inc_flag);
+        if (cg.uses_python) al_add(&al, py_inc_arg);
+        al_add(&al, "-o");
+        al_add(&al, exe_path);
         if (!emit_asm) {
-            if (cg.uses_python) args[ac++] = py_lib_arg;
-            if (lp_target_needs_pthread(cg.uses_thread, NULL)) args[ac++] = "-pthread";
-            args[ac++] = "-lm";
-            args[ac++] = LP_LWINHTTP;
-            args[ac++] = sqlite_obj;
+            if (cg.uses_python) al_add(&al, py_lib_arg);
+            if (lp_target_needs_pthread(cg.uses_thread, NULL)) al_add(&al, "-pthread");
+            al_add(&al, "-lm");
+            al_add(&al, LP_LWINHTTP);
+            al_add(&al, sqlite_obj);
         }
-        args[ac++] = NULL;
-        ret = (int)run_tool_wait(gcc, args);
+        al_finish(&al);
+        ret = (int)run_tool_wait(gcc, al.args);
     }
     
     if (ret != 0) {
@@ -1338,22 +1357,22 @@ int run_tests(const char *argv0, const char *test_dir) {
             clock_t start = clock();
             int ret;
             {
-                const char *args[16];
-                int ac = 0;
-                args[ac++] = gcc;
-                args[ac++] = "-std=c99";
-                args[ac++] = "-O2";
-                args[ac++] = "-w";
-                args[ac++] = tmp_c;
-                args[ac++] = inc_flag;
-                args[ac++] = "-o";
-                args[ac++] = exe_path;
-                if (lp_target_needs_pthread(cg.uses_thread, NULL)) args[ac++] = "-pthread";
-                args[ac++] = "-lm";
-                args[ac++] = LP_LWINHTTP;
-                args[ac++] = sqlite_obj;
-                args[ac++] = NULL;
-                ret = (int)run_tool_wait(gcc, args);
+                ArgList al;
+                al_init(&al);
+                al_add(&al, gcc);
+                al_add(&al, "-std=c99");
+                al_add(&al, "-O2");
+                al_add(&al, "-w");
+                al_add(&al, tmp_c);
+                al_add(&al, inc_flag);
+                al_add(&al, "-o");
+                al_add(&al, exe_path);
+                if (lp_target_needs_pthread(cg.uses_thread, NULL)) al_add(&al, "-pthread");
+                al_add(&al, "-lm");
+                al_add(&al, LP_LWINHTTP);
+                al_add(&al, sqlite_obj);
+                al_finish(&al);
+                ret = (int)run_tool_wait(gcc, al.args);
             }
 
             if (ret != 0) {
@@ -1548,20 +1567,20 @@ int run_profile(const char *argv0, const char *input_file) {
     printf("  \033[2mCompiling with profiling...\033[0m\n");
     int ret;
     {
-        const char *args[14];
-        int ac = 0;
-        args[ac++] = gcc;
-        args[ac++] = "-std=c99";
-        args[ac++] = "-O2";
-        args[ac++] = "-w";
-        args[ac++] = tmp_c;
-        args[ac++] = inc_flag;
-        args[ac++] = "-o";
-        args[ac++] = exe_path;
-        if (lp_target_needs_pthread(cg.uses_thread, NULL)) args[ac++] = "-pthread";
-        args[ac++] = "-lm";
-        args[ac++] = NULL;
-        ret = (int)run_tool_wait(gcc, args);
+        ArgList al;
+        al_init(&al);
+        al_add(&al, gcc);
+        al_add(&al, "-std=c99");
+        al_add(&al, "-O2");
+        al_add(&al, "-w");
+        al_add(&al, tmp_c);
+        al_add(&al, inc_flag);
+        al_add(&al, "-o");
+        al_add(&al, exe_path);
+        if (lp_target_needs_pthread(cg.uses_thread, NULL)) al_add(&al, "-pthread");
+        al_add(&al, "-lm");
+        al_finish(&al);
+        ret = (int)run_tool_wait(gcc, al.args);
     }
 
     if (ret != 0) {
@@ -1714,13 +1733,13 @@ int run_watch(const char *argv0, const char *input_file) {
             /* Compile */
             char inc_flag[600];
             char sql_path[600];
-            const char *args[16];
-            int ac = 0;
+            ArgList al;
+            al_init(&al);
 
-            args[ac++] = gcc;
-            args[ac++] = "-std=c99";
-            args[ac++] = "-O2";
-            args[ac++] = "-w";
+            al_add(&al, gcc);
+            al_add(&al, "-std=c99");
+            al_add(&al, "-O2");
+            al_add(&al, "-w");
             if (runtime_inc[0]) {
                 if (!lp_make_include_flag(inc_flag, sizeof(inc_flag), runtime_inc)) {
                     printf(" \033[1;31mInclude path too long\033[0m\n");
@@ -1731,16 +1750,16 @@ int run_watch(const char *argv0, const char *input_file) {
                     Sleep(500);
                     continue;
                 }
-                args[ac++] = inc_flag;
+                al_add(&al, inc_flag);
             }
-            args[ac++] = tmp_c;
-            args[ac++] = "-o";
-            args[ac++] = tmp_exe;
+            al_add(&al, tmp_c);
+            al_add(&al, "-o");
+            al_add(&al, tmp_exe);
             if (lp_target_needs_pthread(cg.uses_thread, NULL)) {
-                args[ac++] = "-pthread";
+                al_add(&al, "-pthread");
             }
-            args[ac++] = "-lm";
-            args[ac++] = LP_LWINHTTP;
+            al_add(&al, "-lm");
+            al_add(&al, LP_LWINHTTP);
             if (cg.uses_sqlite && runtime_inc[0]) {
                 if (!lp_join2(sql_path, sizeof(sql_path), runtime_inc, LP_PATH_SEP_STR "sqlite3.o")) {
                     printf(" \033[1;31mSQLite path too long\033[0m\n");
@@ -1751,11 +1770,11 @@ int run_watch(const char *argv0, const char *input_file) {
                     Sleep(500);
                     continue;
                 }
-                args[ac++] = sql_path;
+                al_add(&al, sql_path);
             }
-            args[ac++] = NULL;
+            al_finish(&al);
 
-            int compile_ret = (int)_spawnv(_P_WAIT, gcc, args);
+            int compile_ret = (int)_spawnv(_P_WAIT, gcc, al.args);
             clock_t t_end = clock();
             double compile_time = (double)(t_end - t_start) / CLOCKS_PER_SEC;
 
