@@ -82,6 +82,9 @@ static Symbol *scope_define(Scope *s, const char *name, LpType type) {
     sym->is_variadic = 0;
     sym->has_kwargs = 0;
     sym->num_params = 0;
+    for (int i = 0; i < 16; i++) {
+        sym->param_types[i] = LP_UNKNOWN;
+    }
     sym->first_param_type = LP_UNKNOWN;
     sym->first_param_class_name = NULL;
     sym->access = 0;
@@ -605,6 +608,7 @@ static void emit_lp_val(CodeGen *cg, Buffer *buf, AstNode *expr) {
         case LP_LIST: buf_write(buf, "lp_val_list("); gen_expr(cg, buf, expr); buf_write(buf, ")"); break;
         case LP_DICT: buf_write(buf, "lp_val_dict("); gen_expr(cg, buf, expr); buf_write(buf, ")"); break;
         case LP_VAL: gen_expr(cg, buf, expr); break;
+        case LP_UNKNOWN: gen_expr(cg, buf, expr); break;
         default: buf_write(buf, "lp_val_null()"); break;
     }
 }
@@ -2262,9 +2266,21 @@ static LpType infer_function_return_type(CodeGen *cg, AstNode *node) {
     } else {
         Scope *temp_scope = scope_new(cg->scope);
         cg->scope = temp_scope;
+
+        for (int i = 0; i < node->func_def.params.count; i++) {
+            Param *p = &node->func_def.params.items[i];
+            LpType pt = type_from_annotation(cg, p->type_ann);
+            if (pt == LP_UNKNOWN) pt = LP_VAL;
+            scope_define(cg->scope, p->name, pt);
+        }
+
         scan_declarations(cg, &node->func_def.body);
         ret = infer_return_type(cg, &node->func_def.body);
+        
         cg->scope = temp_scope->parent;
+        
+        scope_free(temp_scope);
+        
         if (ret == LP_UNKNOWN) ret = LP_VOID;
     }
 
