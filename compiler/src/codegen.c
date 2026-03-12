@@ -234,6 +234,12 @@ static ImportInfo *find_import(CodeGen *cg, const char *alias) {
 
 
 /* --- Infer expression type --- */
+static int is_range_call(AstNode *node) {
+    return node && node->type == NODE_CALL &&
+           node->call.func->type == NODE_NAME &&
+           strcmp(node->call.func->name_expr.name, "range") == 0;
+}
+
 static LpType infer_type(CodeGen *cg, AstNode *node) {
     if (!node) return LP_VOID;
     switch (node->type) {
@@ -260,6 +266,11 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
             /* String + anything = string concat */
             if (op == TOK_PLUS && (lt == LP_STRING || rt == LP_STRING))
                 return LP_STRING;
+            if (lt == LP_VAL || rt == LP_VAL || lt == LP_DICT || rt == LP_DICT || lt == LP_LIST || rt == LP_LIST) {
+                if (op == TOK_EQ || op == TOK_NEQ || op == TOK_LT || op == TOK_GT || op == TOK_LTE || op == TOK_GTE)
+                    return LP_BOOL;
+                return LP_VAL;
+            }
             if (lt == LP_FLOAT || rt == LP_FLOAT) return LP_FLOAT;
             if (op == TOK_SLASH) return LP_FLOAT;
             return LP_INT;
@@ -463,6 +474,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent);
 static LpType infer_return_type(CodeGen *cg, NodeList *body);
 static void gen_thread_spawn_expr(CodeGen *cg, Buffer *buf, AstNode *node);
 static void populate_function_symbol(CodeGen *cg, Symbol *sym, AstNode *node, const char *owner_class);
+static int is_range_call(AstNode *node);
 
 static void write_indent(Buffer *buf, int level) {
     for (int i = 0; i < level; i++) buf_write(buf, "    ");
@@ -692,20 +704,65 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                     buf_write(buf, ")");
                 }
             } else if (op == TOK_DSLASH) {
-                buf_write(buf, "lp_floordiv(");
-                gen_expr(cg, buf, node->bin_op.left);
-                buf_write(buf, ", ");
-                gen_expr(cg, buf, node->bin_op.right);
-                buf_write(buf, ")");
+                LpType lt = infer_type(cg, node->bin_op.left);
+                LpType rt = infer_type(cg, node->bin_op.right);
+                if (lt == LP_VAL || rt == LP_VAL || lt == LP_DICT || rt == LP_DICT || lt == LP_LIST || rt == LP_LIST) {
+                    buf_write(buf, "lp_val_floordiv(");
+                    emit_lp_val(cg, buf, node->bin_op.left);
+                    buf_write(buf, ", ");
+                    emit_lp_val(cg, buf, node->bin_op.right);
+                    buf_write(buf, ")");
+                } else {
+                    buf_write(buf, "lp_floordiv(");
+                    gen_expr(cg, buf, node->bin_op.left);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->bin_op.right);
+                    buf_write(buf, ")");
+                }
             } else if (op == TOK_PERCENT) {
-                buf_write(buf, "lp_mod(");
-                gen_expr(cg, buf, node->bin_op.left);
-                buf_write(buf, ", ");
-                gen_expr(cg, buf, node->bin_op.right);
-                buf_write(buf, ")");
+                LpType lt = infer_type(cg, node->bin_op.left);
+                LpType rt = infer_type(cg, node->bin_op.right);
+                if (lt == LP_VAL || rt == LP_VAL || lt == LP_DICT || rt == LP_DICT || lt == LP_LIST || rt == LP_LIST) {
+                    buf_write(buf, "lp_val_mod(");
+                    emit_lp_val(cg, buf, node->bin_op.left);
+                    buf_write(buf, ", ");
+                    emit_lp_val(cg, buf, node->bin_op.right);
+                    buf_write(buf, ")");
+                } else {
+                    buf_write(buf, "lp_mod(");
+                    gen_expr(cg, buf, node->bin_op.left);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->bin_op.right);
+                    buf_write(buf, ")");
+                }
             } else {
                 LpType lt = infer_type(cg, node->bin_op.left);
                 LpType rt = infer_type(cg, node->bin_op.right);
+
+                if (lt == LP_VAL || rt == LP_VAL || lt == LP_DICT || rt == LP_DICT || lt == LP_LIST || rt == LP_LIST) {
+                    const char *func = NULL;
+                    switch (op) {
+                        case TOK_PLUS: func = "lp_val_add"; break;
+                        case TOK_MINUS: func = "lp_val_sub"; break;
+                        case TOK_STAR: func = "lp_val_mul"; break;
+                        case TOK_SLASH: func = "lp_val_div"; break;
+                        case TOK_EQ: func = "lp_val_eq"; break;
+                        case TOK_NEQ: func = "lp_val_neq"; break;
+                        case TOK_LT: func = "lp_val_lt"; break;
+                        case TOK_GT: func = "lp_val_gt"; break;
+                        case TOK_LTE: func = "lp_val_lte"; break;
+                        case TOK_GTE: func = "lp_val_gte"; break;
+                        default: break;
+                    }
+                    if (func) {
+                        buf_printf(buf, "%s(", func);
+                        emit_lp_val(cg, buf, node->bin_op.left);
+                        buf_write(buf, ", ");
+                        emit_lp_val(cg, buf, node->bin_op.right);
+                        buf_write(buf, ")");
+                        break;
+                    }
+                }
 
                 /* Check for string concatenation: str + str => lp_str_concat */
                 if (op == TOK_PLUS && (lt == LP_STRING || rt == LP_STRING)) {
@@ -1407,29 +1464,56 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
             break;
         case NODE_LIST_COMP: {
             /* [expr for var in iter if cond]
-             * Generates: ({ double *_lc = malloc(n * sizeof(double)); int _lc_len = 0;
-             *              for(int lp_var = ...) { if(cond) _lc[_lc_len++] = expr; }
-             *              LpArray _lca = {_lc, _lc_len, _lc_len, {_lc_len}}; _lca; })
-             *
-             * For simplicity, we use range-style iteration since LP's for loops
-             * use range() most commonly. We'll emit a fixed-size allocation
-             * and grow if needed. */
+             * Generates: ({ LpList *_lc = lp_list_new();
+             *              for(int lp_var = ...) { if(cond) lp_list_append(_lc, expr); }
+             *              _lc; })
+             */
             buf_write(buf, "({ ");
-            buf_write(buf, "int _lc_cap = 16; ");
-            buf_write(buf, "double *_lc = (double*)malloc(_lc_cap * sizeof(double)); ");
-            buf_write(buf, "int _lc_len = 0; ");
+            buf_write(buf, "LpList *_lc = lp_list_new(); ");
 
-            /* Generate the iteration. The iter expression should be range() or similar */
-            /* For now, generate a simple for-each over a range call */
-            buf_write(buf, "for (int64_t lp_");
-            buf_write(buf, node->list_comp.var);
-            buf_write(buf, " = 0; lp_");
-            buf_write(buf, node->list_comp.var);
-            buf_write(buf, " < (int64_t)");
-            gen_expr(cg, buf, node->list_comp.iter);
-            buf_write(buf, "; lp_");
-            buf_write(buf, node->list_comp.var);
-            buf_write(buf, "++) { ");
+            /* Define loop var in a new scope so it can be resolved during expression generation */
+            Scope *comp_scope = scope_new(cg->scope);
+            cg->scope = comp_scope;
+
+            /* Generate the iteration. */
+            if (is_range_call(node->list_comp.iter)) {
+                NodeList *args = &node->list_comp.iter->call.args;
+                scope_define(cg->scope, node->list_comp.var, LP_INT);
+                if (args->count == 1) {
+                    buf_printf(buf, "for (int64_t lp_%s = 0; lp_%s < ",
+                               node->list_comp.var, node->list_comp.var);
+                    gen_expr(cg, buf, args->items[0]);
+                    buf_printf(buf, "; lp_%s++) { ", node->list_comp.var);
+                } else if (args->count >= 2) {
+                    buf_printf(buf, "for (int64_t lp_%s = ", node->list_comp.var);
+                    gen_expr(cg, buf, args->items[0]);
+                    buf_printf(buf, "; lp_%s < ", node->list_comp.var);
+                    gen_expr(cg, buf, args->items[1]);
+                    if (args->count >= 3) {
+                        buf_printf(buf, "; lp_%s += ", node->list_comp.var);
+                        gen_expr(cg, buf, args->items[2]);
+                    } else {
+                        buf_printf(buf, "; lp_%s++", node->list_comp.var);
+                    }
+                    buf_write(buf, ") { ");
+                }
+            } else {
+                LpType iter_type = infer_type(cg, node->list_comp.iter);
+                if (iter_type == LP_VAL || iter_type == LP_LIST || iter_type == LP_PYOBJ || iter_type == LP_ARRAY || iter_type == LP_STR_ARRAY || iter_type == LP_DICT || iter_type == LP_SET || iter_type == LP_TUPLE) {
+                    scope_define(cg->scope, node->list_comp.var, LP_VAL);
+                    static int generic_lc_loop_counter = 0;
+                    int cur_loop = generic_lc_loop_counter++;
+                    buf_printf(buf, "LpVal __lp_lc_iter_%d = ", cur_loop);
+                    emit_lp_val(cg, buf, node->list_comp.iter);
+                    buf_write(buf, "; ");
+                    buf_printf(buf, "int64_t __lp_lc_len_%d = lp_val_len(__lp_lc_iter_%d); ", cur_loop, cur_loop);
+                    buf_printf(buf, "for (int64_t __lp_lc_i_%d = 0; __lp_lc_i_%d < __lp_lc_len_%d; __lp_lc_i_%d++) { ", cur_loop, cur_loop, cur_loop, cur_loop);
+                    buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(__lp_lc_iter_%d, __lp_lc_i_%d); ", node->list_comp.var, cur_loop, cur_loop);
+                } else {
+                    buf_write(buf, "/* TODO: generic for loop */ ");
+                    buf_write(buf, "{ ");
+                }
+            }
 
             /* Optional if condition */
             if (node->list_comp.cond) {
@@ -1438,19 +1522,20 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 buf_write(buf, ") { ");
             }
 
-            /* Grow if needed */
-            buf_write(buf, "if (_lc_len >= _lc_cap) { _lc_cap *= 2; _lc = (double*)realloc(_lc, _lc_cap * sizeof(double)); } ");
-            buf_write(buf, "_lc[_lc_len++] = (double)(");
-            gen_expr(cg, buf, node->list_comp.expr);
+            buf_write(buf, "lp_list_append(_lc, ");
+            emit_lp_val(cg, buf, node->list_comp.expr);
             buf_write(buf, "); ");
 
             if (node->list_comp.cond) {
                 buf_write(buf, "} ");
             }
 
-            buf_write(buf, "} ");
-            buf_write(buf, "LpArray _lca; _lca.data = _lc; _lca.len = _lc_len; _lca.cap = _lc_cap; _lca.shape[0] = _lc_len; ");
-            buf_write(buf, "_lca; })");
+            buf_write(buf, "} "); /* close for loop */
+            buf_write(buf, "_lc; })");
+
+            /* Restore scope */
+            cg->scope = comp_scope->parent;
+            scope_free(comp_scope);
             break;
         }
         case NODE_LAMBDA: {
@@ -1593,13 +1678,6 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
             buf_write(buf, "/* unknown expr */");
             break;
     }
-}
-
-/* Check if a call is to range() */
-static int is_range_call(AstNode *node) {
-    return node && node->type == NODE_CALL &&
-           node->call.func->type == NODE_NAME &&
-           strcmp(node->call.func->name_expr.name, "range") == 0;
 }
 
 static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
