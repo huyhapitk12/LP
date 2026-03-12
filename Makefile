@@ -55,3 +55,10 @@ endif
 install: $(TARGET)
 	cp $(TARGET) /usr/local/bin/lp
 	@echo "[LP] Installed to /usr/local/bin/lp"
+
+# Add test target
+.PHONY: test-c
+test-c:
+	@mkdir -p build/tests
+	$(CC) $(CFLAGS) compiler/src/lexer.c compiler/tests/test_lexer.c -I compiler/src -o build/tests/test_lexer
+	./build/tests/test_lexer
