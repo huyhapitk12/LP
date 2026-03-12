@@ -787,6 +787,11 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             if (i > 0) buf_write(buf, ", ");
                             gen_expr(cg, buf, node->call.args.items[i]);
                         }
+                        if (strcmp(func_name, "execute") == 0 || strcmp(func_name, "query") == 0) {
+                            if (node->call.args.count == 2) {
+                                buf_write(buf, ", lp_val_null()");
+                            }
+                        }
                         buf_write(buf, ")");
                         break;
                     }
@@ -797,6 +802,11 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             if (i > 0) buf_write(buf, ", ");
                             gen_expr(cg, buf, node->call.args.items[i]);
                         }
+                        if (strcmp(func_name, "execute") == 0 || strcmp(func_name, "query") == 0) {
+                            if (node->call.args.count == 2) {
+                                buf_write(buf, ", lp_val_null()");
+                            }
+                        }
                         buf_write(buf, ")");
                         break;
                     }
@@ -806,6 +816,11 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         for (int i = 0; i < node->call.args.count; i++) {
                             if (i > 0) buf_write(buf, ", ");
                             gen_expr(cg, buf, node->call.args.items[i]);
+                        }
+                        if (strcmp(func_name, "execute") == 0 || strcmp(func_name, "query") == 0) {
+                            if (node->call.args.count == 2) {
+                                buf_write(buf, ", lp_val_null()");
+                            }
                         }
                         buf_write(buf, ")");
                         break;
@@ -818,6 +833,11 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             if (i > 0) buf_write(buf, ", ");
                             gen_expr(cg, buf, node->call.args.items[i]);
                         }
+                        if (strcmp(func_name, "execute") == 0 || strcmp(func_name, "query") == 0) {
+                            if (node->call.args.count == 2) {
+                                buf_write(buf, ", lp_val_null()");
+                            }
+                        }
                         buf_write(buf, ")");
                         break;
                     }
@@ -827,6 +847,11 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         for (int i = 0; i < node->call.args.count; i++) {
                             if (i > 0) buf_write(buf, ", ");
                             gen_expr(cg, buf, node->call.args.items[i]);
+                        }
+                        if (strcmp(func_name, "execute") == 0 || strcmp(func_name, "query") == 0) {
+                            if (node->call.args.count == 2) {
+                                buf_write(buf, ", lp_val_null()");
+                            }
                         }
                         buf_write(buf, ")");
                         break;
@@ -842,6 +867,11 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         for (int i = 0; i < node->call.args.count; i++) {
                             if (i > 0) buf_write(buf, ", ");
                             gen_expr(cg, buf, node->call.args.items[i]);
+                        }
+                        if (strcmp(func_name, "execute") == 0 || strcmp(func_name, "query") == 0) {
+                            if (node->call.args.count == 2) {
+                                buf_write(buf, ", lp_val_null()");
+                            }
                         }
                         buf_write(buf, ")");
                         break;
@@ -885,6 +915,11 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         for (int i = 0; i < node->call.args.count; i++) {
                             if (i > 0) buf_write(buf, ", ");
                             gen_expr(cg, buf, node->call.args.items[i]);
+                        }
+                        if (strcmp(func_name, "execute") == 0 || strcmp(func_name, "query") == 0) {
+                            if (node->call.args.count == 2) {
+                                buf_write(buf, ", NULL");
+                            }
                         }
                         buf_write(buf, ")");
                         break;
