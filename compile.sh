@@ -26,6 +26,7 @@ gcc -std=c99 -O2 $WARN_FLAGS \
     compiler/src/parser.c \
     compiler/src/codegen.c \
     compiler/src/repl.c \
+    compiler/src/process_utils.c \
     -I compiler/src \
     -I runtime \
     -o "$OUT" -lm

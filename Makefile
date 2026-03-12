@@ -19,7 +19,8 @@ SRCS := $(SRC_DIR)/main.c \
         $(SRC_DIR)/ast.c \
         $(SRC_DIR)/parser.c \
         $(SRC_DIR)/codegen.c \
-        $(SRC_DIR)/repl.c
+        $(SRC_DIR)/repl.c \
+        $(SRC_DIR)/process_utils.c
 
 TARGET := $(BUILD_DIR)/lp
 

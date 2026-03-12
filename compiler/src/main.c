@@ -25,10 +25,6 @@
 #include <io.h>
 #else
 #include <dirent.h>
-#include <errno.h>
-#include <stdarg.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #endif
 /* We need Sleep() but can't include <windows.h> due to TokenType conflict */
@@ -38,13 +34,13 @@ __declspec(dllimport) void __stdcall Sleep(unsigned long dwMilliseconds);
 #include "parser.h"
 #include "codegen.h"
 #include "repl.h"
+#include "process_utils.h"
 
 #if defined(_WIN32)
   #define LP_LWINHTTP "-lwinhttp"
   #define LP_HOST_EXE_EXT ".exe"
   #define LP_PATH_SEP '\\'
   #define LP_PATH_SEP_STR "\\"
-  #define LP_NULL_REDIRECT ">nul 2>&1"
   #define LP_CLEAR_CMD "cls"
   #define LP_TAR_CMD "tar.exe"
   #define LP_STAT_STRUCT struct _stat
@@ -54,7 +50,6 @@ __declspec(dllimport) void __stdcall Sleep(unsigned long dwMilliseconds);
   #define LP_HOST_EXE_EXT ""
   #define LP_PATH_SEP '/'
   #define LP_PATH_SEP_STR "/"
-  #define LP_NULL_REDIRECT ">/dev/null 2>&1"
   #define LP_CLEAR_CMD "clear"
   #define LP_TAR_CMD "tar"
   #define LP_STAT_STRUCT struct stat
@@ -62,9 +57,6 @@ __declspec(dllimport) void __stdcall Sleep(unsigned long dwMilliseconds);
 #endif
 
 #ifndef _WIN32
-#ifndef _P_WAIT
-#define _P_WAIT 0
-#endif
 
 struct _finddata_t {
     char name[260];
@@ -76,75 +68,6 @@ typedef struct {
     char prefix[128];
     char suffix[128];
 } LpFindState;
-
-static int lp_wait_pid(pid_t pid) {
-    int status = 0;
-    while (waitpid(pid, &status, 0) < 0) {
-        if (errno == EINTR) continue;
-        return -1;
-    }
-    if (WIFEXITED(status)) return WEXITSTATUS(status);
-    return 1;
-}
-
-static int lp_has_path_sep(const char *s) {
-    return s && (strchr(s, '/') != NULL || strchr(s, '\\') != NULL);
-}
-
-static void lp_exec_fallback(const char *file, char *const argv[], int search_path) {
-    if (search_path) execvp(file, argv);
-    else execv(file, argv);
-
-    if (!lp_has_path_sep(file)) {
-        char local_path[1024];
-        if (snprintf(local_path, sizeof(local_path), "./%s", file) > 0) {
-            execv(local_path, argv);
-        }
-    }
-    _exit(127);
-}
-
-static int _spawnv(int mode, const char *path, const char *const argv[]) {
-    pid_t pid;
-    (void)mode;
-    pid = fork();
-    if (pid < 0) return -1;
-    if (pid == 0) {
-        lp_exec_fallback(path, (char *const *)argv, 0);
-    }
-    return lp_wait_pid(pid);
-}
-
-static int _spawnvp(int mode, const char *file, const char *const argv[]) {
-    pid_t pid;
-    (void)mode;
-    pid = fork();
-    if (pid < 0) return -1;
-    if (pid == 0) {
-        lp_exec_fallback(file, (char *const *)argv, 1);
-    }
-    return lp_wait_pid(pid);
-}
-
-static int _spawnl(int mode, const char *path, const char *arg0, ...) {
-    const char *arg;
-    const char *argv[128];
-    int argc = 0;
-    va_list ap;
-
-    argv[argc++] = arg0;
-    va_start(ap, arg0);
-    while (argc < 127) {
-        arg = va_arg(ap, const char *);
-        if (!arg) break;
-        argv[argc++] = arg;
-    }
-    va_end(ap);
-    argv[argc] = NULL;
-
-    if (lp_has_path_sep(path)) return _spawnv(mode, path, argv);
-    return _spawnvp(mode, path, argv);
-}
 
 static int _find_match(const char *name, const char *prefix, const char *suffix) {
     size_t nlen = strlen(name);
@@ -385,11 +308,11 @@ static const char *find_gcc(void) {
 #endif
     /* Try system gcc */
     {
-        char cmd[256];
-        snprintf(cmd, sizeof(cmd), "gcc --version %s", LP_NULL_REDIRECT);
-        if (system(cmd) == 0) return "gcc";
-        snprintf(cmd, sizeof(cmd), "cc --version %s", LP_NULL_REDIRECT);
-        if (system(cmd) == 0) return "cc";
+        const char *gcc_argv[] = {"gcc", "--version", NULL};
+        if (lp_run_silent("gcc", gcc_argv)) return "gcc";
+
+        const char *cc_argv[] = {"cc", "--version", NULL};
+        if (lp_run_silent("cc", cc_argv)) return "cc";
     }
     return NULL;
 }
@@ -414,9 +337,8 @@ static int lp_target_needs_pthread(int uses_thread, const char *target_os) {
 }
 
 static int tool_exists(const char *tool) {
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd), "%s --version %s", tool, LP_NULL_REDIRECT);
-    return system(cmd) == 0;
+    const char *argv[] = {tool, "--version", NULL};
+    return lp_run_silent(tool, argv);
 }
 
 static int run_tool_wait(const char *tool, const char *const *args) {
@@ -739,19 +661,32 @@ int main(int argc, char **argv) {
             return 1;
         }
         
-        char pack_cmd[1024];
+        ArgList al;
+        al_init(&al);
+        al_add(&al, LP_TAR_CMD);
+
+        char out_filename[512];
         if (strcmp(format, "zip") == 0) {
-            snprintf(pack_cmd, sizeof(pack_cmd), "%s -a -c -f %s.zip %s", LP_TAR_CMD, basename, exe_path);
-            printf("[LP Package] Archiving to %s.zip\n", basename);
+            al_add(&al, "-a");
+            al_add(&al, "-c");
+            al_add(&al, "-f");
+            snprintf(out_filename, sizeof(out_filename), "%s.zip", basename);
+            al_add(&al, out_filename);
+            al_add(&al, exe_path);
+            printf("[LP Package] Archiving to %s\n", out_filename);
         } else if (strcmp(format, "tar.gz") == 0) {
-            snprintf(pack_cmd, sizeof(pack_cmd), "%s -czf %s.tar.gz %s", LP_TAR_CMD, basename, exe_path);
-            printf("[LP Package] Archiving to %s.tar.gz\n", basename);
+            al_add(&al, "-czf");
+            snprintf(out_filename, sizeof(out_filename), "%s.tar.gz", basename);
+            al_add(&al, out_filename);
+            al_add(&al, exe_path);
+            printf("[LP Package] Archiving to %s\n", out_filename);
         } else {
             fprintf(stderr, "Unknown package format '%s'\n", format);
             return 1;
         }
+        al_finish(&al);
 
-        if (system(pack_cmd) == 0) {
+        if (run_tool_wait(LP_TAR_CMD, al.args) == 0) {
             printf("\n[LP Package] Successfully generated package!\n");
             return 0;
         }
@@ -1715,7 +1650,8 @@ int run_watch(const char *argv0, const char *input_file) {
 
             if (run_count > 1) {
                 /* Clear screen for fresh output */
-                int clear_rc = system(LP_CLEAR_CMD);
+                const char *clear_argv[] = {LP_CLEAR_CMD, NULL};
+                int clear_rc = run_tool_wait(LP_CLEAR_CMD, clear_argv);
                 (void)clear_rc;
                 printf("\033[1;33m");
                 printf("  \xF0\x9F\x94\xA5 LP Hot Reload Mode\n");
