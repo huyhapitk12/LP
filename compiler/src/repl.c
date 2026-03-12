@@ -259,7 +259,7 @@ static int repl_eval(const char *source, const char *gcc, const char *runtime_in
         return -1;
     }
     int ret = (int)_spawnl(_P_WAIT, gcc, "gcc",
-        "-std=c99", "-O2", "-w", tmp_c, inc_flag, "-o", exe_path, "-lm", NULL);
+        "-std=c99", "-O2", "-w", tmp_c, inc_flag, "-o", exe_path, "-lm", (const char *)NULL);
 
     if (ret != 0) {
         fprintf(stderr, C_RED "  Compilation failed" C_RESET "\n");
@@ -272,7 +272,7 @@ static int repl_eval(const char *source, const char *gcc, const char *runtime_in
 
     /* Execute */
     fflush(stdout);
-    ret = (int)_spawnl(_P_WAIT, exe_path, exe_path, NULL);
+    ret = (int)_spawnl(_P_WAIT, exe_path, exe_path, (const char *)NULL);
 
     /* Cleanup */
     remove(tmp_c);
