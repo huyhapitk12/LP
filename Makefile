@@ -31,9 +31,15 @@ else
     MKDIR  := mkdir -p $(BUILD_DIR)
 endif
 
-.PHONY: all clean install
+.PHONY: all clean install test-c
 
 all: $(TARGET) $(SQLITE_OBJ)
+
+test-c: $(SRC_DIR)/ast.c compiler/tests/test_ast.c
+	$(MKDIR)
+	$(CC) $(CFLAGS) -fsanitize=address -g $(SRC_DIR)/ast.c compiler/tests/test_ast.c $(INC_DIR) -o $(BUILD_DIR)/test_ast
+	@echo "[LP] Running C tests with AddressSanitizer..."
+	@$(BUILD_DIR)/test_ast
 
 $(TARGET): $(SRCS)
 	$(MKDIR)
