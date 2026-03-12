@@ -103,13 +103,27 @@ int lp_run_silent(const char *file, const char *const argv[]) {
 int lp_run_silent(const char *file, const char *const argv[]) {
     (void)file;
     /* For Windows, _spawnvp doesn't have an easy way to suppress stdout/stderr directly
-       without redirecting descriptors in the parent or creating pipes.
-       Using CreateProcess for full control. */
+       without duplicating handles. We use CreateProcess directly. */
     char cmdline[2048] = {0};
+    size_t current_len = 0;
     int i = 0;
-    while (argv[i] && strlen(cmdline) < sizeof(cmdline) - 256) {
-        if (i > 0) strcat(cmdline, " ");
-        strcat(cmdline, argv[i]);
+    
+    while (argv[i]) {
+        size_t arg_len = strlen(argv[i]);
+        int space_needed = (i > 0) ? 1 : 0;
+        
+        if (current_len + space_needed + arg_len >= sizeof(cmdline)) {
+            fprintf(stderr, "Fatal error: Command line too long in lp_run_silent\n");
+            return -1;
+        }
+        
+        if (i > 0) {
+            cmdline[current_len++] = ' ';
+        }
+        memcpy(cmdline + current_len, argv[i], arg_len);
+        current_len += arg_len;
+        cmdline[current_len] = '\0';
+        
         i++;
     }
 

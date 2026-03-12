@@ -28,11 +28,13 @@ TARGET := $(BUILD_DIR)/lp
 ifeq ($(OS),Windows_NT)
     TARGET := $(BUILD_DIR)/lp.exe
     MKDIR  := if not exist "$(BUILD_DIR)" mkdir "$(BUILD_DIR)"
+    EXE_EXT := .exe
 else
     MKDIR  := mkdir -p $(BUILD_DIR)
+    EXE_EXT := 
 endif
 
-.PHONY: all clean install test_unit
+.PHONY: all clean install test_unit test-c
 
 all: $(TARGET) $(SQLITE_OBJ)
 
@@ -46,20 +48,21 @@ $(SQLITE_OBJ): runtime/sqlite3.c runtime/sqlite3.h
 	@echo "[LP] Built runtime object: $(SQLITE_OBJ)"
 
 clean:
-ifeq ($(OS),Windows_NT)
-	if exist "$(BUILD_DIR)" rmdir /s /q "$(BUILD_DIR)"
-else
 	rm -rf $(BUILD_DIR)
 	rm -f $(SQLITE_OBJ)
-endif
 
 install: $(TARGET)
 	cp $(TARGET) /usr/local/bin/lp
 	@echo "[LP] Installed to /usr/local/bin/lp"
 
-# Add test target
-.PHONY: test-c
-test-c:
-	@mkdir -p build/tests
-	$(CC) $(CFLAGS) compiler/src/lexer.c compiler/tests/test_lexer.c -I compiler/src -o build/tests/test_lexer
-	./build/tests/test_lexer
+test_unit: $(SRC_DIR)/test_ast_unit.c $(SRC_DIR)/ast.c $(SRC_DIR)/lexer.c
+	$(MKDIR)
+	$(CC) $(CFLAGS) $(SRC_DIR)/test_ast_unit.c $(SRC_DIR)/ast.c $(SRC_DIR)/lexer.c $(INC_DIR) -o $(BUILD_DIR)/test_ast_unit$(EXE_EXT) $(LDFLAGS)
+	./$(BUILD_DIR)/test_ast_unit$(EXE_EXT)
+
+test-c: tests/test_codegen.c compiler/src/codegen.c compiler/tests/test_lexer.c compiler/src/lexer.c
+	$(MKDIR)
+	$(CC) $(CFLAGS) tests/test_codegen.c compiler/src/codegen.c -I compiler/src -I runtime -o $(BUILD_DIR)/test_codegen$(EXE_EXT) $(LDFLAGS)
+	./$(BUILD_DIR)/test_codegen$(EXE_EXT)
+	$(CC) $(CFLAGS) compiler/tests/test_lexer.c compiler/src/lexer.c -I compiler/src -o $(BUILD_DIR)/test_lexer$(EXE_EXT) $(LDFLAGS)
+	./$(BUILD_DIR)/test_lexer$(EXE_EXT)
