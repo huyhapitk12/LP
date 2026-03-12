@@ -20,12 +20,22 @@ void buf_write(Buffer *b, const char *s) {
 }
 
 void buf_printf(Buffer *b, const char *fmt, ...) {
-    char tmp[2048];
     va_list args;
     va_start(args, fmt);
-    vsnprintf(tmp, sizeof(tmp), fmt, args);
+    int len = vsnprintf(NULL, 0, fmt, args);
     va_end(args);
-    buf_write(b, tmp);
+    if (len < 0) return;
+
+    if (b->len + len >= b->cap) {
+        b->cap = (b->len + len + 1) * 2;
+        b->data = (char *)realloc(b->data, b->cap);
+    }
+
+    va_start(args, fmt);
+    vsnprintf(b->data + b->len, len + 1, fmt, args);
+    va_end(args);
+
+    b->len += len;
 }
 
 void buf_free(Buffer *b) { free(b->data); b->data = NULL; b->len = b->cap = 0; }
