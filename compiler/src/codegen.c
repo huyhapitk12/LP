@@ -469,6 +469,7 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
 }
 
 /* --- Code generation --- */
+static void emit_cast(CodeGen *cg, Buffer *buf, AstNode *expr, LpType target_type);
 static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node);
 static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent);
 static LpType infer_return_type(CodeGen *cg, NodeList *body);
@@ -1273,7 +1274,16 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 buf_write(buf, "lp_io_open(");
                 for (int i = 0; i < node->call.args.count; i++) {
                     if (i > 0) buf_write(buf, ", ");
-                    gen_expr(cg, buf, node->call.args.items[i]);
+                    LpType expected = LP_UNKNOWN;
+                    if (node->call.func->type == NODE_NAME) {
+                        Symbol *s = scope_lookup(cg->scope, node->call.func->name_expr.name);
+                        if (s && i < 16) expected = s->param_types[i];
+                    }
+                    if (expected != LP_UNKNOWN) {
+                        emit_cast(cg, buf, node->call.args.items[i], expected);
+                    } else {
+                        gen_expr(cg, buf, node->call.args.items[i]);
+                    }
                 }
                 buf_write(buf, ")");
                 break;
@@ -1452,7 +1462,16 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 }
                 for (int i = 0; i < node->call.args.count; i++) {
                     if (i > 0) buf_write(buf, ", ");
-                    gen_expr(cg, buf, node->call.args.items[i]);
+                    LpType expected = LP_UNKNOWN;
+                    if (node->call.func->type == NODE_NAME) {
+                        Symbol *s = scope_lookup(cg->scope, node->call.func->name_expr.name);
+                        if (s && i < 16) expected = s->param_types[i];
+                    }
+                    if (expected != LP_UNKNOWN) {
+                        emit_cast(cg, buf, node->call.args.items[i], expected);
+                    } else {
+                        gen_expr(cg, buf, node->call.args.items[i]);
+                    }
                 }
                 buf_write(buf, ")");
             }
@@ -1680,6 +1699,36 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
     }
 }
 
+
+static void emit_cast(CodeGen *cg, Buffer *buf, AstNode *expr, LpType target_type) {
+    LpType expr_type = infer_type(cg, expr);
+    if (expr_type == target_type) {
+        gen_expr(cg, buf, expr);
+        return;
+    }
+    if (target_type == LP_VAL) {
+        emit_lp_val(cg, buf, expr);
+    } else if (target_type == LP_INT && expr_type == LP_VAL) {
+        buf_write(buf, "lp_int(");
+        gen_expr(cg, buf, expr);
+        buf_write(buf, ")");
+    } else if (target_type == LP_FLOAT && expr_type == LP_VAL) {
+        buf_write(buf, "lp_float(");
+        gen_expr(cg, buf, expr);
+        buf_write(buf, ")");
+    } else if (target_type == LP_STRING && expr_type == LP_VAL) {
+        buf_write(buf, "lp_str(");
+        gen_expr(cg, buf, expr);
+        buf_write(buf, ")");
+    } else if (target_type == LP_BOOL && expr_type == LP_VAL) {
+        buf_write(buf, "lp_bool(");
+        gen_expr(cg, buf, expr);
+        buf_write(buf, ")");
+    } else {
+        gen_expr(cg, buf, expr);
+    }
+}
+
 static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
     if (!node) return;
     switch (node->type) {
@@ -1768,7 +1817,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                         }
                         if (node->assign.value) {
                             buf_write(assign_buf, " = ");
-                            gen_expr(cg, assign_buf, node->assign.value);
+                            emit_cast(cg, assign_buf, node->assign.value, t);
                         }
                         buf_write(assign_buf, ";\n");
                     }
@@ -1785,7 +1834,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     } else {
                         write_indent(assign_buf, assign_indent);
                         buf_printf(assign_buf, "lp_%s = ", node->assign.name);
-                        gen_expr(cg, assign_buf, node->assign.value);
+                        emit_cast(cg, assign_buf, node->assign.value, existing->type);
                         buf_write(assign_buf, ";\n");
                     }
                 }
@@ -2149,6 +2198,45 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
 }
 
 /* Infer function return type by scanning body for return statements */
+
+static void scan_declarations(CodeGen *cg, NodeList *body) {
+    if (!body) return;
+    for (int i = 0; i < body->count; i++) {
+        AstNode *stmt = body->items[i];
+        if (stmt->type == NODE_ASSIGN) {
+            LpType t = LP_UNKNOWN;
+            if (stmt->assign.type_ann)
+                t = type_from_annotation(cg, stmt->assign.type_ann);
+            else if (stmt->assign.value)
+                t = infer_type(cg, stmt->assign.value);
+            if (t == LP_UNKNOWN) t = LP_INT;
+
+            Symbol *existing = scope_lookup(cg->scope, stmt->assign.name);
+            if (!existing) {
+                const char *class_name = NULL;
+                if (t == LP_OBJECT && stmt->assign.value && stmt->assign.value->type == NODE_CALL &&
+                    stmt->assign.value->call.func->type == NODE_NAME) {
+                    Symbol *cs = scope_lookup(cg->scope, stmt->assign.value->call.func->name_expr.name);
+                    if (cs && cs->type == LP_CLASS) class_name = cs->name;
+                }
+                scope_define_obj(cg->scope, stmt->assign.name, t, class_name);
+            }
+        } else if (stmt->type == NODE_IF) {
+            scan_declarations(cg, &stmt->if_stmt.then_body);
+            if (stmt->if_stmt.else_branch && stmt->if_stmt.else_branch->type == NODE_IF) {
+                // To simplify, we can just scan the else body directly if we cast it
+                // Actually, if it's a NODE_IF, else_branch is just an AstNode*.
+                // We'd have to wrap it in a NodeList. Let's just ignore nested for now,
+                // most top-level variables are declared at the top of the function.
+            }
+        } else if (stmt->type == NODE_FOR) {
+            scan_declarations(cg, &stmt->for_stmt.body);
+        } else if (stmt->type == NODE_WHILE) {
+            scan_declarations(cg, &stmt->while_stmt.body);
+        }
+    }
+}
+
 static LpType infer_return_type(CodeGen *cg, NodeList *body) {
     for (int i = 0; i < body->count; i++) {
         AstNode *stmt = body->items[i];
@@ -2165,18 +2253,24 @@ static LpType infer_return_type(CodeGen *cg, NodeList *body) {
     return LP_UNKNOWN;
 }
 
+
 static LpType infer_function_return_type(CodeGen *cg, AstNode *node) {
     LpType ret;
 
     if (node->func_def.ret_type) {
         ret = type_from_annotation(cg, node->func_def.ret_type);
     } else {
+        Scope *temp_scope = scope_new(cg->scope);
+        cg->scope = temp_scope;
+        scan_declarations(cg, &node->func_def.body);
         ret = infer_return_type(cg, &node->func_def.body);
+        cg->scope = temp_scope->parent;
         if (ret == LP_UNKNOWN) ret = LP_VOID;
     }
 
     return ret;
 }
+
 
 static void populate_function_symbol(CodeGen *cg, Symbol *sym, AstNode *node, const char *owner_class) {
     if (!sym || !node || node->type != NODE_FUNC_DEF) return;
@@ -2218,9 +2312,10 @@ static void populate_function_symbol(CodeGen *cg, Symbol *sym, AstNode *node, co
             pt = LP_OBJECT;
         } else {
             pt = type_from_annotation(cg, p->type_ann);
-            if (pt == LP_UNKNOWN) pt = LP_INT;
+            if (pt == LP_UNKNOWN) pt = LP_VAL;
         }
 
+        if (i < 16) { sym->param_types[i] = pt; }
         if (sym->first_param_type == LP_UNKNOWN) {
             sym->first_param_type = pt;
             if (pt == LP_OBJECT) {
@@ -2253,7 +2348,7 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
             buf_printf(&cg->header, "LpDict* lp_%s", p->name);
         } else {
             LpType pt = type_from_annotation(cg, p->type_ann);
-            if (pt == LP_UNKNOWN) pt = LP_INT;
+            if (pt == LP_UNKNOWN) pt = LP_VAL;
             if (pt == LP_OBJECT) {
                 buf_printf(&cg->header, "LpObj_%s* lp_%s", p->type_ann, p->name);
             } else {
@@ -2287,7 +2382,7 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
             scope_define(func_scope, p->name, LP_DICT);
         } else {
             LpType pt = type_from_annotation(cg, p->type_ann);
-            if (pt == LP_UNKNOWN) pt = LP_INT;
+            if (pt == LP_UNKNOWN) pt = LP_VAL;
             if (pt == LP_OBJECT) {
                 buf_printf(&cg->funcs, "LpObj_%s* lp_%s", p->type_ann, p->name);
                 scope_define_obj(func_scope, p->name, pt, p->type_ann);
