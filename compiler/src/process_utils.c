@@ -101,6 +101,7 @@ int lp_run_silent(const char *file, const char *const argv[]) {
 #else
 
 int lp_run_silent(const char *file, const char *const argv[]) {
+    (void)file;
     /* For Windows, _spawnvp doesn't have an easy way to suppress stdout/stderr directly
        without redirecting descriptors in the parent or creating pipes.
        Using CreateProcess for full control. */
