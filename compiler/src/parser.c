@@ -81,16 +81,16 @@ static AstNode *parse_primary(Parser *p) {
         return n;
     }
     if (match(p, TOK_LPAREN)) {
-        int line = p->previous.line;
+        int tuple_line = p->previous.line;
         if (match(p, TOK_RPAREN)) {
-            AstNode *n = ast_new(NODE_TUPLE_EXPR, line);
+            AstNode *n = ast_new(NODE_TUPLE_EXPR, tuple_line);
             node_list_init(&n->tuple_expr.elems);
             return n;
         }
         AstNode *expr = parse_expression(p);
         if (match(p, TOK_COMMA)) {
             /* It's a tuple */
-            AstNode *n = ast_new(NODE_TUPLE_EXPR, line);
+            AstNode *n = ast_new(NODE_TUPLE_EXPR, tuple_line);
             node_list_init(&n->tuple_expr.elems);
             node_list_push(&n->tuple_expr.elems, expr);
             if (!check(p, TOK_RPAREN)) {
@@ -610,7 +610,14 @@ static AstNode *parse_import_stmt(Parser *p) {
         size_t new_len = len + 1 + sub_len;
         if (new_len + 1 > (size_t)cap) {
             cap = (int)(new_len + 1) * 2;
-            mod_name = (char *)realloc(mod_name, cap);
+            char *new_mod_name = (char *)realloc(mod_name, cap);
+            if (!new_mod_name) {
+                free(mod_name);
+                free(sub);
+                error(p, "out of memory allocating module name");
+                return n;
+            }
+            mod_name = new_mod_name;
         }
         mod_name[len++] = '.';
         memcpy(mod_name + len, sub, sub_len + 1);
@@ -618,7 +625,14 @@ static AstNode *parse_import_stmt(Parser *p) {
         size_t needed = current_len + 1 + sub_len + 1;
         if (needed > cap) {
             cap = needed * 2;
-            mod_name = (char *)realloc(mod_name, cap);
+            char *new_mod_name = (char *)realloc(mod_name, cap);
+            if (!new_mod_name) {
+                free(mod_name);
+                free(sub);
+                error(p, "out of memory allocating module name");
+                return n;
+            }
+            mod_name = new_mod_name;
         }
         mod_name[current_len++] = '.';
         memcpy(mod_name + current_len, sub, sub_len + 1);
