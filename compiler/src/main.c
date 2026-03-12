@@ -1057,12 +1057,10 @@ int main(int argc, char **argv) {
         /* For Windows testing, we will expect Python to be in PATH and fetch its paths */
         /* Normally we'd use popen() with python -c "import sysconfig..." but for now we hardcode typical MSYS2 paths or trust the user has C:\Python311 */
         /* To keep _spawnl simple, we'll use a pre-set env var or fallback MSYS2 paths */
-        py_inc_arg[0] = '\0';
-        py_lib_arg[0] = '\0';
         /* Native Windows Python 3.12 configuration */
-        strcat(py_inc_arg, "-IC:\\Users\\HuyHAP\\AppData\\Local\\Programs\\Python\\Python312\\include");
+        strcpy(py_inc_arg, "-IC:\\Users\\HuyHAP\\AppData\\Local\\Programs\\Python\\Python312\\include");
         /* Instead of passing the library with -l, pass the absolute path to the .lib file to ensure MSYS2 GCC finds it */
-        strcat(py_lib_arg, "C:\\Users\\HuyHAP\\AppData\\Local\\Programs\\Python\\Python312\\libs\\python312.lib");
+        strcpy(py_lib_arg, "C:\\Users\\HuyHAP\\AppData\\Local\\Programs\\Python\\Python312\\libs\\python312.lib");
     }
 
     char sqlite_obj[600] = "-lm";
