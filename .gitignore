@@ -4,6 +4,9 @@ build/
 *.o
 *.obj
 
+# Tests
+tests/test_codegen
+
 # Generated C output from LP compiler
 *.out.c
 
