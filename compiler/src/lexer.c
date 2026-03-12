@@ -45,6 +45,7 @@ static TokenType check_keyword(const char *s, int len) {
         {"and", TOK_AND}, {"or", TOK_OR}, {"not", TOK_NOT},
         {"in", TOK_IN}, {"is", TOK_IS},
         {"True", TOK_TRUE}, {"False", TOK_FALSE}, {"None", TOK_NONE},
+        {"true", TOK_TRUE}, {"false", TOK_FALSE}, {"none", TOK_NONE},
         {"pass", TOK_PASS}, {"break", TOK_BREAK}, {"continue", TOK_CONTINUE},
         {"const", TOK_CONST}, {"struct", TOK_STRUCT},
         {"async", TOK_ASYNC}, {"await", TOK_AWAIT},

@@ -19,13 +19,13 @@ void node_list_push(NodeList *list, AstNode *node) {
 void param_list_init(ParamList *list) {
     list->items = NULL;
     list->count = 0;
-    list->cap = 0;
+    list->capacity = 0;
 }
 
 void param_list_push(ParamList *list, Param p) {
-    if (list->count >= list->cap) {
-        list->cap = list->cap ? list->cap * 2 : 4;
-        list->items = (Param *)realloc(list->items, sizeof(Param) * list->cap);
+    if (list->count + 1 > list->capacity) {
+        list->capacity = list->capacity < 8 ? 8 : list->capacity * 2;
+        list->items = (Param *)realloc(list->items, list->capacity * sizeof(Param));
     }
     list->items[list->count++] = p;
 }
@@ -95,6 +95,11 @@ void ast_free(AstNode *node) {
         case NODE_AUG_ASSIGN:
             free(node->aug_assign.name);
             ast_free(node->aug_assign.value);
+            break;
+        case NODE_SUBSCRIPT_ASSIGN:
+            ast_free(node->subscript_assign.obj);
+            ast_free(node->subscript_assign.index);
+            ast_free(node->subscript_assign.value);
             break;
         case NODE_EXPR_STMT:
             ast_free(node->expr_stmt.expr);
