@@ -73,6 +73,10 @@ jobs:
           ./ci_smoke > smoke_out.txt
           grep -q '^42$' smoke_out.txt
 
+      - name: C Tests (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: make test-c
+
       - name: Regression Tests (Windows)
         if: runner.os == 'Windows'
         shell: cmd
