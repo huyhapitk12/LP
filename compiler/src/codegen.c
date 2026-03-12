@@ -881,12 +881,22 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                     }
                     /* ---- TIER 1: sqlite ---- */
                     if (imp->tier == MOD_TIER1_SQLITE) {
-                        buf_printf(buf, "lp_sqlite_%s(", func_name);
-                        for (int i = 0; i < node->call.args.count; i++) {
-                            if (i > 0) buf_write(buf, ", ");
-                            gen_expr(cg, buf, node->call.args.items[i]);
+                        if ((strcmp(func_name, "execute") == 0 || strcmp(func_name, "query") == 0) && node->call.args.count == 3) {
+                            buf_printf(buf, "lp_sqlite_%s_params(", func_name);
+                            gen_expr(cg, buf, node->call.args.items[0]);
+                            buf_write(buf, ", ");
+                            gen_expr(cg, buf, node->call.args.items[1]);
+                            buf_write(buf, ", ");
+                            gen_expr(cg, buf, node->call.args.items[2]);
+                            buf_write(buf, ")");
+                        } else {
+                            buf_printf(buf, "lp_sqlite_%s(", func_name);
+                            for (int i = 0; i < node->call.args.count; i++) {
+                                if (i > 0) buf_write(buf, ", ");
+                                gen_expr(cg, buf, node->call.args.items[i]);
+                            }
+                            buf_write(buf, ")");
                         }
-                        buf_write(buf, ")");
                         break;
                     }
                     /* ---- TIER 1: thread ---- */

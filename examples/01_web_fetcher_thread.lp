@@ -19,15 +19,8 @@ def fetch_post_worker(url: str) -> int:
     sqlite.execute(db, "PRAGMA busy_timeout = 5000;")
     sqlite.execute(
         db,
-        "INSERT INTO fetch_log (url, post_id, user_id, title_ok) VALUES ('"
-        + url
-        + "', "
-        + str(post_id)
-        + ", "
-        + str(user_id)
-        + ", "
-        + str(title_ok)
-        + ");"
+        "INSERT INTO fetch_log (url, post_id, user_id, title_ok) VALUES (?, ?, ?, ?);",
+        [url, post_id, user_id, title_ok]
     )
     return post_id
 

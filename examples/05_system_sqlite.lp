@@ -20,13 +20,8 @@ def main():
     )
     sqlite.execute(
         db,
-        "INSERT INTO host_snapshot (os, arch, cores) VALUES ('"
-        + os_name
-        + "', '"
-        + arch_name
-        + "', "
-        + str(core_count)
-        + ");"
+        "INSERT INTO host_snapshot (os, arch, cores) VALUES (?, ?, ?);",
+        [os_name, arch_name, core_count]
     )
 
     rows = sqlite.query(db, "SELECT os, arch, cores FROM host_snapshot")
