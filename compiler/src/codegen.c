@@ -69,8 +69,12 @@ static Symbol *scope_lookup(Scope *s, const char *name) {
 static Symbol *scope_define(Scope *s, const char *name, LpType type) {
     if (s->count >= 512) return NULL;
     Symbol *sym = &s->symbols[s->count++];
-    sym->name = (char *)malloc(strlen(name) + 1);
-    strcpy(sym->name, name);
+    size_t name_len = strlen(name);
+    sym->name = (char *)malloc(name_len + 1);
+    if (sym->name) {
+        strncpy(sym->name, name, name_len + 1);
+        sym->name[name_len] = '\0';
+    }
     sym->type = type;
     sym->class_name = NULL;
     sym->declared = 0;
@@ -90,8 +94,12 @@ static Symbol *scope_define(Scope *s, const char *name, LpType type) {
 static Symbol *scope_define_obj(Scope *s, const char *name, LpType type, const char *class_name) {
     Symbol *sym = scope_define(s, name, type);
     if (sym && type == LP_OBJECT && class_name) {
-        sym->class_name = (char *)malloc(strlen(class_name) + 1);
-        strcpy(sym->class_name, class_name);
+        size_t class_name_len = strlen(class_name);
+        sym->class_name = (char *)malloc(class_name_len + 1);
+        if (sym->class_name) {
+            strncpy(sym->class_name, class_name, class_name_len + 1);
+            sym->class_name[class_name_len] = '\0';
+        }
     }
     return sym;
 }
@@ -2277,8 +2285,12 @@ static void gen_class_def(CodeGen *cg, AstNode *node) {
     buf_free(&struct_def);
 
     /* Generate class methods */
-    cg->current_class = (char*)malloc(strlen(class_name) + 1);
-    strcpy(cg->current_class, class_name);
+    size_t class_name_len = strlen(class_name);
+    cg->current_class = (char*)malloc(class_name_len + 1);
+    if (cg->current_class) {
+        strncpy(cg->current_class, class_name, class_name_len + 1);
+        cg->current_class[class_name_len] = '\0';
+    }
     
     for (int i = 0; i < node->class_def.body.count; i++) {
         AstNode *stmt = node->class_def.body.items[i];
@@ -2369,10 +2381,18 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
             /* Register import */
             if (cg->import_count < 64) {
                 ImportInfo *info = &cg->imports[cg->import_count++];
-                info->module = (char *)malloc(strlen(module) + 1);
-                strcpy(info->module, module);
-                info->alias = (char *)malloc(strlen(alias) + 1);
-                strcpy(info->alias, alias);
+                size_t module_len = strlen(module);
+                info->module = (char *)malloc(module_len + 1);
+                if (info->module) {
+                    strncpy(info->module, module, module_len + 1);
+                    info->module[module_len] = '\0';
+                }
+                size_t alias_len = strlen(alias);
+                info->alias = (char *)malloc(alias_len + 1);
+                if (info->alias) {
+                    strncpy(info->alias, alias, alias_len + 1);
+                    info->alias[alias_len] = '\0';
+                }
                 info->tier = tier;
 
                 if (tier == MOD_TIER3_PYTHON) cg->uses_python = 1;
