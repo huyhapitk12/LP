@@ -8,4 +8,7 @@
 /* Run the REPL interactive mode. argv0 = argv[0] for GCC path resolution. */
 int repl_run(const char *argv0);
 
+/* Run internal C unit tests for the REPL module */
+void run_repl_tests(void);
+
 #endif

@@ -1198,6 +1198,10 @@ int run_tests(const char *argv0, const char *test_dir) {
     printf("\n\033[1m\033[36m  \xF0\x9F\xA7\xAA LP Test Runner\033[0m\n");
     printf("\033[2m  ────────────────────────\033[0m\n\n");
 
+    /* Internal C unit tests */
+    extern void run_repl_tests(void);
+    run_repl_tests();
+
     /* Find GCC */
     const char *gcc = find_gcc();
     if (!gcc) {
