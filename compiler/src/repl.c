@@ -537,5 +537,5 @@ void run_repl_tests(void) {
     }
 
     printf("  \033[1mC Utils\033[0m\n");
-    printf("    \033[32m✅ repl_copy_str\033[0m\n\n");
+    printf("    \033[32m[OK] repl_copy_str\033[0m\n\n");
 }

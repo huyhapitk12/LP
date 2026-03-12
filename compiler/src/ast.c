@@ -24,8 +24,14 @@ void param_list_init(ParamList *list) {
 
 void param_list_push(ParamList *list, Param p) {
     if (list->count + 1 > list->capacity) {
-        list->capacity = list->capacity < 8 ? 8 : list->capacity * 2;
-        list->items = (Param *)realloc(list->items, list->capacity * sizeof(Param));
+        int new_cap = list->capacity < 8 ? 8 : list->capacity * 2;
+        Param *new_items = (Param *)realloc(list->items, new_cap * sizeof(Param));
+        if (!new_items) {
+            fprintf(stderr, "Fatal error: Out of memory in param_list_push\n");
+            exit(1);
+        }
+        list->items = new_items;
+        list->capacity = new_cap;
     }
     list->items[list->count++] = p;
 }

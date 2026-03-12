@@ -594,49 +594,44 @@ static AstNode *parse_import_stmt(Parser *p) {
     /* Accumulate dotted names */
     char *first_sub = tok_to_str(p->previous);
     size_t current_len = strlen(first_sub);
-    size_t cap = current_len + 64;
-    char *mod_name = (char *)malloc(cap);
-    char *prev_str = tok_to_str(p->previous);
-    size_t len = strlen(prev_str);
-    memcpy(mod_name, prev_str, len + 1);
-    free(prev_str);
-    memcpy(mod_name, first_sub, current_len + 1);
-    free(first_sub);
     
+    /* Tính cap an toàn chống tràn số */
+    size_t cap = current_len + 64;
+    if (cap < current_len) cap = current_len + 1; 
+
+    char *mod_name = (char *)malloc(cap);
+    if (mod_name) {
+        memcpy(mod_name, first_sub, current_len + 1);
+    }
+    free(first_sub);
+
     while (match(p, TOK_DOT)) {
         expect(p, TOK_IDENTIFIER, "expected sub-module name after '.'");
         char *sub = tok_to_str(p->previous);
         size_t sub_len = strlen(sub);
-        size_t new_len = len + 1 + sub_len;
-        if (new_len + 1 > (size_t)cap) {
-            cap = (int)(new_len + 1) * 2;
-            char *new_mod_name = (char *)realloc(mod_name, cap);
-            if (!new_mod_name) {
-                free(mod_name);
-                free(sub);
-                error(p, "out of memory allocating module name");
-                return n;
-            }
-            mod_name = new_mod_name;
-        }
-        mod_name[len++] = '.';
-        memcpy(mod_name + len, sub, sub_len + 1);
-        len += sub_len;
+        
+        /* Tính toán needed an toàn */
         size_t needed = current_len + 1 + sub_len + 1;
+        
         if (needed > cap) {
-            cap = needed * 2;
-            char *new_mod_name = (char *)realloc(mod_name, cap);
-            if (!new_mod_name) {
-                free(mod_name);
+            size_t new_cap = needed * 2;
+            if (new_cap < needed) new_cap = needed; /* Chống tràn số khi x2 */
+            
+            char *new_mod = (char *)realloc(mod_name, new_cap);
+            if (!new_mod) {
+                /* OOM Guard: Ngừng nối chuỗi an toàn thay vì crash */
                 free(sub);
-                error(p, "out of memory allocating module name");
-                return n;
+                break; 
             }
-            mod_name = new_mod_name;
+            mod_name = new_mod;
+            cap = new_cap;
         }
-        mod_name[current_len++] = '.';
-        memcpy(mod_name + current_len, sub, sub_len + 1);
-        current_len += sub_len;
+        
+        if (mod_name) {
+            mod_name[current_len++] = '.';
+            memcpy(mod_name + current_len, sub, sub_len + 1);
+            current_len += sub_len;
+        }
         free(sub);
     }
     
