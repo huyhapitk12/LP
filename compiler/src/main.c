@@ -56,6 +56,8 @@ __declspec(dllimport) void __stdcall Sleep(unsigned long dwMilliseconds);
   #define LP_STAT_CALL stat
 #endif
 
+static int lp_copy_str(char *dst, size_t dst_size, const char *src);
+
 #ifndef _WIN32
 
 struct _finddata_t {
@@ -102,9 +104,9 @@ static intptr_t _findfirst(const char *pattern, struct _finddata_t *fd) {
         if (plen >= sizeof(st->prefix)) plen = sizeof(st->prefix) - 1;
         memcpy(st->prefix, mask, plen);
         st->prefix[plen] = '\0';
-        snprintf(st->suffix, sizeof(st->suffix), "%s", star + 1);
+        lp_copy_str(st->suffix, sizeof(st->suffix), star + 1);
     } else {
-        snprintf(st->prefix, sizeof(st->prefix), "%s", mask);
+        lp_copy_str(st->prefix, sizeof(st->prefix), mask);
         st->suffix[0] = '\0';
     }
 
