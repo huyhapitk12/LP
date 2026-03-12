@@ -160,6 +160,109 @@ static inline int64_t lp_mod(int64_t a, int64_t b) {
     return r;
 }
 
+/* Math operations on LpVal */
+static inline LpVal lp_val_add(LpVal a, LpVal b) {
+    if (a.type == LP_VAL_INT && b.type == LP_VAL_INT) return lp_val_int(a.as.i + b.as.i);
+    if (a.type == LP_VAL_FLOAT || b.type == LP_VAL_FLOAT) {
+        double f_a = (a.type == LP_VAL_INT) ? (double)a.as.i : a.as.f;
+        double f_b = (b.type == LP_VAL_INT) ? (double)b.as.i : b.as.f;
+        return lp_val_float(f_a + f_b);
+    }
+    if (a.type == LP_VAL_STRING && b.type == LP_VAL_STRING) {
+        char *str = (char*)malloc(strlen(a.as.s) + strlen(b.as.s) + 1);
+        strcpy(str, a.as.s);
+        strcat(str, b.as.s);
+        LpVal v; v.type = LP_VAL_STRING; v.as.s = str; return v;
+    }
+    return lp_val_null();
+}
+
+static inline LpVal lp_val_sub(LpVal a, LpVal b) {
+    if (a.type == LP_VAL_INT && b.type == LP_VAL_INT) return lp_val_int(a.as.i - b.as.i);
+    if (a.type == LP_VAL_FLOAT || b.type == LP_VAL_FLOAT) {
+        double f_a = (a.type == LP_VAL_INT) ? (double)a.as.i : a.as.f;
+        double f_b = (b.type == LP_VAL_INT) ? (double)b.as.i : b.as.f;
+        return lp_val_float(f_a - f_b);
+    }
+    return lp_val_null();
+}
+
+static inline LpVal lp_val_mul(LpVal a, LpVal b) {
+    if (a.type == LP_VAL_INT && b.type == LP_VAL_INT) return lp_val_int(a.as.i * b.as.i);
+    if (a.type == LP_VAL_FLOAT || b.type == LP_VAL_FLOAT) {
+        double f_a = (a.type == LP_VAL_INT) ? (double)a.as.i : a.as.f;
+        double f_b = (b.type == LP_VAL_INT) ? (double)b.as.i : b.as.f;
+        return lp_val_float(f_a * f_b);
+    }
+    return lp_val_null();
+}
+
+static inline LpVal lp_val_div(LpVal a, LpVal b) {
+    double f_a = (a.type == LP_VAL_INT) ? (double)a.as.i : a.as.f;
+    double f_b = (b.type == LP_VAL_INT) ? (double)b.as.i : b.as.f;
+    if (f_b == 0.0) return lp_val_null(); /* or throw exception */
+    return lp_val_float(f_a / f_b);
+}
+
+static inline LpVal lp_val_floordiv(LpVal a, LpVal b) {
+    int64_t i_a = (a.type == LP_VAL_INT) ? a.as.i : (int64_t)a.as.f;
+    int64_t i_b = (b.type == LP_VAL_INT) ? b.as.i : (int64_t)b.as.f;
+    if (i_b == 0) return lp_val_null();
+    return lp_val_int(lp_floordiv(i_a, i_b));
+}
+
+static inline LpVal lp_val_mod(LpVal a, LpVal b) {
+    int64_t i_a = (a.type == LP_VAL_INT) ? a.as.i : (int64_t)a.as.f;
+    int64_t i_b = (b.type == LP_VAL_INT) ? b.as.i : (int64_t)b.as.f;
+    if (i_b == 0) return lp_val_null();
+    return lp_val_int(lp_mod(i_a, i_b));
+}
+
+static inline int lp_val_eq(LpVal a, LpVal b) {
+    if (a.type != b.type) {
+        if ((a.type == LP_VAL_INT || a.type == LP_VAL_FLOAT) && (b.type == LP_VAL_INT || b.type == LP_VAL_FLOAT)) {
+            double f_a = (a.type == LP_VAL_INT) ? (double)a.as.i : a.as.f;
+            double f_b = (b.type == LP_VAL_INT) ? (double)b.as.i : b.as.f;
+            return f_a == f_b;
+        }
+        return 0;
+    }
+    switch (a.type) {
+        case LP_VAL_INT: return a.as.i == b.as.i;
+        case LP_VAL_FLOAT: return a.as.f == b.as.f;
+        case LP_VAL_STRING: return strcmp(a.as.s, b.as.s) == 0;
+        case LP_VAL_BOOL: return a.as.b == b.as.b;
+        case LP_VAL_NULL: return 1;
+        default: return 0; /* pointer comparison for dict/list isn't full deep eq yet */
+    }
+}
+
+static inline int lp_val_neq(LpVal a, LpVal b) { return !lp_val_eq(a, b); }
+
+static inline int lp_val_lt(LpVal a, LpVal b) {
+    if (a.type == LP_VAL_INT && b.type == LP_VAL_INT) return a.as.i < b.as.i;
+    if (a.type == LP_VAL_FLOAT || b.type == LP_VAL_FLOAT) {
+        double f_a = (a.type == LP_VAL_INT) ? (double)a.as.i : a.as.f;
+        double f_b = (b.type == LP_VAL_INT) ? (double)b.as.i : b.as.f;
+        return f_a < f_b;
+    }
+    return 0;
+}
+
+static inline int lp_val_gt(LpVal a, LpVal b) {
+    if (a.type == LP_VAL_INT && b.type == LP_VAL_INT) return a.as.i > b.as.i;
+    if (a.type == LP_VAL_FLOAT || b.type == LP_VAL_FLOAT) {
+        double f_a = (a.type == LP_VAL_INT) ? (double)a.as.i : a.as.f;
+        double f_b = (b.type == LP_VAL_INT) ? (double)b.as.i : b.as.f;
+        return f_a > f_b;
+    }
+    return 0;
+}
+
+static inline int lp_val_lte(LpVal a, LpVal b) { return !lp_val_gt(a, b); }
+static inline int lp_val_gte(LpVal a, LpVal b) { return !lp_val_lt(a, b); }
+
+
 /* JSON/Dict subscript helpers for LpVal */
 static inline LpVal lp_val_getitem_str(LpVal obj, const char *key) {
     if (obj.type == LP_VAL_DICT) return lp_dict_get(obj.as.d, key);
