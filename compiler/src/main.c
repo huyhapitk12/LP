@@ -897,7 +897,7 @@ int main(int argc, char **argv) {
             printf("  lp <file.lp|.py> -o out.c   Generate C code\n");
             printf("  lp <file.lp|.py> -c out.exe Compile to executable\n");
             printf("  lp <file.lp|.py> -asm out.s Generate assembly\n");
-            printf("  lp build <file.lp> [--target windows-x64|linux-x64|linux-arm64|macos-arm64]  Build standalone executable\n");
+            printf("  lp build <file.lp> [--target windows-x64|linux-x64|macos-arm64|linux-arm64]  Build standalone executable\n");
             printf("  lp package <file.lp> [--format zip|tar.gz]           Package executable\n");
             printf("  lp test [dir]               Run tests\n");
             printf("  lp profile <file>            Profile execution\n");
@@ -1522,37 +1522,35 @@ int run_profile(const char *argv0, const char *input_file) {
     if (main_pos) {
         char *body_start;
         char *body_end;
-        char *final_return = NULL;
-        char *scan;
 
         /* Write everything before main */
         fwrite(c_code, 1, main_pos - c_code, tmp);
 
-        /* Write profiled main */
-        fprintf(tmp, "#include <time.h>\n");
-        fprintf(tmp, "int main(void) {\n");
-        fprintf(tmp, "    clock_t __lp_total_start = clock();\n");
+        /* Rename original main to avoid conflicts */
+        fprintf(tmp, "int __lp_main_code(void) {\n");
 
         /* Find the original main body content */
         body_start = main_pos + strlen("int main(void) {");
-        /* Find the closing brace for generated main and trim the final return. */
         body_end = strrchr(body_start, '}');
-        scan = body_start;
-        while (body_end && (scan = strstr(scan, "return 0;")) && scan < body_end) {
-            final_return = scan;
-            scan += strlen("return 0;");
-        }
+        
         if (body_end) {
-            char *body_limit = final_return ? final_return : body_end;
-            fwrite(body_start, 1, body_limit - body_start, tmp);
+            fwrite(body_start, 1, body_end - body_start, tmp);
+            fprintf(tmp, "}\n\n");
+        } else {
+            fputs(body_start, tmp);
         }
 
-        fprintf(tmp, "\n    double __lp_total_ms = (double)(clock() - __lp_total_start) / CLOCKS_PER_SEC * 1000;\n");
+        /* Write profiled main that calls our renamed main */
+        fprintf(tmp, "#include <time.h>\n");
+        fprintf(tmp, "int main(void) {\n");
+        fprintf(tmp, "    clock_t __lp_total_start = clock();\n");
+        fprintf(tmp, "    int __lp_ret = __lp_main_code();\n");
+        fprintf(tmp, "    double __lp_total_ms = (double)(clock() - __lp_total_start) / CLOCKS_PER_SEC * 1000;\n");
         fprintf(tmp, "    fprintf(stderr, \"\\n\\033[35m\\033[1m  === LP PROFILE REPORT ===\\033[0m\\n\");\n");
         fprintf(tmp, "    fprintf(stderr, \"\\033[2m  ────────────────────────\\033[0m\\n\");\n");
         fprintf(tmp, "    fprintf(stderr, \"  Total execution: \\033[1m%%.3f ms\\033[0m\\n\", __lp_total_ms);\n");
         fprintf(tmp, "    fprintf(stderr, \"\\033[2m  ────────────────────────\\033[0m\\n\\n\");\n");
-        fprintf(tmp, "    return 0;\n}\n");
+        fprintf(tmp, "    return __lp_ret;\n}\n");
     } else {
         fputs(c_code, tmp);
     }
