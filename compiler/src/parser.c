@@ -594,18 +594,28 @@ static AstNode *parse_import_stmt(Parser *p) {
     /* Accumulate dotted names */
     int cap = 64;
     char *mod_name = (char *)malloc(cap);
-    strcpy(mod_name, tok_to_str(p->previous));
+    char *first_tok = tok_to_str(p->previous);
+    int curr_len = strlen(first_tok);
+    if (curr_len + 1 > cap) {
+        cap = curr_len * 2 + 1;
+        mod_name = (char *)realloc(mod_name, cap);
+    }
+    strcpy(mod_name, first_tok);
+    free(first_tok);
     
     while (match(p, TOK_DOT)) {
         expect(p, TOK_IDENTIFIER, "expected sub-module name after '.'");
         char *sub = tok_to_str(p->previous);
-        int new_len = strlen(mod_name) + 1 + strlen(sub) + 1;
+        int sub_len = strlen(sub);
+        int new_len = curr_len + 1 + sub_len + 1;
         if (new_len > cap) {
             cap = new_len * 2;
             mod_name = (char *)realloc(mod_name, cap);
         }
-        strcat(mod_name, ".");
-        strcat(mod_name, sub);
+        mod_name[curr_len] = '.';
+        memcpy(mod_name + curr_len + 1, sub, sub_len);
+        curr_len += 1 + sub_len;
+        mod_name[curr_len] = '\0';
         free(sub);
     }
     
