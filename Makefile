@@ -55,3 +55,10 @@ endif
 install: $(TARGET)
 	cp $(TARGET) /usr/local/bin/lp
 	@echo "[LP] Installed to /usr/local/bin/lp"
+
+# Add a C test target
+test-c: tests/test_codegen.c compiler/src/codegen.c
+	$(CC) $(CFLAGS) $^ -I compiler/src -I runtime -o $(BUILD_DIR)/test_codegen $(LDFLAGS)
+	$(BUILD_DIR)/test_codegen
+
+.PHONY: test-c
