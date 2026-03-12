@@ -362,6 +362,9 @@ static void al_init(ArgList *al) {
 static void al_add(ArgList *al, const char *arg) {
     if (al->ac < 63) {
         al->args[al->ac++] = arg;
+    } else {
+        fprintf(stderr, "Fatal error: ArgList capacity exceeded (too many arguments)\n");
+        exit(1);
     }
 }
 
@@ -812,7 +815,7 @@ int main(int argc, char **argv) {
         al_finish(&al);
         
         printf("[LP Export] Compiling shared library: %s\n", dll_path);
-        int r2 = (int)_spawnv(_P_WAIT, gcc_path, al.args);
+        int r2 = run_tool_wait(gcc_path, al.args);
         remove(tmp_c);
         
         free(c_code);
@@ -1656,9 +1659,9 @@ int run_watch(const char *argv0, const char *input_file) {
 
             if (run_count > 1) {
                 /* Clear screen for fresh output */
-                const char *clear_argv[] = {LP_CLEAR_CMD, NULL};
-                int clear_rc = run_tool_wait(LP_CLEAR_CMD, clear_argv);
+                int clear_rc = system(LP_CLEAR_CMD);
                 (void)clear_rc;
+                
                 printf("\033[1;33m");
                 printf("  \xF0\x9F\x94\xA5 LP Hot Reload Mode\n");
                 printf("  \xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\n");

@@ -1,7 +1,14 @@
 #include <stdio.h>
 #include <string.h>
-#include <assert.h>
+#include <stdlib.h>
 #include "lexer.h"
+
+#define ASSERT(cond) do { \
+    if (!(cond)) { \
+        fprintf(stderr, "Assertion failed: %s at %s:%d\n", #cond, __FILE__, __LINE__); \
+        exit(1); \
+    } \
+} while(0)
 
 void test_lexer_init() {
     Lexer lex;
