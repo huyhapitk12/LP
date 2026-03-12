@@ -596,6 +596,10 @@ static AstNode *parse_import_stmt(Parser *p) {
     size_t current_len = strlen(first_sub);
     size_t cap = current_len + 64;
     char *mod_name = (char *)malloc(cap);
+    char *prev_str = tok_to_str(p->previous);
+    size_t len = strlen(prev_str);
+    memcpy(mod_name, prev_str, len + 1);
+    free(prev_str);
     memcpy(mod_name, first_sub, current_len + 1);
     free(first_sub);
     
@@ -603,6 +607,14 @@ static AstNode *parse_import_stmt(Parser *p) {
         expect(p, TOK_IDENTIFIER, "expected sub-module name after '.'");
         char *sub = tok_to_str(p->previous);
         size_t sub_len = strlen(sub);
+        size_t new_len = len + 1 + sub_len;
+        if (new_len + 1 > (size_t)cap) {
+            cap = (int)(new_len + 1) * 2;
+            mod_name = (char *)realloc(mod_name, cap);
+        }
+        mod_name[len++] = '.';
+        memcpy(mod_name + len, sub, sub_len + 1);
+        len += sub_len;
         size_t needed = current_len + 1 + sub_len + 1;
         if (needed > cap) {
             cap = needed * 2;
