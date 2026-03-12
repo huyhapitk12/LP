@@ -31,9 +31,17 @@ else
     MKDIR  := mkdir -p $(BUILD_DIR)
 endif
 
-.PHONY: all clean install
+.PHONY: all clean install test
 
 all: $(TARGET) $(SQLITE_OBJ)
+
+test: $(TARGET) $(BUILD_DIR)/test_ast
+	@echo "Running AST tests..."
+	@./$(BUILD_DIR)/test_ast
+
+$(BUILD_DIR)/test_ast: tests/test_ast.c $(SRC_DIR)/ast.c
+	$(MKDIR)
+	$(CC) $(CFLAGS) $^ $(INC_DIR) -o $@ $(LDFLAGS)
 
 $(TARGET): $(SRCS)
 	$(MKDIR)
