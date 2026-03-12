@@ -566,3 +566,54 @@ int repl_run(const char *argv0) {
     rbuf_free(&accumulated);
     return 0;
 }
+
+/* ─── Internal Unit Tests ─── */
+void run_repl_tests(void) {
+    char dst[10];
+    int res;
+
+    /* Normal copy */
+    res = repl_copy_str(dst, sizeof(dst), "hello");
+    if (res != 1 || strcmp(dst, "hello") != 0) {
+        fprintf(stderr, C_RED "Test failed: repl_copy_str normal copy" C_RESET "\n");
+        exit(1);
+    }
+
+    /* Exact fit */
+    res = repl_copy_str(dst, sizeof(dst), "123456789");
+    if (res != 1 || strcmp(dst, "123456789") != 0) {
+        fprintf(stderr, C_RED "Test failed: repl_copy_str exact fit" C_RESET "\n");
+        exit(1);
+    }
+
+    /* Overflow copy */
+    res = repl_copy_str(dst, sizeof(dst), "1234567890123");
+    if (res != 0 || strcmp(dst, "123456789") != 0) {
+        fprintf(stderr, C_RED "Test failed: repl_copy_str overflow" C_RESET "\n");
+        exit(1);
+    }
+
+    /* Null destination */
+    res = repl_copy_str(NULL, sizeof(dst), "hello");
+    if (res != 0) {
+        fprintf(stderr, C_RED "Test failed: repl_copy_str null dst" C_RESET "\n");
+        exit(1);
+    }
+
+    /* Zero size */
+    res = repl_copy_str(dst, 0, "hello");
+    if (res != 0) {
+        fprintf(stderr, C_RED "Test failed: repl_copy_str zero size" C_RESET "\n");
+        exit(1);
+    }
+
+    /* Null source */
+    res = repl_copy_str(dst, sizeof(dst), NULL);
+    if (res != 0) {
+        fprintf(stderr, C_RED "Test failed: repl_copy_str null src" C_RESET "\n");
+        exit(1);
+    }
+
+    printf("  \033[1mC Utils\033[0m\n");
+    printf("    \033[32m✅ repl_copy_str\033[0m\n\n");
+}
