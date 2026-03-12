@@ -38,7 +38,7 @@ typedef struct {
 typedef struct {
     Param *items;
     int count;
-    int cap;
+    int capacity;
 } ParamList;
 
 struct AstNode {
