@@ -1786,16 +1786,20 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 }
             } else {
                 LpType iter_type = infer_type(cg, node->for_stmt.iter);
-                if (iter_type == LP_VAL) {
+                if (iter_type == LP_VAL || iter_type == LP_LIST || iter_type == LP_PYOBJ || iter_type == LP_ARRAY || iter_type == LP_STR_ARRAY || iter_type == LP_DICT || iter_type == LP_SET || iter_type == LP_TUPLE) {
+                    static int generic_loop_counter = 0;
+                    int cur_loop = generic_loop_counter++;
+                    write_indent(buf, indent);
+                    buf_printf(buf, "LpVal __lp_iter_%d = ", cur_loop);
+                    emit_lp_val(cg, buf, node->for_stmt.iter);
+                    buf_write(buf, ";\n");
+                    write_indent(buf, indent);
+                    buf_printf(buf, "int64_t __lp_len_%d = lp_val_len(__lp_iter_%d);\n", cur_loop, cur_loop);
                     scope_define(cg->scope, node->for_stmt.var, LP_VAL);
                     write_indent(buf, indent);
-                    buf_write(buf, "for (int64_t __lp_i = 0; __lp_i < lp_val_len(");
-                    gen_expr(cg, buf, node->for_stmt.iter);
-                    buf_write(buf, "); __lp_i++) {\n");
+                    buf_printf(buf, "for (int64_t __lp_i_%d = 0; __lp_i_%d < __lp_len_%d; __lp_i_%d++) {\n", cur_loop, cur_loop, cur_loop, cur_loop);
                     write_indent(buf, indent + 1);
-                    buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(", node->for_stmt.var);
-                    gen_expr(cg, buf, node->for_stmt.iter);
-                    buf_write(buf, ", __lp_i);\n");
+                    buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(__lp_iter_%d, __lp_i_%d);\n", node->for_stmt.var, cur_loop, cur_loop);
                 } else {
                     write_indent(buf, indent);
                     buf_write(buf, "/* TODO: generic for loop */\n");
@@ -1820,11 +1824,11 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
             buf_write(buf, "}\n");
             break;
         case NODE_PARALLEL_FOR: {
-            /* Emit OpenMP parallel for pragma */
-            write_indent(buf, indent);
-            buf_write(buf, "#pragma omp parallel for\n");
             /* Reuse NODE_FOR logic */
             if (is_range_call(node->for_stmt.iter)) {
+                /* Emit OpenMP parallel for pragma */
+                write_indent(buf, indent);
+                buf_write(buf, "#pragma omp parallel for\n");
                 NodeList *args = &node->for_stmt.iter->call.args;
                 scope_define(cg->scope, node->for_stmt.var, LP_INT);
                 write_indent(buf, indent);
@@ -1847,10 +1851,39 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     buf_write(buf, ") {\n");
                 }
             } else {
-                write_indent(buf, indent);
-                buf_write(buf, "/* TODO: generic parallel for loop */\n");
-                write_indent(buf, indent);
-                buf_write(buf, "{\n");
+                LpType iter_type = infer_type(cg, node->for_stmt.iter);
+                if (iter_type == LP_VAL || iter_type == LP_LIST || iter_type == LP_PYOBJ || iter_type == LP_ARRAY || iter_type == LP_STR_ARRAY || iter_type == LP_DICT || iter_type == LP_SET || iter_type == LP_TUPLE) {
+                    /* Create a unique loop index variable for generic loops to avoid shadowing */
+                    static int generic_parallel_loop_counter = 0;
+                    int cur_loop = generic_parallel_loop_counter++;
+                    write_indent(buf, indent);
+                    buf_printf(buf, "LpVal __lp_iter_%d = ", cur_loop);
+                    emit_lp_val(cg, buf, node->for_stmt.iter);
+                    buf_write(buf, ";\n");
+                    write_indent(buf, indent);
+                    buf_printf(buf, "int64_t __lp_len_%d = lp_val_len(__lp_iter_%d);\n", cur_loop, cur_loop);
+
+                    /* Emit OpenMP parallel for pragma */
+                    write_indent(buf, indent);
+                    buf_write(buf, "#pragma omp parallel for\n");
+
+                    write_indent(buf, indent);
+                    buf_printf(buf, "for (int64_t __lp_i_%d = 0; __lp_i_%d < __lp_len_%d; __lp_i_%d++) {\n", cur_loop, cur_loop, cur_loop, cur_loop);
+                    write_indent(buf, indent + 1);
+                    if (!scope_lookup(cg->scope, node->for_stmt.var)) {
+                        scope_define(cg->scope, node->for_stmt.var, LP_VAL);
+                    }
+                    /* For OpenMP threads, the loop variable must be explicitly declared locally to be private */
+                    buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(__lp_iter_%d, __lp_i_%d);\n", node->for_stmt.var, cur_loop, cur_loop);
+                } else {
+                    /* Emit OpenMP parallel for pragma */
+                    write_indent(buf, indent);
+                    buf_write(buf, "#pragma omp parallel for\n");
+                    write_indent(buf, indent);
+                    buf_write(buf, "/* TODO: generic parallel for loop */\n");
+                    write_indent(buf, indent);
+                    buf_write(buf, "{\n");
+                }
             }
             for (int i = 0; i < node->for_stmt.body.count; i++)
                 gen_stmt(cg, buf, node->for_stmt.body.items[i], indent + 1);
