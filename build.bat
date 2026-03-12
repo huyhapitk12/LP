@@ -35,6 +35,7 @@ echo [LP Build] Using GCC: %GCC%
     compiler\src\parser.c ^
     compiler\src\codegen.c ^
     compiler\src\repl.c ^
+    compiler\src\process_utils.c ^
     -I compiler\src ^
     -I runtime ^
     -o build\lp.exe -lm
