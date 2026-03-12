@@ -96,6 +96,11 @@ void ast_free(AstNode *node) {
             free(node->aug_assign.name);
             ast_free(node->aug_assign.value);
             break;
+        case NODE_SUBSCRIPT_ASSIGN:
+            ast_free(node->subscript_assign.obj);
+            ast_free(node->subscript_assign.index);
+            ast_free(node->subscript_assign.value);
+            break;
         case NODE_EXPR_STMT:
             ast_free(node->expr_stmt.expr);
             break;

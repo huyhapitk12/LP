@@ -6,7 +6,7 @@
 
 typedef enum {
     NODE_PROGRAM, NODE_FUNC_DEF, NODE_CLASS_DEF, NODE_IF, NODE_FOR, NODE_WHILE,
-    NODE_RETURN, NODE_ASSIGN, NODE_AUG_ASSIGN, NODE_EXPR_STMT,
+    NODE_RETURN, NODE_ASSIGN, NODE_AUG_ASSIGN, NODE_SUBSCRIPT_ASSIGN, NODE_EXPR_STMT,
     NODE_PASS, NODE_BREAK, NODE_CONTINUE, NODE_CONST_DECL,
     NODE_IMPORT, NODE_WITH,
     /* Expressions */
@@ -58,6 +58,7 @@ struct AstNode {
         struct { AstNode *value; } return_stmt;
         struct { char *name; char *type_ann; AstNode *value; TokenType access; } assign;
         struct { char *name; TokenType op; AstNode *value; } aug_assign;
+        struct { AstNode *obj; AstNode *index; AstNode *value; TokenType op; } subscript_assign;
         struct { AstNode *expr; } expr_stmt;
         struct { char *name; AstNode *value; } const_decl;
         struct { AstNode *left; TokenType op; AstNode *right; } bin_op;
