@@ -49,6 +49,7 @@ typedef struct {
     int is_variadic; /* True if function accepts *args */
     int has_kwargs;  /* True if function accepts **kwargs */
     int num_params;  /* Number of total parameters defined */
+    LpType param_types[16];
     LpType first_param_type; /* First positional parameter type for function metadata */
     char *first_param_class_name; /* Class name when first_param_type == LP_OBJECT */
     TokenType access;  /* TOK_PRIVATE, TOK_PROTECTED, or 0 (public) */
