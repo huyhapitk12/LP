@@ -65,6 +65,19 @@ static inline void lp_print_tuple(LpTuple *t) {
     printf(")\n");
 }
 
+/* Print LpVal (dynamic JSON values) */
+static inline void lp_print_val(LpVal v) {
+    switch (v.type) {
+        case LP_VAL_INT:    printf("%" PRId64 "\n", (int64_t)v.as.i); break;
+        case LP_VAL_FLOAT:  printf("%g\n", v.as.f); break;
+        case LP_VAL_STRING: printf("%s\n", v.as.s); break;
+        case LP_VAL_BOOL:   printf("%s\n", v.as.b ? "True" : "False"); break;
+        case LP_VAL_NULL:   printf("None\n"); break;
+        case LP_VAL_DICT:   if (v.as.d) lp_dict_print(v.as.d); printf("\n"); break;
+        case LP_VAL_LIST:   if (v.as.l) lp_list_print(v.as.l); printf("\n"); break;
+    }
+}
+
 /* C11 Generic print for unknown/inferred types (like object properties) */
 #define lp_print_generic(x) _Generic((x), \
     double: lp_print_float, \
@@ -166,6 +179,7 @@ static inline int64_t lp_val_len(LpVal obj) {
     return 0;
 }
 
+
 /* String helpers */
 static inline char *lp_str_concat(const char *a, const char *b) {
     size_t la = strlen(a), lb = strlen(b);
@@ -261,5 +275,22 @@ static inline int lp_bool_from_val(LpVal v) {
     void*: lp_bool_from_ptr, \
     default: lp_bool_from_int \
 )(x)
+
+static inline void lp_val_set_item(LpVal obj, LpVal key, LpVal val) {
+    if (obj.type == LP_VAL_DICT) {
+        if (key.type == LP_VAL_STRING) {
+            lp_dict_set(obj.as.d, key.as.s, val);
+        } else {
+            char* s = lp_str(key);
+            lp_dict_set(obj.as.d, s, val);
+            free(s);
+        }
+    } else if (obj.type == LP_VAL_LIST) {
+        int64_t idx = lp_int(key);
+        if (idx >= 0 && idx < obj.as.l->len) {
+            obj.as.l->items[idx] = val;
+        }
+    }
+}
 
 #endif
