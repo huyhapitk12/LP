@@ -432,6 +432,7 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
             if (node->call.func->type == NODE_NAME) {
                 const char *func = node->call.func->name_expr.name;
                 if (strcmp(func, "open") == 0) return LP_FILE;
+                if (strcmp(func, "input") == 0) return LP_STRING;
                 Symbol *s = scope_lookup(cg->scope, func);
                 if (s && s->type == LP_CLASS) return LP_OBJECT;
                 if (s) return s->type;
@@ -609,12 +610,25 @@ static void gen_thread_spawn_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
 static void emit_lp_val(CodeGen *cg, Buffer *buf, AstNode *expr) {
     LpType t = infer_type(cg, expr);
     switch (t) {
-        case LP_INT: buf_write(buf, "lp_val_int("); gen_expr(cg, buf, expr); buf_write(buf, ")"); break;
+        case LP_INT:
+            if (expr->type == NODE_CALL && expr->call.func->type == NODE_NAME && strcmp(expr->call.func->name_expr.name, "int") == 0) {
+                buf_write(buf, "lp_val_int("); gen_expr(cg, buf, expr); buf_write(buf, ")");
+            } else {
+                buf_write(buf, "lp_val_int("); gen_expr(cg, buf, expr); buf_write(buf, ")");
+            }
+            break;
         case LP_FLOAT: buf_write(buf, "lp_val_float("); gen_expr(cg, buf, expr); buf_write(buf, ")"); break;
         case LP_STRING: buf_write(buf, "lp_val_str("); gen_expr(cg, buf, expr); buf_write(buf, ")"); break;
         case LP_BOOL: buf_write(buf, "lp_val_bool("); gen_expr(cg, buf, expr); buf_write(buf, ")"); break;
         case LP_LIST: buf_write(buf, "lp_val_list("); gen_expr(cg, buf, expr); buf_write(buf, ")"); break;
         case LP_DICT: buf_write(buf, "lp_val_dict("); gen_expr(cg, buf, expr); buf_write(buf, ")"); break;
+        case LP_STR_ARRAY:
+            buf_write(buf, "({ LpList *_l = lp_list_new(); for(int i=0;i<(");
+            gen_expr(cg, buf, expr);
+            buf_write(buf, ").count;i++) lp_list_append(_l, lp_val_str((");
+            gen_expr(cg, buf, expr);
+            buf_write(buf, ").items[i])); lp_val_list(_l); })");
+            break;
         case LP_VAL: gen_expr(cg, buf, expr); break;
         case LP_UNKNOWN: gen_expr(cg, buf, expr); break;
         default: buf_write(buf, "lp_val_null()"); break;
@@ -1161,6 +1175,16 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             gen_expr(cg, buf, node->call.args.items[0]); /* The array */
                         }
                         buf_write(buf, ")");
+                    } else if (strcmp(attr, "split") == 0) {
+                        buf_write(buf, "lp_str_split(");
+                        gen_expr(cg, buf, node->call.func->attribute.obj);
+                        buf_write(buf, ", ");
+                        if (node->call.args.count > 0) {
+                            gen_expr(cg, buf, node->call.args.items[0]);
+                        } else {
+                            buf_write(buf, "NULL");
+                        }
+                        buf_write(buf, ")");
                     } else {
                         buf_printf(buf, "lp_str_%s(", attr);
                         gen_expr(cg, buf, node->call.func->attribute.obj); /* The string itself is the first arg */
@@ -1178,7 +1202,11 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         gen_expr(cg, buf, node->call.func->attribute.obj);
                         for (int i = 0; i < node->call.args.count; i++) {
                             buf_write(buf, ", ");
-                            emit_lp_val(cg, buf, node->call.args.items[i]);
+                            if (infer_type(cg, node->call.args.items[i]) != LP_VAL) {
+                                emit_lp_val(cg, buf, node->call.args.items[i]);
+                            } else {
+                                gen_expr(cg, buf, node->call.args.items[i]);
+                            }
                         }
                         buf_write(buf, ")");
                         break;
@@ -1197,6 +1225,7 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         case LP_BOOL:   buf_write(buf, "lp_print_bool("); break;
                         case LP_LIST:   buf_write(buf, "lp_list_print("); break;
                         case LP_ARRAY:  buf_write(buf, "lp_np_print("); break;
+                        case LP_STR_ARRAY: buf_write(buf, "lp_print_str_array("); break;
                         case LP_PYOBJ:  buf_write(buf, "lp_py_print("); break;
                         case LP_DICT:   buf_write(buf, "lp_print_dict("); break;
                         case LP_SET:    buf_write(buf, "lp_print_set("); break;
@@ -1209,6 +1238,20 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 }
                 break;
             }
+            /* Special-case: int(), float(), bool() */
+            if (node->call.func->type == NODE_NAME &&
+                (strcmp(node->call.func->name_expr.name, "int") == 0 ||
+                 strcmp(node->call.func->name_expr.name, "float") == 0 ||
+                 strcmp(node->call.func->name_expr.name, "bool") == 0)) {
+                buf_printf(buf, "lp_%s(", node->call.func->name_expr.name);
+                if (node->call.args.count > 0) {
+                    emit_lp_val(cg, buf, node->call.args.items[0]);
+                } else {
+                    buf_write(buf, "lp_val_null()");
+                }
+                buf_write(buf, ")");
+                break;
+            }
             /* Special-case: str() */
             if (node->call.func->type == NODE_NAME &&
                 strcmp(node->call.func->name_expr.name, "str") == 0) {
@@ -1219,6 +1262,18 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 } else {
                     buf_write(buf, "\"\"");
                 }
+                break;
+            }
+            /* Special-case: input() */
+            if (node->call.func->type == NODE_NAME &&
+                strcmp(node->call.func->name_expr.name, "input") == 0) {
+                buf_write(buf, "lp_io_input(");
+                if (node->call.args.count > 0) {
+                    gen_expr(cg, buf, node->call.args.items[0]);
+                } else {
+                    buf_write(buf, "NULL");
+                }
+                buf_write(buf, ")");
                 break;
             }
             /* Special-case: len() */
@@ -1500,7 +1555,17 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 }
             } else {
                 LpType iter_type = infer_type(cg, node->list_comp.iter);
-                if (iter_type == LP_VAL || iter_type == LP_LIST || iter_type == LP_PYOBJ || iter_type == LP_ARRAY || iter_type == LP_STR_ARRAY || iter_type == LP_DICT || iter_type == LP_SET || iter_type == LP_TUPLE) {
+                if (iter_type == LP_STR_ARRAY) {
+                    scope_define(cg->scope, node->list_comp.var, LP_STRING);
+                    static int generic_lc_loop_counter = 0;
+                    int cur_loop = generic_lc_loop_counter++;
+                    buf_printf(buf, "LpStrArray __lp_lc_iter_%d = ", cur_loop);
+                    gen_expr(cg, buf, node->list_comp.iter);
+                    buf_write(buf, "; ");
+                    buf_printf(buf, "int64_t __lp_lc_len_%d = __lp_lc_iter_%d.count; ", cur_loop, cur_loop);
+                    buf_printf(buf, "for (int64_t __lp_lc_i_%d = 0; __lp_lc_i_%d < __lp_lc_len_%d; __lp_lc_i_%d++) { ", cur_loop, cur_loop, cur_loop, cur_loop);
+                    buf_printf(buf, "const char *lp_%s = __lp_lc_iter_%d.items[__lp_lc_i_%d]; ", node->list_comp.var, cur_loop, cur_loop);
+                } else if (iter_type == LP_VAL || iter_type == LP_LIST || iter_type == LP_PYOBJ || iter_type == LP_ARRAY || iter_type == LP_DICT || iter_type == LP_SET || iter_type == LP_TUPLE) {
                     scope_define(cg->scope, node->list_comp.var, LP_VAL);
                     static int generic_lc_loop_counter = 0;
                     int cur_loop = generic_lc_loop_counter++;
@@ -1524,7 +1589,11 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
             }
 
             buf_write(buf, "lp_list_append(_lc, ");
-            emit_lp_val(cg, buf, node->list_comp.expr);
+            if (infer_type(cg, node->list_comp.expr) != LP_VAL) {
+                emit_lp_val(cg, buf, node->list_comp.expr);
+            } else {
+                gen_expr(cg, buf, node->list_comp.expr);
+            }
             buf_write(buf, "); ");
 
             if (node->list_comp.cond) {
