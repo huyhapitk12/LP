@@ -74,6 +74,14 @@ static Symbol *scope_lookup(Scope *s, const char *name) {
     return NULL;
 }
 
+static Symbol *scope_lookup_field(Scope *s, const char *name) {
+    for (; s; s = s->parent)
+        for (int i = s->count - 1; i >= 0; i--)
+            if (strcmp(s->symbols[i].name, name) == 0 && !s->symbols[i].is_method)
+                return &s->symbols[i];
+    return NULL;
+}
+
 static Symbol *scope_define(Scope *s, const char *name, LpType type) {
     if (s->count >= 512) return NULL;
     Symbol *sym = &s->symbols[s->count++];
@@ -1543,15 +1551,26 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 } else if (args->count >= 2) {
                     buf_printf(buf, "for (int64_t lp_%s = ", node->list_comp.var);
                     gen_expr(cg, buf, args->items[0]);
-                    buf_printf(buf, "; lp_%s < ", node->list_comp.var);
-                    gen_expr(cg, buf, args->items[1]);
+                    
                     if (args->count >= 3) {
-                        buf_printf(buf, "; lp_%s += ", node->list_comp.var);
+                        /* Tạo block để khai báo biến step dùng chung */
+                        buf_write(buf, "; 0;) { break; } "); /* Hack đóng lệnh for rỗng nêú cần, hoặc viết lại block */
+                        
+                        buf_printf(buf, "int64_t __step_%s = ", node->list_comp.var);
                         gen_expr(cg, buf, args->items[2]);
+                        buf_write(buf, "; ");
+                        buf_printf(buf, "if (__step_%s > 0) { ", node->list_comp.var);
+                        buf_printf(buf, "for (int64_t lp_%s = ", node->list_comp.var);
+                        gen_expr(cg, buf, args->items[0]);
+                        buf_printf(buf, "; lp_%s < ", node->list_comp.var);
+                        gen_expr(cg, buf, args->items[1]);
+                        buf_printf(buf, "; lp_%s += __step_%s) { ", node->list_comp.var, node->list_comp.var);
                     } else {
+                        buf_printf(buf, "; lp_%s < ", node->list_comp.var);
+                        gen_expr(cg, buf, args->items[1]);
                         buf_printf(buf, "; lp_%s++", node->list_comp.var);
+                        buf_write(buf, ") { ");
                     }
-                    buf_write(buf, ") { ");
                 }
             } else {
                 LpType iter_type = infer_type(cg, node->list_comp.iter);
@@ -1811,9 +1830,9 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     char field_key[256];
                     Symbol *mem;
                     snprintf(field_key, sizeof(field_key), "%s.%s", obj_sym->class_name, attr_name);
-                    mem = scope_lookup(cg->scope, field_key);
+                    mem = scope_lookup_field(cg->scope, field_key);
                     if (mem) {
-                        target_type = mem->type; /* THÊM DÒNG NÀY: Lấy kiểu tĩnh của thuộc tính */
+                        target_type = mem->type;
                         if (!can_access_member(cg, mem)) {
                             codegen_set_error(cg,
                                 "Cannot access %s member '%s' of class '%s'",
@@ -2013,50 +2032,74 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                                node->for_stmt.var, node->for_stmt.var);
                     gen_expr(cg, buf, args->items[0]);
                     buf_printf(buf, "; lp_%s++) {\n", node->for_stmt.var);
-                } else if (args->count >= 2) {
+                } else if (args->count == 2) {
                     buf_printf(buf, "for (int64_t lp_%s = ", node->for_stmt.var);
                     gen_expr(cg, buf, args->items[0]);
-
-                    /* If step is negative, use > instead of < */
-                    if (args->count >= 3 && args->items[2]->type == NODE_UNARY_OP && args->items[2]->unary_op.op == TOK_MINUS && args->items[2]->unary_op.operand->type == NODE_INT_LIT) {
-                        buf_printf(buf, "; lp_%s > ", node->for_stmt.var);
-                    } else if (args->count >= 3 && args->items[2]->type == NODE_INT_LIT && args->items[2]->int_lit.value < 0) {
-                        buf_printf(buf, "; lp_%s > ", node->for_stmt.var);
-                    } else if (args->count >= 3) {
-                        buf_printf(buf, "; lp_%s < ", node->for_stmt.var);
-                    } else {
-                        buf_printf(buf, "; lp_%s < ", node->for_stmt.var);
-                    }
-
+                    buf_printf(buf, "; lp_%s < ", node->for_stmt.var);
                     gen_expr(cg, buf, args->items[1]);
-                    if (args->count >= 3) {
-                        buf_printf(buf, "; lp_%s += ", node->for_stmt.var);
-                        gen_expr(cg, buf, args->items[2]);
-                    } else {
-                        buf_printf(buf, "; lp_%s++", node->for_stmt.var);
-                    }
-                    buf_write(buf, ") {\n");
-                }
+                    buf_printf(buf, "; lp_%s++) {\n", node->for_stmt.var);
+                    
+                } else if (args->count >= 3) {
+                    buf_printf(buf, "int64_t __lp_step_%s = ", node->for_stmt.var);
+                    gen_expr(cg, buf, args->items[2]);
+                    buf_write(buf, ";\n");
+
+                    /* Rẽ nhánh if/else dựa trên giá trị step */
+                    write_indent(buf, indent);
+                    buf_printf(buf, "if (__lp_step_%s > 0) {\n", node->for_stmt.var);
+                    
+                    write_indent(buf, indent + 1);
+                    buf_printf(buf, "for (int64_t lp_%s = ", node->for_stmt.var);
+                    gen_expr(cg, buf, args->items[0]);
+                    buf_printf(buf, "; lp_%s < ", node->for_stmt.var);
+                    gen_expr(cg, buf, args->items[1]);
+                    buf_printf(buf, "; lp_%s += __lp_step_%s) {\n", node->for_stmt.var, node->for_stmt.var);
+                    
+                    /* Sinh thân vòng lặp cho nhánh dương */
+                    for (int i = 0; i < node->for_stmt.body.count; i++)
+                        gen_stmt(cg, buf, node->for_stmt.body.items[i], indent + 2);
+                    
+                    write_indent(buf, indent + 1);
+                    buf_printf(buf, "}\n");
+                    write_indent(buf, indent);
+                    buf_printf(buf, "} else {\n");
+                    
+                    write_indent(buf, indent + 1);
+                    buf_printf(buf, "for (int64_t lp_%s = ", node->for_stmt.var);
+                    gen_expr(cg, buf, args->items[0]);
+                    buf_printf(buf, "; lp_%s > ", node->for_stmt.var); /* Dùng dấu > cho step âm */
+                    gen_expr(cg, buf, args->items[1]);
+                    buf_printf(buf, "; lp_%s += __lp_step_%s) {\n", node->for_stmt.var, node->for_stmt.var);
+                    
+                    /* Sinh thân vòng lặp cho nhánh âm */
+                    for (int i = 0; i < node->for_stmt.body.count; i++)
+                        gen_stmt(cg, buf, node->for_stmt.body.items[i], indent + 2);
+                    
+                    write_indent(buf, indent + 1);
+                    buf_printf(buf, "}\n");
+                    
+                    /* Thoát khỏi hàm gen_stmt ở đây vì đã tự sinh thân vòng lặp và dấu đóng ngoặc rồi */
+                    return;
+                }z
             } else {
                 LpType iter_type = infer_type(cg, node->for_stmt.iter);
-                if (iter_type == LP_VAL || iter_type == LP_LIST || iter_type == LP_PYOBJ || iter_type == LP_ARRAY || iter_type == LP_STR_ARRAY || iter_type == LP_DICT || iter_type == LP_SET || iter_type == LP_TUPLE) {
-                    static int generic_parallel_loop_counter = 0;
-                    int cur_loop = generic_parallel_loop_counter++;
+                if (iter_type == LP_VAL || iter_type == LP_LIST || iter_type == LP_PYOBJ /* ... */) {
+                    static int generic_loop_counter = 0;
+                    int cur_loop = generic_loop_counter++;
                     
                     write_indent(buf, indent);
-                    buf_printf(buf, "LpVal __lp_p_iter_%d = ", cur_loop);
+                    buf_printf(buf, "LpVal __lp_iter_%d = ", cur_loop);
                     emit_lp_val(cg, buf, node->for_stmt.iter);
                     buf_write(buf, ";\n");
                     write_indent(buf, indent);
-                    buf_printf(buf, "int64_t __lp_p_len_%d = lp_val_len(__lp_p_iter_%d);\n", cur_loop, cur_loop);
+                    buf_printf(buf, "int64_t __lp_len_%d = lp_val_len(__lp_iter_%d);\n", cur_loop, cur_loop);
+                    
                     write_indent(buf, indent);
-                    buf_write(buf, "#pragma omp parallel for\n");
-                    write_indent(buf, indent);
-                    buf_printf(buf, "for (int64_t __lp_p_i_%d = 0; __lp_p_i_%d < __lp_p_len_%d; __lp_p_i_%d++) {\n", 
+                    buf_printf(buf, "for (int64_t __lp_i_%d = 0; __lp_i_%d < __lp_len_%d; __lp_i_%d++) {\n", 
                                cur_loop, cur_loop, cur_loop, cur_loop);
                     write_indent(buf, indent + 1);
                     scope_define(cg->scope, node->for_stmt.var, LP_VAL);
-                    buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(__lp_p_iter_%d, __lp_p_i_%d);\n", 
+                    buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(__lp_iter_%d, __lp_i_%d);\n", 
                                node->for_stmt.var, cur_loop, cur_loop);
                 } else {
                     write_indent(buf, indent);
@@ -2141,7 +2184,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     write_indent(buf, indent + 1);
                     scope_define(cg->scope, node->for_stmt.var, LP_VAL);
                     /* For OpenMP threads, the loop variable must be explicitly declared locally to be private */
-                    buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(__lp_iter_%d, __lp_i_%d);\n", node->for_stmt.var, cur_loop, cur_loop);
+                    buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(__lp_p_iter_%d, __lp_p_i_%d);\n", node->for_stmt.var, cur_loop, cur_loop);
                 } else {
                     /* Emit OpenMP parallel for pragma */
                     write_indent(buf, indent);
@@ -2664,6 +2707,10 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
         AstNode *stmt = program->program.stmts.items[i];
         if (stmt->type == NODE_IMPORT) {
             const char *module = stmt->import_stmt.module;
+            if (!module) {
+                codegen_set_error(cg, "Encountered invalid import module (OOM during parse)");
+                continue; // BỎ QUA NẾU MODULE BỊ NULL
+            }
             const char *alias = stmt->import_stmt.alias ? stmt->import_stmt.alias : module;
 
             /* Determine tier */
