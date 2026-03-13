@@ -160,11 +160,32 @@ static Token lex_token(Lexer *lex) {
             if (*lex->current == '=') { lex->current++; return make_token(TOK_NEQ, start, 2, lex->line); }
             return make_token(TOK_ERROR, start, 1, lex->line);
         case '<':
+            if (*lex->current == '<') {
+                lex->current++;
+                if (*lex->current == '=') { lex->current++; return make_token(TOK_LSHIFT_ASSIGN, start, 3, lex->line); }
+                return make_token(TOK_LSHIFT, start, 2, lex->line);
+            }
             if (*lex->current == '=') { lex->current++; return make_token(TOK_LTE, start, 2, lex->line); }
             return make_token(TOK_LT, start, 1, lex->line);
         case '>':
+            if (*lex->current == '>') {
+                lex->current++;
+                if (*lex->current == '=') { lex->current++; return make_token(TOK_RSHIFT_ASSIGN, start, 3, lex->line); }
+                return make_token(TOK_RSHIFT, start, 2, lex->line);
+            }
             if (*lex->current == '=') { lex->current++; return make_token(TOK_GTE, start, 2, lex->line); }
             return make_token(TOK_GT, start, 1, lex->line);
+        case '&':
+            if (*lex->current == '=') { lex->current++; return make_token(TOK_BIT_AND_ASSIGN, start, 2, lex->line); }
+            return make_token(TOK_BIT_AND, start, 1, lex->line);
+        case '|':
+            if (*lex->current == '=') { lex->current++; return make_token(TOK_BIT_OR_ASSIGN, start, 2, lex->line); }
+            return make_token(TOK_BIT_OR, start, 1, lex->line);
+        case '^':
+            if (*lex->current == '=') { lex->current++; return make_token(TOK_BIT_XOR_ASSIGN, start, 2, lex->line); }
+            return make_token(TOK_BIT_XOR, start, 1, lex->line);
+        case '~':
+            return make_token(TOK_BIT_NOT, start, 1, lex->line);
         case '(':
             lex->paren_depth++; return make_token(TOK_LPAREN, start, 1, lex->line);
         case ')':
@@ -292,8 +313,11 @@ const char *token_type_name(TokenType type) {
         "lambda", "yield", "parallel",
         "private", "protected",
         "+", "-", "*", "/", "//", "**", "%",
+        "&", "|", "^", "~", "<<", ">>",
         "=", "==", "!=", "<", ">", "<=", ">=",
-        "+=", "-=", "*=", "/=", "->", "@",
+        "+=", "-=", "*=", "/=",
+        "&=", "|=", "^=", "<<=", ">>=",
+        "->", "@",
         "(", ")", "[", "]", "{", "}",
         ":", ",", ".",
         "NEWLINE", "INDENT", "DEDENT",
