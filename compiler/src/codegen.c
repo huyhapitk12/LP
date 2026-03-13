@@ -290,12 +290,15 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
                     return LP_BOOL;
                 return LP_VAL;
             }
+            if (op == TOK_BIT_AND || op == TOK_BIT_OR || op == TOK_BIT_XOR || op == TOK_LSHIFT || op == TOK_RSHIFT)
+                return LP_INT;
             if (lt == LP_FLOAT || rt == LP_FLOAT) return LP_FLOAT;
             if (op == TOK_SLASH) return LP_FLOAT;
             return LP_INT;
         }
         case NODE_UNARY_OP:
             if (node->unary_op.op == TOK_NOT) return LP_BOOL;
+            if (node->unary_op.op == TOK_BIT_NOT) return LP_INT;
             return infer_type(cg, node->unary_op.operand);
         case NODE_CALL: {
             /* === Nested module calls: mod.sub.func(...) e.g. os.path.exists(...) === */
@@ -435,6 +438,8 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
                 if (obj_type == LP_LIST) {
                     const char *attr = node->call.func->attribute.attr;
                     if (strcmp(attr, "append") == 0) return LP_VOID;
+                    if (strcmp(attr, "sort") == 0) return LP_VOID;
+                    if (strcmp(attr, "binary_search") == 0) return LP_INT;
                 }
             }
             if (node->call.func->type == NODE_NAME) {
@@ -830,12 +835,27 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                     case TOK_GTE: ops = " >= "; break;
                     case TOK_AND: ops = " && "; break;
                     case TOK_OR: ops = " || "; break;
+                    case TOK_BIT_AND: ops = " & "; break;
+                    case TOK_BIT_OR: ops = " | "; break;
+                    case TOK_BIT_XOR: ops = " ^ "; break;
+                    case TOK_LSHIFT: ops = " << "; break;
+                    case TOK_RSHIFT: ops = " >> "; break;
                     default: ops = " ? "; break;
                 }
                 buf_write(buf, "(");
-                gen_expr(cg, buf, node->bin_op.left);
-                buf_write(buf, ops);
-                gen_expr(cg, buf, node->bin_op.right);
+                if (op == TOK_BIT_AND || op == TOK_BIT_OR || op == TOK_BIT_XOR || op == TOK_LSHIFT || op == TOK_RSHIFT) {
+                    buf_write(buf, "(int64_t)(");
+                    gen_expr(cg, buf, node->bin_op.left);
+                    buf_write(buf, ")");
+                    buf_write(buf, ops);
+                    buf_write(buf, "(int64_t)(");
+                    gen_expr(cg, buf, node->bin_op.right);
+                    buf_write(buf, ")");
+                } else {
+                    gen_expr(cg, buf, node->bin_op.left);
+                    buf_write(buf, ops);
+                    gen_expr(cg, buf, node->bin_op.right);
+                }
                 buf_write(buf, ")");
             }
             break;
@@ -847,6 +867,10 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 buf_write(buf, ")");
             } else if (node->unary_op.op == TOK_MINUS) {
                 buf_write(buf, "(-(");
+                gen_expr(cg, buf, node->unary_op.operand);
+                buf_write(buf, "))");
+            } else if (node->unary_op.op == TOK_BIT_NOT) {
+                buf_write(buf, "(~(int64_t)(");
                 gen_expr(cg, buf, node->unary_op.operand);
                 buf_write(buf, "))");
             } else {
@@ -975,6 +999,22 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             } else {
                                 gen_expr(cg, buf, node->call.args.items[i]);
                             }
+                        }
+                        buf_write(buf, ")");
+                        break;
+                    } else if (strcmp(attr, "sort") == 0) {
+                        buf_write(buf, "lp_list_sort(");
+                        gen_expr(cg, buf, node->call.func->attribute.obj);
+                        buf_write(buf, ")");
+                        break;
+                    } else if (strcmp(attr, "binary_search") == 0) {
+                        buf_write(buf, "lp_list_binary_search(");
+                        gen_expr(cg, buf, node->call.func->attribute.obj);
+                        buf_write(buf, ", ");
+                        if (node->call.args.count > 0) {
+                            emit_lp_val(cg, buf, node->call.args.items[0]);
+                        } else {
+                            buf_write(buf, "lp_val_null()");
                         }
                         buf_write(buf, ")");
                         break;
@@ -1218,6 +1258,22 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         }
                         buf_write(buf, ")");
                         break;
+                    } else if (strcmp(attr, "sort") == 0) {
+                        buf_write(buf, "lp_list_sort(");
+                        gen_expr(cg, buf, node->call.func->attribute.obj);
+                        buf_write(buf, ")");
+                        break;
+                    } else if (strcmp(attr, "binary_search") == 0) {
+                        buf_write(buf, "lp_list_binary_search(");
+                        gen_expr(cg, buf, node->call.func->attribute.obj);
+                        buf_write(buf, ", ");
+                        if (node->call.args.count > 0) {
+                            emit_lp_val(cg, buf, node->call.args.items[0]);
+                        } else {
+                            buf_write(buf, "lp_val_null()");
+                        }
+                        buf_write(buf, ")");
+                        break;
                     }
                 }
             }
@@ -1227,6 +1283,12 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 for (int i = 0; i < node->call.args.count; i++) {
                     if (i > 0) buf_write(buf, ", ");
                     LpType at = infer_type(cg, node->call.args.items[i]);
+                    if (node->call.args.items[i]->type == NODE_CALL &&
+                        node->call.args.items[i]->call.func->type == NODE_NAME &&
+                        (strcmp(node->call.args.items[i]->call.func->name_expr.name, "min") == 0 ||
+                         strcmp(node->call.args.items[i]->call.func->name_expr.name, "max") == 0)) {
+                        at = LP_VAL;
+                    }
                     switch (at) {
                         case LP_FLOAT:  buf_write(buf, "lp_print_float("); break;
                         case LP_STRING: buf_write(buf, "lp_print_str("); break;
@@ -1246,6 +1308,54 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 }
                 break;
             }
+            /* Special-case: min(), max() */
+            if (node->call.func->type == NODE_NAME &&
+                (strcmp(node->call.func->name_expr.name, "min") == 0 ||
+                 strcmp(node->call.func->name_expr.name, "max") == 0)) {
+
+                buf_write(buf, "({ LpVal __lp_minmax_res; ");
+                int is_min = strcmp(node->call.func->name_expr.name, "min") == 0;
+
+                if (node->call.args.count == 1) {
+                    /* Arg is a list or tuple */
+                    buf_write(buf, "LpVal __lp_minmax_arg = ");
+                    emit_lp_val(cg, buf, node->call.args.items[0]);
+                    buf_write(buf, "; ");
+                    buf_write(buf, "if (__lp_minmax_arg.type == LP_VAL_LIST && __lp_minmax_arg.as.l->len > 0) { ");
+                    buf_write(buf, "__lp_minmax_res = __lp_minmax_arg.as.l->items[0]; ");
+                    buf_write(buf, "for (int64_t __lp_i = 1; __lp_i < __lp_minmax_arg.as.l->len; __lp_i++) { ");
+                    buf_write(buf, "LpVal __v = __lp_minmax_arg.as.l->items[__lp_i]; ");
+                    if (is_min) {
+                        buf_write(buf, "if (lp_val_lt(__v, __lp_minmax_res)) __lp_minmax_res = __v; ");
+                    } else {
+                        buf_write(buf, "if (lp_val_gt(__v, __lp_minmax_res)) __lp_minmax_res = __v; ");
+                    }
+                    buf_write(buf, "} } else { __lp_minmax_res = lp_val_null(); } ");
+                } else if (node->call.args.count > 1) {
+                    /* Multiple arguments */
+                    buf_write(buf, "__lp_minmax_res = ");
+                    emit_lp_val(cg, buf, node->call.args.items[0]);
+                    buf_write(buf, "; ");
+                    for (int i = 1; i < node->call.args.count; i++) {
+                        buf_write(buf, "LpVal __v_");
+                        buf_printf(buf, "%d = ", i);
+                        emit_lp_val(cg, buf, node->call.args.items[i]);
+                        buf_write(buf, "; ");
+                        if (is_min) {
+                            buf_write(buf, "if (lp_val_lt(__v_");
+                            buf_printf(buf, "%d, __lp_minmax_res)) __lp_minmax_res = __v_%d; ", i, i);
+                        } else {
+                            buf_write(buf, "if (lp_val_gt(__v_");
+                            buf_printf(buf, "%d, __lp_minmax_res)) __lp_minmax_res = __v_%d; ", i, i);
+                        }
+                    }
+                } else {
+                    buf_write(buf, "__lp_minmax_res = lp_val_null(); ");
+                }
+                buf_write(buf, "__lp_minmax_res; })");
+                break;
+            }
+
             /* Special-case: int(), float(), bool() */
             if (node->call.func->type == NODE_NAME &&
                 (strcmp(node->call.func->name_expr.name, "int") == 0 ||
@@ -1929,6 +2039,11 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 case TOK_MINUS_ASSIGN: op = " -= "; break;
                 case TOK_STAR_ASSIGN:  op = " *= "; break;
                 case TOK_SLASH_ASSIGN: op = " /= "; break;
+                case TOK_BIT_AND_ASSIGN: op = " &= "; break;
+                case TOK_BIT_OR_ASSIGN: op = " |= "; break;
+                case TOK_BIT_XOR_ASSIGN: op = " ^= "; break;
+                case TOK_LSHIFT_ASSIGN: op = " <<= "; break;
+                case TOK_RSHIFT_ASSIGN: op = " >>= "; break;
                 default: op = " += "; break;
             }
             char *dot = strchr(node->aug_assign.name, '.');
@@ -2080,7 +2195,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     
                     /* Thoát khỏi hàm gen_stmt ở đây vì đã tự sinh thân vòng lặp và dấu đóng ngoặc rồi */
                     return;
-                }z
+                }
             } else {
                 LpType iter_type = infer_type(cg, node->for_stmt.iter);
                 if (iter_type == LP_VAL || iter_type == LP_LIST || iter_type == LP_PYOBJ /* ... */) {
