@@ -2080,7 +2080,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     
                     /* Thoát khỏi hàm gen_stmt ở đây vì đã tự sinh thân vòng lặp và dấu đóng ngoặc rồi */
                     return;
-                }z
+                }
             } else {
                 LpType iter_type = infer_type(cg, node->for_stmt.iter);
                 if (iter_type == LP_VAL || iter_type == LP_LIST || iter_type == LP_PYOBJ /* ... */) {
