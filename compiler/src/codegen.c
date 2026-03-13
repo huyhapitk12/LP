@@ -1736,24 +1736,35 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 const char *obj_name = node->assign.name;
                 const char *attr_name = dot + 1;
                 Symbol *obj_sym = scope_lookup(cg->scope, obj_name);
+                LpType target_type = LP_UNKNOWN; /* THÊM DÒNG NÀY */
 
                 if (obj_sym && obj_sym->type == LP_OBJECT && obj_sym->class_name) {
                     char field_key[256];
                     Symbol *mem;
                     snprintf(field_key, sizeof(field_key), "%s.%s", obj_sym->class_name, attr_name);
                     mem = scope_lookup(cg->scope, field_key);
-                    if (mem && !can_access_member(cg, mem)) {
-                        codegen_set_error(cg,
-                            "Cannot access %s member '%s' of class '%s'",
-                            mem->access == TOK_PRIVATE ? "private" : "protected",
-                            attr_name,
-                            mem->owner_class ? mem->owner_class : obj_sym->class_name);
+                    if (mem) {
+                        target_type = mem->type; /* THÊM DÒNG NÀY: Lấy kiểu tĩnh của thuộc tính */
+                        if (!can_access_member(cg, mem)) {
+                            codegen_set_error(cg,
+                                "Cannot access %s member '%s' of class '%s'",
+                                mem->access == TOK_PRIVATE ? "private" : "protected",
+                                attr_name,
+                                mem->owner_class ? mem->owner_class : obj_sym->class_name);
+                        }
                     }
                 }
 
                 write_indent(assign_buf, assign_indent);
                 buf_printf(assign_buf, "lp_%s->lp_%s = ", obj_name, attr_name);
-                gen_expr(cg, assign_buf, node->assign.value);
+                
+                /* SỬA TẠI ĐÂY: Dùng emit_cast để tự động bọc bằng hàm ép kiểu C (như lp_int) */
+                if (target_type != LP_UNKNOWN) {
+                    emit_cast(cg, assign_buf, node->assign.value, target_type);
+                } else {
+                    gen_expr(cg, assign_buf, node->assign.value);
+                }
+                
                 buf_write(assign_buf, ";\n");
                 
                 *dot = '.'; /* restore string */
