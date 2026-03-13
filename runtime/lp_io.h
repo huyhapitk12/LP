@@ -62,6 +62,41 @@ static inline void lp_io_write(LpFile *f, const char *data) {
     }
 }
 
+/* Python-like input() function */
+static inline const char* lp_io_input(const char *prompt) {
+    if (prompt) {
+        printf("%s", prompt);
+        fflush(stdout);
+    }
+
+    size_t cap = 128;
+    size_t len = 0;
+    char *buffer = (char*)malloc(cap);
+    if (!buffer) return "";
+
+    int c;
+    while ((c = fgetc(stdin)) != EOF && c != '\n') {
+        if (len + 1 >= cap) {
+            cap *= 2;
+            char *new_buf = (char*)realloc(buffer, cap);
+            if (!new_buf) {
+                buffer[len] = '\0';
+                return buffer;
+            }
+            buffer = new_buf;
+        }
+        buffer[len++] = (char)c;
+    }
+
+    /* Handle \r\n on Windows */
+    if (len > 0 && buffer[len - 1] == '\r') {
+        len--;
+    }
+
+    buffer[len] = '\0';
+    return buffer;
+}
+
 /* Frees the struct wrapper entirely */
 static inline void lp_io_free(LpFile *f) {
     if (!f) return;
