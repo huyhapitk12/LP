@@ -161,14 +161,44 @@ typedef struct {
     int64_t cap;
 } LpStrArray;
 
+static inline void lp_print_str_array(LpStrArray arr) {
+    printf("[");
+    for (int64_t i = 0; i < arr.count; i++) {
+        if (i > 0) printf(", ");
+        printf("'%s'", arr.items[i]);
+    }
+    printf("]\n");
+}
+
 static inline LpStrArray lp_str_split(const char *s, const char *delim) {
     LpStrArray arr;
     arr.cap = 16;
     arr.items = (const char **)malloc(arr.cap * sizeof(char *));
     arr.count = 0;
 
-    size_t dlen = strlen(delim);
     const char *p = s;
+
+    if (!delim || !*delim) {
+        /* Split by any whitespace */
+        while (*p) {
+            while (*p && isspace((unsigned char)*p)) p++;
+            if (!*p) break;
+            const char *start = p;
+            while (*p && !isspace((unsigned char)*p)) p++;
+            size_t part_len = (size_t)(p - start);
+            char *part = (char *)malloc(part_len + 1);
+            memcpy(part, start, part_len);
+            part[part_len] = '\0';
+            if (arr.count >= arr.cap) {
+                arr.cap *= 2;
+                arr.items = (const char **)realloc(arr.items, arr.cap * sizeof(char *));
+            }
+            arr.items[arr.count++] = part;
+        }
+        return arr;
+    }
+
+    size_t dlen = strlen(delim);
     while (*p) {
         const char *found = strstr(p, delim);
         size_t part_len = found ? (size_t)(found - p) : strlen(p);
