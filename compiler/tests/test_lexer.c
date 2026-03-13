@@ -20,15 +20,15 @@ void test_lexer_init() {
 
     lexer_init(&lex, source);
 
-    assert(lex.source == source);
-    assert(lex.current == source);
-    assert(lex.line == 1);
-    assert(lex.indent_stack[0] == 0);
-    assert(lex.indent_top == 0);
-    assert(lex.pending_dedents == 0);
-    assert(lex.at_line_start == 1);
-    assert(lex.paren_depth == 0);
-    assert(lex.eof_dedents_done == 0);
+    ASSERT(lex.source == source);
+    ASSERT(lex.current == source);
+    ASSERT(lex.line == 1);
+    ASSERT(lex.indent_stack[0] == 0);
+    ASSERT(lex.indent_top == 0);
+    ASSERT(lex.pending_dedents == 0);
+    ASSERT(lex.at_line_start == 1);
+    ASSERT(lex.paren_depth == 0);
+    ASSERT(lex.eof_dedents_done == 0);
 
     printf("test_lexer_init passed\n");
 }
