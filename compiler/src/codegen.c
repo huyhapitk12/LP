@@ -446,6 +446,10 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
                 const char *func = node->call.func->name_expr.name;
                 if (strcmp(func, "open") == 0) return LP_FILE;
                 if (strcmp(func, "input") == 0) return LP_STRING;
+                if (strcmp(func, "int") == 0) return LP_INT;
+                if (strcmp(func, "float") == 0) return LP_FLOAT;
+                if (strcmp(func, "str") == 0) return LP_STRING;
+                if (strcmp(func, "bool") == 0) return LP_BOOL;
                 Symbol *s = scope_lookup(cg->scope, func);
                 if (s && s->type == LP_CLASS) return LP_OBJECT;
                 if (s) return s->type;
@@ -1794,6 +1798,12 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                     gen_expr(cg, buf, node->subscript.index);
                     buf_write(buf, ")");
                 }
+            } else if (obj_type == LP_STR_ARRAY) {
+                /* LpStrArray.items[index] */
+                gen_expr(cg, buf, node->subscript.obj);
+                buf_write(buf, ".items[");
+                gen_expr(cg, buf, node->subscript.index);
+                buf_write(buf, "]");
             } else {
                 gen_expr(cg, buf, node->subscript.obj);
                 buf_write(buf, "[");
