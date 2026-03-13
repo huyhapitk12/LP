@@ -363,10 +363,12 @@ static inline int64_t lp_int_from_val(LpVal v) {
     return 0;
 }
 
+static inline int64_t lp_int_from_str(const char *v) { return atoll(v); }
+
 #define lp_int(x) _Generic((x), \
     LpVal: lp_int_from_val, \
-    char*: atoll, \
-    const char*: atoll, \
+    char*: lp_int_from_str, \
+    const char*: lp_int_from_str, \
     double: lp_int_from_float, \
     float: lp_int_from_float, \
     default: lp_int_from_int \
