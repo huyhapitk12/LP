@@ -60,9 +60,9 @@ test_unit: $(SRC_DIR)/test_ast_unit.c $(SRC_DIR)/ast.c $(SRC_DIR)/lexer.c
 	$(CC) $(CFLAGS) $(SRC_DIR)/test_ast_unit.c $(SRC_DIR)/ast.c $(SRC_DIR)/lexer.c $(INC_DIR) -o $(BUILD_DIR)/test_ast_unit$(EXE_EXT) $(LDFLAGS)
 	./$(BUILD_DIR)/test_ast_unit$(EXE_EXT)
 
-test-c: tests/test_codegen.c compiler/src/codegen.c compiler/tests/test_lexer.c compiler/src/lexer.c
+test-c: compiler/tests/test_codegen.c compiler/src/codegen.c compiler/tests/test_lexer.c compiler/src/lexer.c
 	$(MKDIR)
-	$(CC) $(CFLAGS) tests/test_codegen.c compiler/src/codegen.c -I compiler/src -I runtime -o $(BUILD_DIR)/test_codegen$(EXE_EXT) $(LDFLAGS)
+	$(CC) $(CFLAGS) compiler/tests/test_codegen.c compiler/src/codegen.c -I compiler/src -I runtime -o $(BUILD_DIR)/test_codegen$(EXE_EXT) $(LDFLAGS)
 	./$(BUILD_DIR)/test_codegen$(EXE_EXT)
 	$(CC) $(CFLAGS) compiler/tests/test_lexer.c compiler/src/lexer.c -I compiler/src -o $(BUILD_DIR)/test_lexer$(EXE_EXT) $(LDFLAGS)
 	./$(BUILD_DIR)/test_lexer$(EXE_EXT)
