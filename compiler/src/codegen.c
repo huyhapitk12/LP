@@ -1002,22 +1002,6 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         }
                         buf_write(buf, ")");
                         break;
-                    } else if (strcmp(attr, "sort") == 0) {
-                        buf_write(buf, "lp_list_sort(");
-                        gen_expr(cg, buf, node->call.func->attribute.obj);
-                        buf_write(buf, ")");
-                        break;
-                    } else if (strcmp(attr, "binary_search") == 0) {
-                        buf_write(buf, "lp_list_binary_search(");
-                        gen_expr(cg, buf, node->call.func->attribute.obj);
-                        buf_write(buf, ", ");
-                        if (node->call.args.count > 0) {
-                            emit_lp_val(cg, buf, node->call.args.items[0]);
-                        } else {
-                            buf_write(buf, "lp_val_null()");
-                        }
-                        buf_write(buf, ")");
-                        break;
                     }
                     /* ---- TIER 1: sqlite ---- */
                     if (imp->tier == MOD_TIER1_SQLITE) {
