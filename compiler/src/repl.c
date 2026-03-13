@@ -104,6 +104,17 @@ static void rbuf_free(ReplBuf *b) {
     b->len = b->cap = 0;
 }
 
+/* ─── Mockable hooks for testing ─── */
+typedef char* (*ReadLineFunc)(const char *prompt);
+typedef int (*EvalFunc)(const char *source, const char *gcc, const char *runtime_inc);
+
+static char *default_read_line(const char *prompt);
+static int repl_eval(const char *source, const char *gcc, const char *runtime_inc);
+
+static ReadLineFunc current_read_line;
+static EvalFunc current_eval;
+static int repl_suppress_output = 0;
+
 /* ─── GCC finder (same logic as main.c) ─── */
 static const char *repl_find_gcc(void) {
 #ifdef _WIN32
@@ -206,7 +217,7 @@ static int repl_eval(const char *source, const char *gcc, const char *runtime_in
     AstNode *program = parser_parse(&parser);
 
     if (parser.had_error) {
-        fprintf(stderr, C_RED "  Parse error: %s" C_RESET "\n", parser.error_msg);
+        if (!repl_suppress_output) fprintf(stderr, C_RED "  Parse error: %s" C_RESET "\n", parser.error_msg);
         ast_free(program);
         return -1;
     }
@@ -312,7 +323,7 @@ static void repl_banner(void) {
 }
 
 /* ─── Read a line from stdin (with prompt) ─── */
-static char *read_line(const char *prompt) {
+static char *default_read_line(const char *prompt) {
     printf("%s", prompt);
     fflush(stdout);
 
@@ -338,6 +349,9 @@ static int is_definition(const char *line) {
 
 /* ─── Main REPL loop ─── */
 int repl_run(const char *argv0) {
+    if (!current_read_line) current_read_line = default_read_line;
+    if (!current_eval) current_eval = repl_eval;
+
     /* Setup */
     const char *gcc = repl_find_gcc();
     if (!gcc) {
@@ -356,7 +370,7 @@ int repl_run(const char *argv0) {
     system(""); /* Trick to enable VT100 sequences on Windows 10+ */
 #endif
 
-    repl_banner();
+    if (!repl_suppress_output) repl_banner();
 
     /* 
      * Two-buffer approach:
@@ -388,7 +402,7 @@ int repl_run(const char *argv0) {
     snprintf(prompt_cont, sizeof(prompt_cont), C_YELLOW "... " C_RESET);
 
     while (1) {
-        char *line = read_line(prompt_main);
+        char *line = current_read_line(prompt_main);
         if (!line) { /* EOF (Ctrl+Z on Windows) */
             printf("\n");
             break;
@@ -402,24 +416,26 @@ int repl_run(const char *argv0) {
             if (strcmp(line, ".exit") == 0 || strcmp(line, ".quit") == 0) {
                 break;
             } else if (strcmp(line, ".help") == 0) {
-                repl_help();
+                if (!repl_suppress_output) repl_help();
                 continue;
             } else if (strcmp(line, ".clear") == 0) {
                 rbuf_free(&accumulated);
                 rbuf_init(&accumulated);
-                printf(C_DIM "  State cleared." C_RESET "\n");
+                if (!repl_suppress_output) printf(C_DIM "  State cleared." C_RESET "\n");
                 continue;
             } else if (strcmp(line, ".show") == 0) {
-                if (accumulated.len == 0) {
-                    printf(C_DIM "  (empty)" C_RESET "\n");
-                } else {
-                    printf(C_DIM "──────────────────────" C_RESET "\n");
-                    printf("%s\n", accumulated.data);
-                    printf(C_DIM "──────────────────────" C_RESET "\n");
+                if (!repl_suppress_output) {
+                    if (accumulated.len == 0) {
+                        printf(C_DIM "  (empty)" C_RESET "\n");
+                    } else {
+                        printf(C_DIM "──────────────────────" C_RESET "\n");
+                        printf("%s\n", accumulated.data);
+                        printf(C_DIM "──────────────────────" C_RESET "\n");
+                    }
                 }
                 continue;
             } else {
-                printf(C_RED "  Unknown command: %s" C_RESET "\n", line);
+                if (!repl_suppress_output) printf(C_RED "  Unknown command: %s" C_RESET "\n", line);
                 continue;
             }
         }
@@ -433,7 +449,7 @@ int repl_run(const char *argv0) {
         if (is_block_starter(line)) {
             /* Read continuation lines until blank line */
             while (1) {
-                char *cont = read_line(prompt_cont);
+                char *cont = current_read_line(prompt_cont);
                 if (!cont) break;
                 if (is_blank(cont)) break;
                 rbuf_append(&input, cont);
@@ -455,7 +471,7 @@ int repl_run(const char *argv0) {
             AstNode *program = parser_parse(&parser);
 
             if (parser.had_error) {
-                fprintf(stderr, C_RED "  Parse error: %s" C_RESET "\n", parser.error_msg);
+                if (!repl_suppress_output) fprintf(stderr, C_RED "  Parse error: %s" C_RESET "\n", parser.error_msg);
             } else {
                 rbuf_append(&accumulated, input.data);
             }
@@ -472,7 +488,7 @@ int repl_run(const char *argv0) {
         rbuf_append(&full, input.data);
 
         /* ── Try to compile and run ── */
-        int result = repl_eval(full.data, gcc, runtime_inc);
+        int result = current_eval(full.data, gcc, runtime_inc);
 
         if (result >= 0) {
             /* Success: add new input to accumulated state */
@@ -484,12 +500,49 @@ int repl_run(const char *argv0) {
         rbuf_free(&full);
     }
 
-    printf(C_DIM "  Goodbye!" C_RESET "\n\n");
+    if (!repl_suppress_output) printf(C_DIM "  Goodbye!" C_RESET "\n\n");
     rbuf_free(&accumulated);
     return 0;
 }
 
 /* ─── Internal Unit Tests ─── */
+
+static const char *mock_inputs[20];
+static int mock_input_idx = 0;
+static char last_eval_source[4096];
+static int mock_eval_called = 0;
+static int mock_eval_ret = 0;
+
+static char *mock_read_line(const char *prompt) {
+    (void)prompt;
+    if (mock_inputs[mock_input_idx] == NULL) return NULL;
+    static char buf[1024];
+    strncpy(buf, mock_inputs[mock_input_idx++], sizeof(buf) - 1);
+    return buf;
+}
+
+static int mock_eval(const char *source, const char *gcc, const char *runtime_inc) {
+    (void)gcc; (void)runtime_inc;
+    mock_eval_called++;
+    strncpy(last_eval_source, source, sizeof(last_eval_source) - 1);
+    return mock_eval_ret;
+}
+
+/* A dummy argv0 for repl_run tests */
+static const char *test_argv0 = "build/lp";
+
+/* Setup mocks */
+static void setup_mocks(void) {
+    current_read_line = mock_read_line;
+    current_eval = mock_eval;
+    repl_suppress_output = 1;
+    mock_input_idx = 0;
+    mock_eval_called = 0;
+    mock_eval_ret = 0;
+    memset(mock_inputs, 0, sizeof(mock_inputs));
+    memset(last_eval_source, 0, sizeof(last_eval_source));
+}
+
 void run_repl_tests(void) {
     char dst[10];
     int res;
@@ -537,5 +590,86 @@ void run_repl_tests(void) {
     }
 
     printf("  \033[1mC Utils\033[0m\n");
-    printf("    \033[32m[OK] repl_copy_str\033[0m\n\n");
+    printf("    \033[32m[OK] repl_copy_str\033[0m\n");
+
+    /* Test is_block_starter */
+    if (!is_block_starter("def foo():")) { fprintf(stderr, "Test failed: is_block_starter def\n"); exit(1); }
+    if (!is_block_starter("  class Bar:")) { fprintf(stderr, "Test failed: is_block_starter class\n"); exit(1); }
+    if (is_block_starter("x = 1")) { fprintf(stderr, "Test failed: is_block_starter x=1\n"); exit(1); }
+    if (is_block_starter("# def foo()")) { fprintf(stderr, "Test failed: is_block_starter comment\n"); exit(1); }
+
+    printf("    \033[32m[OK] is_block_starter\033[0m\n");
+
+    /* Test is_definition */
+    if (!is_definition("def myfunc():")) { fprintf(stderr, "Test failed: is_definition def\n"); exit(1); }
+    if (!is_definition("import math")) { fprintf(stderr, "Test failed: is_definition import\n"); exit(1); }
+    if (is_definition("x = 5")) { fprintf(stderr, "Test failed: is_definition x=5\n"); exit(1); }
+
+    printf("    \033[32m[OK] is_definition\033[0m\n");
+
+    /* Test REPL Run with Mocks */
+    printf("\n  \033[1mREPL State Machine\033[0m\n");
+
+    /* 1. Basic command and clear */
+    setup_mocks();
+    mock_inputs[0] = "x = 10";
+    mock_inputs[1] = ".clear";
+    mock_inputs[2] = "y = 20";
+    mock_inputs[3] = ".exit";
+    mock_eval_ret = 0; /* success */
+    repl_run(test_argv0);
+
+    if (mock_eval_called != 2) {
+        fprintf(stderr, "Test failed: REPL loop eval count %d != 2\n", mock_eval_called);
+        exit(1);
+    }
+    if (strcmp(last_eval_source, "y = 20\n") != 0) {
+        fprintf(stderr, "Test failed: REPL loop accumulation failed after .clear\n");
+        exit(1);
+    }
+    printf("    \033[32m[OK] REPL .clear and accumulation\033[0m\n");
+
+    /* 2. Block collection */
+    setup_mocks();
+    mock_inputs[0] = "if True:";
+    mock_inputs[1] = "  print(1)";
+    mock_inputs[2] = ""; /* end of block */
+    mock_inputs[3] = ".exit";
+    repl_run(test_argv0);
+
+    if (mock_eval_called != 1) {
+        fprintf(stderr, "Test failed: REPL block collection eval count %d != 1\n", mock_eval_called);
+        exit(1);
+    }
+    if (strstr(last_eval_source, "if True:\n  print(1)\n") == NULL) {
+        fprintf(stderr, "Test failed: REPL block collection source mismatch\n");
+        exit(1);
+    }
+    printf("    \033[32m[OK] REPL block collection\033[0m\n");
+
+    /* 3. Definitions are not evaluated, just accumulated */
+    setup_mocks();
+    mock_inputs[0] = "def add(a: int, b: int) -> int:";
+    mock_inputs[1] = "  return a + b";
+    mock_inputs[2] = ""; /* end of block */
+    mock_inputs[3] = "x = add(1, 2)";
+    mock_inputs[4] = ".exit";
+    repl_run(test_argv0);
+
+    if (mock_eval_called != 1) {
+        fprintf(stderr, "Test failed: REPL definition eval count %d != 1\n", mock_eval_called);
+        exit(1);
+    }
+    if (strstr(last_eval_source, "def add") == NULL || strstr(last_eval_source, "x = add") == NULL) {
+        fprintf(stderr, "Test failed: REPL definition accumulation source mismatch\n");
+        exit(1);
+    }
+    printf("    \033[32m[OK] REPL definition accumulation\033[0m\n");
+
+    /* Restore defaults */
+    current_read_line = default_read_line;
+    current_eval = repl_eval;
+    repl_suppress_output = 0;
+
+    printf("\n");
 }
