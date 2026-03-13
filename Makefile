@@ -31,38 +31,46 @@ ifeq ($(OS),Windows_NT)
     EXE_EXT := .exe
 else
     MKDIR  := mkdir -p $(BUILD_DIR)
-    EXE_EXT := 
+    EXE_EXT :=
 endif
 
-.PHONY: all clean install test_unit test-c
+# Default target
+all: $(TARGET)
 
-all: $(TARGET) $(SQLITE_OBJ)
-
-$(TARGET): $(SRCS)
+$(TARGET): $(SRCS) $(SQLITE_OBJ)
 	$(MKDIR)
-	$(CC) $(CFLAGS) $(SRCS) $(INC_DIR) -o $(TARGET) $(LDFLAGS)
-	@echo "[LP] Build successful: $(TARGET)"
+	$(CC) $(CFLAGS) $(SRCS) $(SQLITE_OBJ) $(INC_DIR) -o $(TARGET) $(LDFLAGS)
 
-$(SQLITE_OBJ): runtime/sqlite3.c runtime/sqlite3.h
-	$(CC) -O2 -c runtime/sqlite3.c -o $(SQLITE_OBJ)
-	@echo "[LP] Built runtime object: $(SQLITE_OBJ)"
+$(SQLITE_OBJ): runtime/sqlite3.c
+	$(CC) $(CFLAGS) -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 -c runtime/sqlite3.c -o $(SQLITE_OBJ)
 
 clean:
-	rm -rf $(BUILD_DIR)
-	rm -f $(SQLITE_OBJ)
+ifeq ($(OS),Windows_NT)
+	del /Q $(BUILD_DIR)\* 2>nul || exit 0
+else
+	rm -rf $(BUILD_DIR)/*
+endif
 
 install: $(TARGET)
-	cp $(TARGET) /usr/local/bin/lp
-	@echo "[LP] Installed to /usr/local/bin/lp"
+ifeq ($(OS),Windows_NT)
+	copy $(TARGET) C:\Windows\System32\
+else
+	cp $(TARGET) /usr/local/bin/
+endif
 
+# Unit test target
 test_unit: $(SRC_DIR)/test_ast_unit.c $(SRC_DIR)/ast.c $(SRC_DIR)/lexer.c
 	$(MKDIR)
 	$(CC) $(CFLAGS) $(SRC_DIR)/test_ast_unit.c $(SRC_DIR)/ast.c $(SRC_DIR)/lexer.c $(INC_DIR) -o $(BUILD_DIR)/test_ast_unit$(EXE_EXT) $(LDFLAGS)
 	./$(BUILD_DIR)/test_ast_unit$(EXE_EXT)
 
-test-c: compiler/tests/test_codegen.c compiler/src/codegen.c compiler/tests/test_lexer.c compiler/src/lexer.c
+test-c: compiler/tests/test_codegen.c compiler/src/codegen.c compiler/tests/test_lexer.c compiler/src/lexer.c compiler/tests/test_parser.c compiler/src/parser.c compiler/src/ast.c
 	$(MKDIR)
 	$(CC) $(CFLAGS) compiler/tests/test_codegen.c compiler/src/codegen.c -I compiler/src -I runtime -o $(BUILD_DIR)/test_codegen$(EXE_EXT) $(LDFLAGS)
 	./$(BUILD_DIR)/test_codegen$(EXE_EXT)
 	$(CC) $(CFLAGS) compiler/tests/test_lexer.c compiler/src/lexer.c -I compiler/src -o $(BUILD_DIR)/test_lexer$(EXE_EXT) $(LDFLAGS)
 	./$(BUILD_DIR)/test_lexer$(EXE_EXT)
+	$(CC) $(CFLAGS) compiler/tests/test_parser.c compiler/src/parser.c compiler/src/lexer.c compiler/src/ast.c -I compiler/src -I runtime -o $(BUILD_DIR)/test_parser$(EXE_EXT) $(LDFLAGS)
+	./$(BUILD_DIR)/test_parser$(EXE_EXT)
+
+.PHONY: all clean install test_unit test-c
