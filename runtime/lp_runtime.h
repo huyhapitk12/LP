@@ -298,6 +298,33 @@ static inline int lp_val_gte(LpVal a, LpVal b) {
     return 0; 
 }
 
+/* Sorting and searching helpers */
+static inline int lp_val_cmp(const void *a, const void *b) {
+    LpVal *va = (LpVal*)a;
+    LpVal *vb = (LpVal*)b;
+    if (lp_val_lt(*va, *vb)) return -1;
+    if (lp_val_gt(*va, *vb)) return 1;
+    return 0;
+}
+
+static inline void lp_list_sort(LpList *l) {
+    if (l && l->len > 1) {
+        qsort(l->items, l->len, sizeof(LpVal), lp_val_cmp);
+    }
+}
+
+static inline int64_t lp_list_binary_search(LpList *l, LpVal v) {
+    if (!l || l->len == 0) return -1;
+    int64_t low = 0;
+    int64_t high = l->len - 1;
+    while (low <= high) {
+        int64_t mid = low + (high - low) / 2;
+        if (lp_val_eq(l->items[mid], v)) return mid;
+        if (lp_val_lt(l->items[mid], v)) low = mid + 1;
+        else high = mid - 1;
+    }
+    return -1;
+}
 
 /* JSON/Dict subscript helpers for LpVal */
 static inline LpVal lp_val_getitem_str(LpVal obj, const char *key) {

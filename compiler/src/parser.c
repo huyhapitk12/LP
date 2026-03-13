@@ -269,10 +269,10 @@ static AstNode *parse_postfix(Parser *p) {
     return expr;
 }
 
-/* Unary: -, +, not */
+/* Unary: -, +, not, ~ */
 static AstNode *parse_unary(Parser *p) {
     int line = p->current.line;
-    if (match(p, TOK_MINUS) || match(p, TOK_PLUS) || match(p, TOK_NOT)) {
+    if (match(p, TOK_MINUS) || match(p, TOK_PLUS) || match(p, TOK_NOT) || match(p, TOK_BIT_NOT)) {
         TokenType op = p->previous.type;
         AstNode *n = ast_new(NODE_UNARY_OP, line);
         n->unary_op.op = op;
@@ -328,9 +328,73 @@ static AstNode *parse_add(Parser *p) {
     return left;
 }
 
+/* Shift: <<, >> */
+static AstNode *parse_shift(Parser *p) {
+    AstNode *left = parse_add(p);
+    while (check(p, TOK_LSHIFT) || check(p, TOK_RSHIFT)) {
+        int line = p->current.line;
+        TokenType op = p->current.type;
+        advance(p);
+        AstNode *n = ast_new(NODE_BIN_OP, line);
+        n->bin_op.left = left;
+        n->bin_op.op = op;
+        n->bin_op.right = parse_add(p);
+        left = n;
+    }
+    return left;
+}
+
+/* Bitwise AND: & */
+static AstNode *parse_bit_and(Parser *p) {
+    AstNode *left = parse_shift(p);
+    while (check(p, TOK_BIT_AND)) {
+        int line = p->current.line;
+        TokenType op = p->current.type;
+        advance(p);
+        AstNode *n = ast_new(NODE_BIN_OP, line);
+        n->bin_op.left = left;
+        n->bin_op.op = op;
+        n->bin_op.right = parse_shift(p);
+        left = n;
+    }
+    return left;
+}
+
+/* Bitwise XOR: ^ */
+static AstNode *parse_bit_xor(Parser *p) {
+    AstNode *left = parse_bit_and(p);
+    while (check(p, TOK_BIT_XOR)) {
+        int line = p->current.line;
+        TokenType op = p->current.type;
+        advance(p);
+        AstNode *n = ast_new(NODE_BIN_OP, line);
+        n->bin_op.left = left;
+        n->bin_op.op = op;
+        n->bin_op.right = parse_bit_and(p);
+        left = n;
+    }
+    return left;
+}
+
+/* Bitwise OR: | */
+static AstNode *parse_bit_or(Parser *p) {
+    AstNode *left = parse_bit_xor(p);
+    while (check(p, TOK_BIT_OR)) {
+        int line = p->current.line;
+        TokenType op = p->current.type;
+        advance(p);
+        AstNode *n = ast_new(NODE_BIN_OP, line);
+        n->bin_op.left = left;
+        n->bin_op.op = op;
+        n->bin_op.right = parse_bit_xor(p);
+        left = n;
+    }
+    return left;
+}
+
 /* Comparison: ==, !=, <, >, <=, >= */
 static AstNode *parse_comparison(Parser *p) {
-    AstNode *left = parse_add(p);
+    AstNode *left = parse_bit_or(p);
     while (check(p, TOK_EQ) || check(p, TOK_NEQ) || check(p, TOK_LT) ||
            check(p, TOK_GT) || check(p, TOK_LTE) || check(p, TOK_GTE)) {
         int line = p->current.line;
@@ -744,7 +808,10 @@ static AstNode *parse_assign_or_expr(Parser *p) {
 
     /* Check for augmented assignment: NAME += value or OBJ.ATTR += value or OBJ[INDEX] += value */
     if ((check(p, TOK_PLUS_ASSIGN) || check(p, TOK_MINUS_ASSIGN) ||
-         check(p, TOK_STAR_ASSIGN) || check(p, TOK_SLASH_ASSIGN)) &&
+         check(p, TOK_STAR_ASSIGN) || check(p, TOK_SLASH_ASSIGN) ||
+         check(p, TOK_BIT_AND_ASSIGN) || check(p, TOK_BIT_OR_ASSIGN) ||
+         check(p, TOK_BIT_XOR_ASSIGN) || check(p, TOK_LSHIFT_ASSIGN) ||
+         check(p, TOK_RSHIFT_ASSIGN)) &&
         (expr->type == NODE_NAME || expr->type == NODE_ATTRIBUTE || expr->type == NODE_SUBSCRIPT)) {
         TokenType op = p->current.type;
         advance(p);
