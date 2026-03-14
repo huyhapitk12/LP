@@ -16,10 +16,9 @@ First off, thank you for considering contributing to LP! It's people like you th
 
 ## 🤝 Code of Conduct
 
-This project and everyone participating in it is governed by our Code of Conduct. By participating, you are expected to uphold this code. Please report unacceptable behavior to the project maintainers.
+This project and everyone participating in it is governed by our [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code. Please report unacceptable behavior to the project maintainers.
 
-### Our Pledge
-
+**Key principles:**
 - Be respectful and inclusive
 - Welcome newcomers and help them get started
 - Focus on what is best for the community
