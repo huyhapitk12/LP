@@ -3026,6 +3026,79 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
     }
     buf_write(&cg->funcs, ") {\n");
 
+    /* Process decorators for security settings */
+    for (int d = 0; d < node->func_def.decorators.count; d++) {
+        AstNode *decorator = node->func_def.decorators.items[d];
+        if (decorator->type == NODE_SECURITY && decorator->security.enabled) {
+            /* Mark that we use security features */
+            cg->uses_security = 1;
+            
+            /* Generate security context initialization */
+            buf_write(&cg->funcs, "    /* Security context */\n");
+            buf_write(&cg->funcs, "    LpSecurityContext _lp_sec_ctx;\n");
+            buf_write(&cg->funcs, "    lp_security_init(&_lp_sec_ctx);\n");
+            
+            /* Apply security level */
+            if (decorator->security.level > 0) {
+                buf_printf(&cg->funcs, "    _lp_sec_ctx.level = %d;\n", decorator->security.level);
+            }
+            
+            /* Apply authentication requirement */
+            if (decorator->security.require_auth) {
+                buf_write(&cg->funcs, "    _lp_sec_ctx.require_auth = 1;\n");
+                if (decorator->security.auth_type) {
+                    buf_printf(&cg->funcs, "    _lp_sec_ctx.auth_type = \"%s\";\n", decorator->security.auth_type);
+                }
+            }
+            
+            /* Apply rate limiting */
+            if (decorator->security.rate_limit > 0) {
+                buf_printf(&cg->funcs, "    _lp_sec_ctx.rate_limit = %d;\n", decorator->security.rate_limit);
+                buf_write(&cg->funcs, "    if (!lp_check_rate_limit(&_lp_sec_ctx)) { fprintf(stderr, \"Rate limit exceeded\\n\"); return 0; }\n");
+            }
+            
+            /* Apply input validation */
+            if (decorator->security.validate_input) {
+                buf_write(&cg->funcs, "    _lp_sec_ctx.validate_input = 1;\n");
+            }
+            
+            /* Apply injection prevention */
+            if (decorator->security.prevent_injection) {
+                buf_write(&cg->funcs, "    _lp_sec_ctx.prevent_injection = 1;\n");
+            }
+            
+            /* Apply XSS prevention */
+            if (decorator->security.prevent_xss) {
+                buf_write(&cg->funcs, "    _lp_sec_ctx.prevent_xss = 1;\n");
+            }
+            
+            /* Apply CSRF prevention */
+            if (decorator->security.prevent_csrf) {
+                buf_write(&cg->funcs, "    _lp_sec_ctx.prevent_csrf = 1;\n");
+            }
+            
+            /* Apply CORS settings */
+            if (decorator->security.enable_cors) {
+                buf_write(&cg->funcs, "    _lp_sec_ctx.enable_cors = 1;\n");
+                if (decorator->security.cors_origins) {
+                    buf_printf(&cg->funcs, "    _lp_sec_ctx.cors_origins = \"%s\";\n", decorator->security.cors_origins);
+                }
+            }
+            
+            /* Apply access level */
+            buf_printf(&cg->funcs, "    _lp_sec_ctx.access_level = %d;\n", decorator->security.access_level);
+            
+            /* Apply readonly mode */
+            if (decorator->security.readonly) {
+                buf_write(&cg->funcs, "    _lp_sec_ctx.readonly = 1;\n");
+                buf_write(&cg->funcs, "    if (!lp_check_write_allowed(&_lp_sec_ctx)) { fprintf(stderr, \"Write operation not allowed in readonly mode\\n\"); return 0; }\n");
+            }
+            
+            buf_write(&cg->funcs, "\n");
+            break;  /* Only process first security decorator */
+        }
+    }
+
     /* Body */
     for (int i = 0; i < node->func_def.body.count; i++)
         gen_stmt(cg, &cg->funcs, node->func_def.body.items[i], 1);
@@ -3301,6 +3374,7 @@ void codegen_init(CodeGen *cg) {
     cg->uses_platform = 0;
     cg->uses_parallel = 0;
     cg->uses_gpu = 0;
+    cg->uses_security = 0;
     cg->thread_adapter_count = 0;
 }
 void codegen_generate(CodeGen *cg, AstNode *program) {
@@ -3403,6 +3477,9 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
     }
     if (cg->uses_memory) {
         buf_write(&cg->header, "#include \"lp_memory.h\"\n");
+    }
+    if (cg->uses_security) {
+        buf_write(&cg->header, "#include \"lp_security.h\"\n");
     }
     if (cg->uses_platform) {
         buf_write(&cg->header, "#include \"lp_platform.h\"\n");

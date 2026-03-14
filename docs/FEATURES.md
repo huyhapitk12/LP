@@ -517,7 +517,47 @@ def parallel_task():
 @decorator2
 def func():
     pass
+
+# ✅ NEW: Security decorator for input validation and access control
+@security
+def basic_secure():
+    print("Function with default security")
+
+@security(level="high", auth="bearer")
+def authenticated_api():
+    print("API requiring authentication")
+
+@security(rate_limit=100, validate=True, injection=True)
+def safe_input_handler():
+    print("Protected against injection attacks")
+
+@security(admin, readonly)
+def admin_readonly():
+    print("Admin access, readonly mode")
 ```
+
+#### @security Decorator Options
+
+The `@security` decorator provides comprehensive security features for functions:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `level` | int/str | Security level: 0-4 or "none", "low", "medium", "high", "critical" |
+| `auth` | str | Authentication type: "basic", "bearer", "api_key", "oauth" |
+| `rate_limit` | int | Maximum requests per minute |
+| `validate` | bool | Enable input validation |
+| `sanitize` | bool | Enable output sanitization |
+| `injection` | bool | Prevent SQL/command injection |
+| `xss` | bool | Prevent XSS attacks |
+| `csrf` | bool | Enable CSRF protection |
+| `cors` | str/bool | Enable CORS with specified origins |
+| `headers` | bool | Enable secure headers |
+| `encrypt` | bool | Enable data encryption |
+| `hash` | str | Hash algorithm: "md5", "sha256", "sha512" |
+| `readonly` | flag | Enable readonly mode |
+| `admin` | flag | Set access level to admin |
+| `user` | flag | Set access level to user |
+| `guest` | flag | Set access level to guest |
 
 #### Async/Await
 
