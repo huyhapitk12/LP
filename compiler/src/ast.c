@@ -57,8 +57,9 @@ void type_param_list_push(TypeParamList *list, TypeParam p) {
     list->items[list->count++] = p;
 }
 
-AstNode *ast_new(NodeType type, int line) {
-    AstNode *n = (AstNode *)calloc(1, sizeof(AstNode));
+AstNode *ast_new(LpArena *arena, NodeType type, int line) {
+    AstNode *n = (AstNode *)lp_memory_arena_alloc(arena, sizeof(AstNode));
+    memset(n, 0, sizeof(AstNode));
     n->type = type;
     n->line = line;
     return n;
@@ -284,5 +285,4 @@ void ast_free(AstNode *node) {
         default:
             break;
     }
-    free(node);
 }

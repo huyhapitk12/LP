@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "lexer.h"
+#include "lp_memory.h"
 
 typedef enum {
     NODE_PROGRAM, NODE_FUNC_DEF, NODE_CLASS_DEF, NODE_IF, NODE_FOR, NODE_WHILE,
@@ -214,7 +215,7 @@ void param_list_init(ParamList *list);
 void param_list_push(ParamList *list, Param p);
 
 /* Node constructors */
-AstNode *ast_new(NodeType type, int line);
+AstNode *ast_new(LpArena *arena, NodeType type, int line);
 void ast_free(AstNode *node);
 
 #endif

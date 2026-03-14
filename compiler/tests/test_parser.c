@@ -17,7 +17,8 @@ void test_parser_init() {
     // Fill with garbage to ensure init actually sets the values
     memset(&p, 0xFF, sizeof(Parser));
 
-    parser_init(&p, source);
+    LpArena *arena = lp_memory_arena_new(1024);
+    parser_init(&p, source, arena);
 
     ASSERT(p.had_error == 0);
     ASSERT(p.error_msg[0] == '\0');
@@ -31,6 +32,7 @@ void test_parser_init() {
     ASSERT(strncmp(p.current.start, "def", 3) == 0);
     ASSERT(p.current.length == 3);
 
+    lp_memory_arena_free(arena);
     printf("test_parser_init passed\n");
 }
 
