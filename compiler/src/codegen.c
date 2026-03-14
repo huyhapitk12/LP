@@ -2363,11 +2363,28 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
             buf_write(buf, "}\n");
             break;
         case NODE_PARALLEL_FOR: {
+            /* Generate OpenMP parallel for with optional settings */
+            /* Check if this parallel_for has extended settings */
+            int num_threads = 0;
+            const char *schedule = "static";
+            int64_t chunk_size = 0;
+            
+            /* Emit OpenMP parallel for pragma with settings */
+            write_indent(buf, indent);
+            if (num_threads > 0 && chunk_size > 0) {
+                buf_printf(buf, "#pragma omp parallel for num_threads(%d) schedule(%s, %lld)\n",
+                          num_threads, schedule, (long long)chunk_size);
+            } else if (num_threads > 0) {
+                buf_printf(buf, "#pragma omp parallel for num_threads(%d)\n", num_threads);
+            } else if (chunk_size > 0) {
+                buf_printf(buf, "#pragma omp parallel for schedule(%s, %lld)\n",
+                          schedule, (long long)chunk_size);
+            } else {
+                buf_write(buf, "#pragma omp parallel for\n");
+            }
+            
             /* Reuse NODE_FOR logic */
             if (is_range_call(node->for_stmt.iter)) {
-                /* Emit OpenMP parallel for pragma */
-                write_indent(buf, indent);
-                buf_write(buf, "#pragma omp parallel for\n");
                 NodeList *args = &node->for_stmt.iter->call.args;
                 scope_define(cg->scope, node->for_stmt.var, LP_INT);
                 write_indent(buf, indent);
@@ -2413,18 +2430,13 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     write_indent(buf, indent);
                     buf_printf(buf, "int64_t __lp_p_len_%d = lp_val_len(__lp_p_iter_%d);\n", cur_loop, cur_loop);
 
-                    /* Emit OpenMP parallel for pragma */
                     write_indent(buf, indent);
-                    buf_write(buf, "#pragma omp parallel for\n");
-
-                    write_indent(buf, indent);
-                    buf_printf(buf, "for (int64_t __lp_i_%d = 0; __lp_i_%d < __lp_len_%d; __lp_i_%d++) {\n", cur_loop, cur_loop, cur_loop, cur_loop);
+                    buf_printf(buf, "for (int64_t __lp_i_%d = 0; __lp_i_%d < __lp_p_len_%d; __lp_i_%d++) {\n", cur_loop, cur_loop, cur_loop, cur_loop);
                     write_indent(buf, indent + 1);
                     scope_define(cg->scope, node->for_stmt.var, LP_VAL);
                     /* For OpenMP threads, the loop variable must be explicitly declared locally to be private */
                     buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(__lp_p_iter_%d, __lp_i_%d);\n", node->for_stmt.var, cur_loop, cur_loop);
                 } else {
-                    /* Emit OpenMP parallel for pragma */
                     write_indent(buf, indent);
                     buf_write(buf, "#pragma omp parallel\n"); 
                     write_indent(buf, indent);

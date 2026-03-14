@@ -89,6 +89,8 @@ typedef struct {
     int uses_thread;  /* needs lp_thread.h */
     int uses_memory;  /* needs lp_memory.h */
     int uses_platform;/* needs lp_platform.h */
+    int uses_parallel;/* needs lp_parallel.h (OpenMP) */
+    int uses_gpu;     /* needs lp_gpu.h */
     int thread_adapter_count;
 } CodeGen;
 

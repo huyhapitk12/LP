@@ -55,6 +55,11 @@ static TokenType check_keyword(const char *s, int len) {
         {"lambda", TOK_LAMBDA}, {"yield", TOK_YIELD},
         {"parallel", TOK_PARALLEL},
         {"private", TOK_PRIVATE}, {"protected", TOK_PROTECTED},
+        /* Settings/Pragma keywords */
+        {"settings", TOK_SETTINGS}, {"gpu", TOK_GPU}, {"cpu", TOK_CPU},
+        {"device", TOK_DEVICE}, {"threads", TOK_THREADS},
+        {"schedule", TOK_SCHEDULE}, {"chunk", TOK_CHUNK},
+        {"unified", TOK_UNIFIED},
         {NULL, TOK_ERROR}
     };
     for (int i = 0; keywords[i].kw; i++) {
@@ -312,6 +317,9 @@ const char *token_type_name(TokenType type) {
         "try", "except", "finally", "raise",
         "lambda", "yield", "parallel",
         "private", "protected",
+        /* Settings/Pragma keywords */
+        "settings", "gpu", "cpu", "device", "threads",
+        "schedule", "chunk", "unified",
         "+", "-", "*", "/", "//", "**", "%",
         "&", "|", "^", "~", "<<", ">>",
         "=", "==", "!=", "<", ">", "<=", ">=",

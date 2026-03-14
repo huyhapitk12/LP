@@ -18,6 +18,8 @@ typedef enum {
     NODE_TRY, NODE_RAISE,
     NODE_LIST_COMP, NODE_DICT_COMP, NODE_LAMBDA, NODE_YIELD,
     NODE_PARALLEL_FOR,
+    /* Settings/Pragma */
+    NODE_SETTINGS, NODE_PARALLEL_SETTINGS,
 } NodeType;
 
 typedef struct AstNode AstNode;
@@ -93,6 +95,29 @@ struct AstNode {
         struct { ParamList params; AstNode *body; NodeList body_stmts; int is_multiline; } lambda_expr;
         /* Yield */
         struct { AstNode *value; } yield_expr;
+        /* Parallel for with settings */
+        struct {
+            char *var;
+            AstNode *iter;
+            NodeList body;
+            /* Parallel settings */
+            int num_threads;        /* 0 = auto */
+            char *schedule;         /* static, dynamic, guided, auto */
+            int64_t chunk_size;     /* 0 = auto */
+            int device_type;        /* 0=CPU, 1=GPU, 2=Auto */
+            int gpu_id;             /* GPU device ID */
+        } parallel_for;
+        /* Settings/Pragma for parallel and GPU execution */
+        struct {
+            int enabled;              /* Enable parallel execution */
+            int num_threads;          /* Number of threads (0 = auto) */
+            char *schedule;           /* Scheduling policy: static, dynamic, guided, auto */
+            int64_t chunk_size;       /* Chunk size for scheduling (0 = auto) */
+            int device_type;          /* 0=CPU, 1=GPU, 2=Auto */
+            int gpu_id;               /* GPU device ID */
+            int unified_memory;       /* Use unified memory for GPU */
+            int async_transfer;       /* Enable async memory transfer */
+        } settings;
     };
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
