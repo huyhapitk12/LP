@@ -105,6 +105,7 @@ If the requested cross-toolchain is missing, LP fails early with a clear toolcha
 
 Start here:
 
+- **[FEATURES.md](docs/FEATURES.md)** - Comprehensive feature status (supported, partial, unsupported)
 - [Documentation Map](docs/00_Documentation_Map.md)
 - [Installation and Setup](docs/01_Installation_and_Setup.md)
 - [First Programs](docs/02_First_Programs.md)
