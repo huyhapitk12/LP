@@ -129,11 +129,13 @@ static inline int64_t lp_pow_int(int64_t base, int64_t exp) {
 static inline int64_t lp_floordiv(int64_t a, int64_t b) {
     int64_t q, r;
 #if defined(__x86_64__) || defined(_M_X64)
+    /* cqto sign-extends RAX into RDX:RAX, no need to init RDX */
     __asm__ volatile (
         "cqto\n\t"
-        "idivq %4\n\t"
+        "idivq %3\n\t"
         : "=a" (q), "=d" (r)
-        : "a" (a), "d" (0), "r" (b)
+        : "a" (a), "r" (b)
+        : "cc"
     );
 #else
     q = a / b;
@@ -144,15 +146,19 @@ static inline int64_t lp_floordiv(int64_t a, int64_t b) {
 }
 
 static inline int64_t lp_mod(int64_t a, int64_t b) {
-    int64_t r;
+    int64_t r, q;
 #if defined(__x86_64__) || defined(_M_X64)
+    /* cqto sign-extends RAX into RDX:RAX
+     * idivq stores quotient in RAX and remainder in RDX
+     * We capture both outputs but only return the remainder */
     __asm__ volatile (
         "cqto\n\t"
         "idivq %3\n\t"
-        : "=d" (r)
-        : "a" (a), "d" (0), "r" (b)
+        : "=a" (q), "=d" (r)
+        : "a" (a), "r" (b)
         : "cc"
     );
+    (void)q; /* suppress unused variable warning */
 #else
     r = a % b;
 #endif
