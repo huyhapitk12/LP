@@ -936,37 +936,49 @@ int main(int argc, char **argv) {
         printf("[LP ASM] Generated: %s\n", asm_file);
         printf("[LP ASM] Instructions: %d\n", acg.instr_count);
 
-        /* Compile using as + ld (no GCC!) */
-        char cmd[1024];
-
-        /* Assemble: as -o file.o file.s */
-        snprintf(cmd, sizeof(cmd), "as -o %s.o %s 2>&1", exe_file, asm_file);
-        int ret = system(cmd);
-        if (ret != 0) {
-            fprintf(stderr, "[LP ASM] Assembly failed\n");
+        /* SECURITY FIX: Validate file paths before using them */
+        if (!lp_path_is_safe(asm_file) || !lp_path_is_safe(exe_file)) {
+            fprintf(stderr, "[LP ASM] Error: Invalid characters in filename\n");
             asm_codegen_free(&acg);
             ast_free(program);
             free(source);
             return 1;
         }
 
+        char obj_file[512];
+        snprintf(obj_file, sizeof(obj_file), "%s.o", exe_file);
+
+        /* SECURITY FIX: Use spawn instead of system() to prevent command injection */
+        /* Assemble: as -o file.o file.s */
+        {
+            const char *as_argv[] = {"as", "-o", obj_file, asm_file, NULL};
+            int ret = _spawnvp(_P_WAIT, "as", as_argv);
+            if (ret != 0) {
+                fprintf(stderr, "[LP ASM] Assembly failed\n");
+                asm_codegen_free(&acg);
+                ast_free(program);
+                free(source);
+                return 1;
+            }
+        }
+
+        /* SECURITY FIX: Use spawn for linking too */
         /* Link: ld -o file file.o -lc --dynamic-linker /lib64/ld-linux-x86-64.so.2 */
-        snprintf(cmd, sizeof(cmd), "ld -o %s %s.o -lc --dynamic-linker /lib64/ld-linux-x86-64.so.2 2>&1", exe_file, exe_file);
-        ret = system(cmd);
-        if (ret != 0) {
-            fprintf(stderr, "[LP ASM] Linking failed\n");
-            char obj_file[512];
-            snprintf(obj_file, sizeof(obj_file), "%s.o", exe_file);
-            remove(obj_file);
-            asm_codegen_free(&acg);
-            ast_free(program);
-            free(source);
-            return 1;
+        {
+            const char *ld_argv[] = {"ld", "-o", exe_file, obj_file, "-lc", 
+                "--dynamic-linker", "/lib64/ld-linux-x86-64.so.2", NULL};
+            int ret = _spawnvp(_P_WAIT, "ld", ld_argv);
+            if (ret != 0) {
+                fprintf(stderr, "[LP ASM] Linking failed\n");
+                remove(obj_file);
+                asm_codegen_free(&acg);
+                ast_free(program);
+                free(source);
+                return 1;
+            }
         }
 
         /* Cleanup object file */
-        char obj_file[512];
-        snprintf(obj_file, sizeof(obj_file), "%s.o", exe_file);
         remove(obj_file);
 
         printf("[LP ASM] Created executable: %s\n", exe_file);
@@ -975,17 +987,20 @@ int main(int argc, char **argv) {
         fflush(stdout);
         char full_exe_path[1024];
         if (exe_file[0] != '/') {
-            /* Make path absolute */
+            /* SECURITY FIX: Use snprintf instead of strcpy/strcat */
             if (!getcwd(full_exe_path, sizeof(full_exe_path))) {
-                strcpy(full_exe_path, exe_file);
+                snprintf(full_exe_path, sizeof(full_exe_path), "%s", exe_file);
             } else {
-                strcat(full_exe_path, "/");
-                strcat(full_exe_path, exe_file);
+                size_t cwd_len = strlen(full_exe_path);
+                snprintf(full_exe_path + cwd_len, sizeof(full_exe_path) - cwd_len, "/%s", exe_file);
             }
         } else {
-            strcpy(full_exe_path, exe_file);
+            snprintf(full_exe_path, sizeof(full_exe_path), "%s", exe_file);
         }
-        ret = system(full_exe_path);
+        
+        /* SECURITY FIX: Use spawn instead of system() */
+        const char *run_argv[] = {full_exe_path, NULL};
+        int ret = _spawnv(_P_WAIT, full_exe_path, run_argv);
 
         /* Cleanup - but keep asm for debugging */
         /* remove(asm_file); */
@@ -1143,20 +1158,54 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    /* Python link arguments */
-
+    /* Python link arguments - Dynamically detect Python installation */
     char py_inc_arg[600] = "";
     char py_lib_arg[600] = "";
 
     if (cg.uses_python) {
         printf("[LP Build] Python interoperability detected (Tier 3). Linking Python API...\n");
-        /* For Windows testing, we will expect Python to be in PATH and fetch its paths */
-        /* Normally we'd use popen() with python -c "import sysconfig..." but for now we hardcode typical MSYS2 paths or trust the user has C:\Python311 */
-        /* To keep _spawnl simple, we'll use a pre-set env var or fallback MSYS2 paths */
-        /* Native Windows Python 3.12 configuration */
-        strcpy(py_inc_arg, "-IC:\\Users\\HuyHAP\\AppData\\Local\\Programs\\Python\\Python312\\include");
-        /* Instead of passing the library with -l, pass the absolute path to the .lib file to ensure MSYS2 GCC finds it */
-        strcpy(py_lib_arg, "C:\\Users\\HuyHAP\\AppData\\Local\\Programs\\Python\\Python312\\libs\\python312.lib");
+        
+        /* SECURITY FIX: Dynamic Python detection instead of hardcoded paths */
+        /* Try to detect Python installation via environment and common locations */
+        const char *python_home = getenv("PYTHON_HOME");
+        const char *python_path = getenv("PYTHON_PATH");
+        
+        if (python_home && python_home[0]) {
+            /* Use PYTHON_HOME environment variable if set */
+            snprintf(py_inc_arg, sizeof(py_inc_arg), "-I%s\\include", python_home);
+            snprintf(py_lib_arg, sizeof(py_lib_arg), "%s\\libs\\python312.lib", python_home);
+        } else if (python_path && python_path[0]) {
+            /* Use PYTHON_PATH environment variable if set */
+            snprintf(py_inc_arg, sizeof(py_inc_arg), "-I%s\\include", python_path);
+            snprintf(py_lib_arg, sizeof(py_lib_arg), "%s\\libs\\python312.lib", python_path);
+        } else {
+            /* Try common locations - DO NOT hardcode user-specific paths */
+            const char *common_paths[] = {
+                "C:\\Python312",
+                "C:\\Python311", 
+                "C:\\Python310",
+                "C:\\Program Files\\Python312",
+                "C:\\Program Files\\Python311",
+                NULL
+            };
+            int found = 0;
+            for (int i = 0; common_paths[i] != NULL; i++) {
+                char test_path[600];
+                snprintf(test_path, sizeof(test_path), "%s\\include\\Python.h", common_paths[i]);
+                FILE *f = fopen(test_path, "r");
+                if (f) {
+                    fclose(f);
+                    snprintf(py_inc_arg, sizeof(py_inc_arg), "-I%s\\include", common_paths[i]);
+                    snprintf(py_lib_arg, sizeof(py_lib_arg), "%s\\libs\\python312.lib", common_paths[i]);
+                    found = 1;
+                    printf("[LP Build] Found Python at: %s\n", common_paths[i]);
+                    break;
+                }
+            }
+            if (!found) {
+                fprintf(stderr, "[LP Build] Warning: Python not found. Set PYTHON_HOME environment variable.\n");
+            }
+        }
     }
 
     char sqlite_obj[600] = "-lm";
@@ -1772,9 +1821,9 @@ int run_watch(const char *argv0, const char *input_file) {
             run_count++;
 
             if (run_count > 1) {
-                /* Clear screen for fresh output */
-                int clear_rc = system(LP_CLEAR_CMD);
-                (void)clear_rc;
+                /* Clear screen for fresh output using ANSI escape codes (safer than system()) */
+                printf("\033[2J\033[H");
+                fflush(stdout);
                 
                 printf("\033[1;33m");
                 printf("  \xF0\x9F\x94\xA5 LP Hot Reload Mode\n");
