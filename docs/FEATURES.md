@@ -354,6 +354,71 @@ lp file.lp -o file.c    # Generate C only
 
 **Note:** The LP compiler automatically adds `-fopenmp` when it detects `parallel for` loops. No manual flags needed!
 
+#### @settings Decorator
+
+The `@settings` decorator allows fine-grained control over parallel and GPU execution:
+
+```lp
+# Configure thread count
+@settings(threads=8)
+def parallel_process(data: list) -> list:
+    results = []
+    parallel for item in data:
+        results.append(process(item))
+    return results
+
+# Use GPU acceleration
+@settings(device="gpu", gpu_id=0)
+def gpu_compute(n: int) -> int:
+    result = 0
+    parallel for i in range(n):
+        result += i * i
+    return result
+
+# Dynamic scheduling with chunk size
+@settings(threads=4, schedule="dynamic", chunk=100)
+def process_large_dataset(data: list) -> int:
+    count = 0
+    parallel for item in data:
+        count += item
+    return count
+
+# Auto-select best device (GPU if available, otherwise CPU)
+@settings(device="auto")
+def auto_parallel(n: int) -> int:
+    result = 0
+    parallel for i in range(n):
+        result += i
+    return result
+```
+
+**Available Settings:**
+| Option | Description | Example Values |
+|--------|-------------|----------------|
+| `threads` | Number of threads for parallel execution | `4`, `8`, `16` |
+| `schedule` | OpenMP scheduling policy | `"static"`, `"dynamic"`, `"guided"`, `"auto"` |
+| `chunk` | Chunk size for scheduling | `100`, `1000` |
+| `device` | Execution device | `"cpu"`, `"gpu"`, `"auto"` |
+| `gpu_id` | GPU device ID | `0`, `1` |
+| `unified` | Use unified memory for GPU | `True`, `False` |
+
+**Scheduling Policies:**
+- `static`: Divide work evenly (default)
+- `dynamic`: Work in chunks, good for uneven workloads
+- `guided`: Decreasing chunk sizes
+- `auto`: Let runtime decide
+
+**Generated C Code:**
+```c
+// @settings(threads=4, schedule="dynamic", chunk=100)
+lp_parallel_set_threads(4);
+lp_parallel_configure(4, "dynamic", 100, 0, 0);
+#pragma omp parallel for num_threads(4) schedule(dynamic, 100)
+for (int64_t lp_i = 0; lp_i < n; lp_i++) {
+    // ...
+}
+```
+
 ---
 
 ### ⚠️ Partially Supported

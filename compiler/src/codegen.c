@@ -2622,13 +2622,31 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
             buf_write(buf, "}\n");
             break;
         case NODE_PARALLEL_FOR: {
-            /* Generate OpenMP parallel for with optional settings */
+            /* Generate OpenMP parallel for with settings from @settings decorator */
             cg->uses_parallel = 1;  /* Mark that we use OpenMP */
             
-            /* Check if this parallel_for has extended settings */
-            int num_threads = 0;
-            const char *schedule = "static";
-            int64_t chunk_size = 0;
+            /* Get settings from the parallel_for node */
+            int num_threads = node->parallel_for.num_threads;
+            const char *schedule = node->parallel_for.schedule ? node->parallel_for.schedule : "static";
+            int64_t chunk_size = node->parallel_for.chunk_size;
+            int device_type = node->parallel_for.device_type;
+            int gpu_id = node->parallel_for.gpu_id;
+            
+            /* Handle GPU execution */
+            if (device_type == 1) {  /* GPU */
+                cg->uses_gpu = 1;
+                write_indent(buf, indent);
+                buf_write(buf, "/* GPU-accelerated parallel for (device=");
+                buf_printf(buf, "%d, gpu_id=%d) */\n", device_type, gpu_id);
+                write_indent(buf, indent);
+                buf_printf(buf, "lp_gpu_select_device(%d);\n", gpu_id);
+            } else if (device_type == 2) {  /* Auto - select best device */
+                cg->uses_gpu = 1;
+                write_indent(buf, indent);
+                buf_write(buf, "/* Auto-select best device */\n");
+                write_indent(buf, indent);
+                buf_write(buf, "lp_gpu_select_by_type(LP_DEVICE_AUTO);\n");
+            }
             
             /* Emit OpenMP parallel for pragma with settings */
             write_indent(buf, indent);
@@ -2644,49 +2662,49 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 buf_write(buf, "#pragma omp parallel for\n");
             }
             
-            /* Reuse NODE_FOR logic */
-            if (is_range_call(node->for_stmt.iter)) {
-                NodeList *args = &node->for_stmt.iter->call.args;
-                scope_define(cg->scope, node->for_stmt.var, LP_INT);
+            /* Reuse NODE_FOR logic using parallel_for fields */
+            if (is_range_call(node->parallel_for.iter)) {
+                NodeList *args = &node->parallel_for.iter->call.args;
+                scope_define(cg->scope, node->parallel_for.var, LP_INT);
                 write_indent(buf, indent);
                 if (args->count == 1) {
                     buf_printf(buf, "for (int64_t lp_%s = 0; lp_%s < ",
-                               node->for_stmt.var, node->for_stmt.var);
+                               node->parallel_for.var, node->parallel_for.var);
                     gen_expr(cg, buf, args->items[0]);
-                    buf_printf(buf, "; lp_%s++) {\n", node->for_stmt.var);
+                    buf_printf(buf, "; lp_%s++) {\n", node->parallel_for.var);
                 } else if (args->count >= 2) {
-                    buf_printf(buf, "for (int64_t lp_%s = ", node->for_stmt.var);
+                    buf_printf(buf, "for (int64_t lp_%s = ", node->parallel_for.var);
                     gen_expr(cg, buf, args->items[0]);
 
                     /* If step is negative, use > instead of < */
                     if (args->count >= 3 && args->items[2]->type == NODE_UNARY_OP && args->items[2]->unary_op.op == TOK_MINUS && args->items[2]->unary_op.operand->type == NODE_INT_LIT) {
-                        buf_printf(buf, "; lp_%s > ", node->for_stmt.var);
+                        buf_printf(buf, "; lp_%s > ", node->parallel_for.var);
                     } else if (args->count >= 3 && args->items[2]->type == NODE_INT_LIT && args->items[2]->int_lit.value < 0) {
-                        buf_printf(buf, "; lp_%s > ", node->for_stmt.var);
+                        buf_printf(buf, "; lp_%s > ", node->parallel_for.var);
                     } else if (args->count >= 3) {
-                        buf_printf(buf, "; lp_%s < ", node->for_stmt.var);
+                        buf_printf(buf, "; lp_%s < ", node->parallel_for.var);
                     } else {
-                        buf_printf(buf, "; lp_%s < ", node->for_stmt.var);
+                        buf_printf(buf, "; lp_%s < ", node->parallel_for.var);
                     }
 
                     gen_expr(cg, buf, args->items[1]);
                     if (args->count >= 3) {
-                        buf_printf(buf, "; lp_%s += ", node->for_stmt.var);
+                        buf_printf(buf, "; lp_%s += ", node->parallel_for.var);
                         gen_expr(cg, buf, args->items[2]);
                     } else {
-                        buf_printf(buf, "; lp_%s++", node->for_stmt.var);
+                        buf_printf(buf, "; lp_%s++", node->parallel_for.var);
                     }
                     buf_write(buf, ") {\n");
                 }
             } else {
-                LpType iter_type = infer_type(cg, node->for_stmt.iter);
+                LpType iter_type = infer_type(cg, node->parallel_for.iter);
                 if (iter_type == LP_VAL || iter_type == LP_LIST || iter_type == LP_PYOBJ || iter_type == LP_ARRAY || iter_type == LP_STR_ARRAY || iter_type == LP_DICT || iter_type == LP_SET || iter_type == LP_TUPLE) {
                     /* Create a unique loop index variable for generic loops to avoid shadowing */
                     static int generic_parallel_loop_counter = 0;
                     int cur_loop = generic_parallel_loop_counter++;
                     write_indent(buf, indent);
                     buf_printf(buf, "LpVal __lp_p_iter_%d = ", cur_loop);
-                    emit_lp_val(cg, buf, node->for_stmt.iter);
+                    emit_lp_val(cg, buf, node->parallel_for.iter);
                     buf_write(buf, ";\n");
                     write_indent(buf, indent);
                     buf_printf(buf, "int64_t __lp_p_len_%d = lp_val_len(__lp_p_iter_%d);\n", cur_loop, cur_loop);
@@ -2694,9 +2712,9 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     write_indent(buf, indent);
                     buf_printf(buf, "for (int64_t __lp_i_%d = 0; __lp_i_%d < __lp_p_len_%d; __lp_i_%d++) {\n", cur_loop, cur_loop, cur_loop, cur_loop);
                     write_indent(buf, indent + 1);
-                    scope_define(cg->scope, node->for_stmt.var, LP_VAL);
+                    scope_define(cg->scope, node->parallel_for.var, LP_VAL);
                     /* For OpenMP threads, the loop variable must be explicitly declared locally to be private */
-                    buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(__lp_p_iter_%d, __lp_i_%d);\n", node->for_stmt.var, cur_loop, cur_loop);
+                    buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(__lp_p_iter_%d, __lp_i_%d);\n", node->parallel_for.var, cur_loop, cur_loop);
                 } else {
                     write_indent(buf, indent);
                     buf_write(buf, "#pragma omp parallel\n"); 
@@ -2706,10 +2724,16 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     buf_write(buf, "{\n");
                 }
             }
-            for (int i = 0; i < node->for_stmt.body.count; i++)
-                gen_stmt(cg, buf, node->for_stmt.body.items[i], indent + 1);
+            for (int i = 0; i < node->parallel_for.body.count; i++)
+                gen_stmt(cg, buf, node->parallel_for.body.items[i], indent + 1);
             write_indent(buf, indent);
             buf_write(buf, "}\n");
+            
+            /* Sync GPU if used */
+            if (device_type == 1 || device_type == 2) {
+                write_indent(buf, indent);
+                buf_write(buf, "lp_gpu_sync();\n");
+            }
             break;
         }
         case NODE_WITH: {
@@ -3111,6 +3135,47 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
         }
     }
     buf_write(&cg->funcs, ") {\n");
+
+    /* Process decorators for @settings (parallel/GPU configuration) */
+    for (int d = 0; d < node->func_def.decorators.count; d++) {
+        AstNode *decorator = node->func_def.decorators.items[d];
+        if (decorator->type == NODE_SETTINGS && decorator->settings.enabled) {
+            /* Mark that we use parallel/GPU features */
+            if (decorator->settings.device_type > 0) {
+                cg->uses_gpu = 1;
+            }
+            cg->uses_parallel = 1;
+            
+            buf_write(&cg->funcs, "    /* === PARALLEL/GPU SETTINGS === */\n");
+            
+            /* Configure parallel settings */
+            if (decorator->settings.num_threads > 0) {
+                buf_printf(&cg->funcs, "    lp_parallel_set_threads(%d);\n", 
+                          decorator->settings.num_threads);
+            }
+            
+            /* Configure GPU device */
+            if (decorator->settings.device_type == 1) {  /* GPU */
+                buf_printf(&cg->funcs, "    lp_gpu_select_device(%d);\n", decorator->settings.gpu_id);
+                if (decorator->settings.unified_memory) {
+                    buf_write(&cg->funcs, "    lp_gpu_configure(-1, 1, 0);\n");
+                }
+            } else if (decorator->settings.device_type == 2) {  /* Auto */
+                buf_write(&cg->funcs, "    lp_gpu_select_by_type(LP_DEVICE_AUTO);\n");
+            }
+            
+            /* Set schedule if provided */
+            if (decorator->settings.schedule) {
+                buf_printf(&cg->funcs, "    lp_parallel_configure(%d, \"%s\", %lld, 0, 0);\n",
+                          decorator->settings.num_threads,
+                          decorator->settings.schedule,
+                          (long long)decorator->settings.chunk_size);
+            }
+            
+            buf_write(&cg->funcs, "    /* === END PARALLEL/GPU SETTINGS === */\n\n");
+            break;  /* Only process first settings decorator */
+        }
+    }
 
     /* Process decorators for security settings */
     for (int d = 0; d < node->func_def.decorators.count; d++) {
