@@ -48,6 +48,8 @@
 - ⚡ **Modern Features** - F-Strings, Pattern Matching, Decorators, Async/Await, Generics, Type Unions
 - 🧵 **Built-in Modules** - `math`, `random`, `time`, `os`, `sys`, `http`, `json`, `sqlite`, `thread`, `memory`
 - 🚀 **Native OpenMP** - Automatic parallel execution with `parallel for`
+- ⚙️ **@settings Decorator** - Fine-grained control over parallel threads, GPU, scheduling
+- 🔒 **@security Decorator** - Built-in rate limiting, authentication, input validation
 - 🎯 **Optimizations** - Constant folding, dead code elimination, loop unrolling
 
 ---
@@ -132,9 +134,26 @@ match value:
 ### 🎭 Decorators
 
 ```lp
-@settings(threads=4)
-def parallel_task():
-    print("Running with 4 threads")
+# @settings - Configure parallel/GPU execution
+@settings(threads=8, schedule="dynamic", chunk=100)
+def parallel_task(data: list) -> list:
+    results = []
+    parallel for item in data:
+        results.append(process(item))
+    return results
+
+# @settings with GPU acceleration
+@settings(device="gpu", gpu_id=0)
+def gpu_compute(n: int) -> int:
+    result = 0
+    parallel for i in range(n):
+        result += i * i
+    return result
+
+# @security - Built-in security features
+@security(level=3, auth=True, rate_limit=100)
+def secure_api_endpoint(data: dict) -> dict:
+    return {"status": "ok"}
 ```
 
 ### ⚡ Async/Await
@@ -168,6 +187,21 @@ int_box.set(42)
 # OpenMP-style parallel for (auto-enabled!)
 parallel for i in range(1000000):
     process_item(i)
+
+# With @settings decorator for fine-grained control
+@settings(threads=4, schedule="dynamic", chunk=1000)
+def process_large_dataset(data: list) -> int:
+    total = 0
+    parallel for item in data:
+        total += item
+    return total
+
+# GPU acceleration
+@settings(device="gpu", unified=True)
+def gpu_matrix_multiply(a: list, b: list) -> list:
+    # Automatically runs on GPU if available
+    parallel for i in range(len(a)):
+        compute(a[i], b[i])
 ```
 
 ### 📚 Built-in Modules

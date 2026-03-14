@@ -115,22 +115,24 @@ For a comprehensive feature status table, see **[FEATURES.md](FEATURES.md)**.
 | Collections (list, dict, set, tuple) | ✅ Full |
 | OOP (classes, inheritance, access control) | ✅ Full |
 | Lambda functions | ✅ Full |
+| Decorators (`@settings`, `@security`) | ✅ Full |
 | `parallel for` | ✅ Full (needs OpenMP) |
 | Dictionary comprehensions | ✅ Full |
 | `yield` / Generators | ✅ Full |
 | `http.post` | ✅ Full |
 | `json.parse` | ✅ Full |
+| F-strings | ✅ Full |
 | List comprehensions | ⚠️ Partial (numeric-focused) |
 | `thread.spawn` | ⚠️ Partial (worker restrictions) |
 | `numpy` module | ⚠️ Partial (basic functions) |
 | Async/await | ❌ Not yet |
-| Decorators | ❌ Not yet |
-| F-strings | ❌ Not yet |
 
 ### Key Limitations
 
 - `thread.spawn(...)`: Worker must be a named LP function, 0 or 1 argument, return `int` or `void`
 - `parallel for`: Requires OpenMP-capable toolchain for actual parallelism
+- `@settings`: GPU features require CUDA-capable hardware and toolchain
+- `@security`: Runtime functions need to be called to configure authentication state
 - Integer division `//` and modulo `%` follow Python semantics
 - Cross-target builds require matching external toolchains
 

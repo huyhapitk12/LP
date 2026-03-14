@@ -387,6 +387,9 @@ Representative API:
 | Bitwise operators | ✅ | All 6 operators |
 | Compound assignment | ✅ | `+=`, `-=`, etc. |
 | `parallel for` | ✅ | Requires OpenMP toolchain |
+| `@settings` decorator | ✅ | Parallel/GPU configuration |
+| `@security` decorator | ✅ | Security features |
+| F-strings | ✅ | `f"value: {x}"` |
 | **Dictionary comprehensions** | ✅ | `{k: v for x in iter}` |
 | **`yield` / Generators** | ✅ | Basic generator pattern |
 | **`http.post`** | ✅ | HTTP POST requests |
@@ -405,12 +408,38 @@ Representative API:
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Decorators | ❌ | Not implemented |
 | Async/await | ❌ | Not implemented |
 | Pattern matching | ❌ | Not implemented |
 | Type unions | ❌ | Not implemented |
 | Generic types | ❌ | Not implemented |
-| F-strings | ❌ | Use `str()` + concat |
+
+### Supported Decorators ✅
+
+| Decorator | Description | Example |
+|-----------|-------------|---------|
+| `@settings` | Configure parallel/GPU execution | `@settings(threads=8, device="gpu")` |
+| `@security` | Security features (rate limit, auth) | `@security(level=3, auth=True)` |
+
+#### @settings Options
+
+```lp
+@settings(threads=4)                    # Set thread count
+@settings(schedule="dynamic", chunk=100) # Scheduling policy
+@settings(device="gpu", gpu_id=0)       # GPU execution
+@settings(device="auto")                # Auto-select best device
+@settings(unified=True)                 # Unified GPU memory
+```
+
+#### @security Options
+
+```lp
+@security(level=3)                      # Security level (0-4)
+@security(auth=True)                    # Require authentication
+@security(rate_limit=100)               # Requests per minute
+@security(admin=True)                   # Require admin access
+@security(readonly=True)                # Read-only mode
+@security(validate=True, sanitize=True) # Input/output handling
+```
 
 ## CLI summary
 

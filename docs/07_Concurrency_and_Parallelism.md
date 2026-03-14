@@ -48,7 +48,56 @@ Current implementation detail:
 
 - LP emits an OpenMP-style `#pragma omp parallel for` in generated C.
 - Actual parallel execution depends on the host toolchain and flags.
-- The current default build scripts do not explicitly add `-fopenmp`, so treat this as toolchain-dependent rather than guaranteed parallel speedup.
+- LP compiler automatically adds `-fopenmp` when parallel loops are detected.
+
+### `@settings` Decorator
+
+LP provides the `@settings` decorator for fine-grained control over parallel execution:
+
+```lp
+# Configure thread count
+@settings(threads=8)
+def parallel_process(data: list) -> list:
+    results = []
+    parallel for item in data:
+        results.append(process(item))
+    return results
+
+# Set scheduling policy and chunk size
+@settings(threads=4, schedule="dynamic", chunk=100)
+def process_uneven_workload(data: list) -> int:
+    count = 0
+    parallel for item in data:
+        count += item
+    return count
+
+# GPU execution
+@settings(device="gpu", gpu_id=0)
+def gpu_compute(n: int) -> int:
+    result = 0
+    parallel for i in range(n):
+        result += i * i
+    return result
+
+# Auto-select best device
+@settings(device="auto")
+def auto_parallel(n: int) -> int:
+    result = 0
+    parallel for i in range(n):
+        result += i
+    return result
+```
+
+Available settings:
+
+| Setting | Type | Description | Default |
+|---------|------|-------------|---------|
+| `threads` | int | Number of threads (0 = auto) | 0 |
+| `schedule` | string | "static", "dynamic", "guided", "auto" | "static" |
+| `chunk` | int | Chunk size for scheduling | 0 |
+| `device` | string | "cpu", "gpu", "auto" | "cpu" |
+| `gpu_id` | int | GPU device ID | 0 |
+| `unified` | bool | Use unified memory for GPU | false |
 
 ## Examples
 

@@ -221,18 +221,85 @@ match x:
 
 ### Decorators
 
-```lp
-# Settings decorator cho parallel execution
-@settings(threads=4)
-def parallel_task():
-    print("Running with 4 threads")
+LP ho tro hai decorator chinh:
 
-# Multiple decorators
-@decorator1
-@decorator2
-def func():
+#### @settings - Cau hinh Parallel/GPU
+
+```lp
+# Cau hinh so threads
+@settings(threads=8)
+def parallel_process(data: list) -> list:
+    results = []
+    parallel for item in data:
+        results.append(process(item))
+    return results
+
+# GPU acceleration
+@settings(device="gpu", gpu_id=0)
+def gpu_compute(n: int) -> int:
+    result = 0
+    parallel for i in range(n):
+        result += i * i
+    return result
+
+# Dynamic scheduling voi chunk size
+@settings(threads=4, schedule="dynamic", chunk=100)
+def process_large_dataset(data: list) -> int:
+    count = 0
+    parallel for item in data:
+        count += item
+    return count
+
+# Auto-select best device
+@settings(device="auto")
+def auto_parallel(n: int) -> int:
+    result = 0
+    parallel for i in range(n):
+        result += i
+    return result
+```
+
+Cac tuy chon @settings:
+
+| Setting | Type | Mo ta | Mac dinh |
+|---------|------|-------|----------|
+| `threads` | int | So threads (0 = auto) | 0 |
+| `schedule` | string | "static", "dynamic", "guided", "auto" | "static" |
+| `chunk` | int | Chunk size cho scheduling | 0 |
+| `device` | string | "cpu", "gpu", "auto" | "cpu" |
+| `gpu_id` | int | GPU device ID | 0 |
+| `unified` | bool | Unified memory cho GPU | false |
+
+#### @security - Bao mat
+
+```lp
+# Rate limiting va authentication
+@security(level=3, auth=True, rate_limit=100)
+def secure_api_endpoint(data: dict) -> dict:
+    return {"status": "ok"}
+
+# Access control
+@security(admin=True)
+def admin_function():
+    pass
+
+# Readonly mode
+@security(readonly=True)
+def read_only_function():
     pass
 ```
+
+Cac tuy chon @security:
+
+| Setting | Type | Mo ta |
+|---------|------|-------|
+| `level` | int | Muc bao mat (0-4) |
+| `auth` | bool | Yeu cau authentication |
+| `rate_limit` | int | So requests toi da/phut |
+| `admin` | bool | Yeu cau admin access |
+| `readonly` | bool | Chi doc |
+| `validate` | bool | Validate input |
+| `sanitize` | bool | Sanitize output |
 
 ### Class va ke thua
 
