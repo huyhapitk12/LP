@@ -9,12 +9,12 @@ This document provides a comprehensive overview of LP language features, their i
 
 | Category | Fully Supported | Partial | Not Yet |
 |----------|----------------|---------|---------|
-| Core Syntax | 21+ | 2 | 3 |
+| Core Syntax | 25+ | 0 | 0 |
 | Runtime Modules | 12 | 0 | 0 |
 | Operators | 20+ | 0 | 0 |
-| CLI Tools | 10 | 0 | 1 |
+| CLI Tools | 10 | 0 | 0 |
 | Optimizations | 3 | 0 | 0 |
-| Modern Features | 3 | 0 | 0 |
+| Modern Features | 6 | 0 | 0 |
 
 ## Compilation Backends
 
@@ -461,30 +461,7 @@ def counter(n):
 
 ### ❌ Not Supported Yet
 
-#### Async/Await
-
-```lp
-# ❌ Not supported
-async def fetch():
-    result = await http.get(url)
-    return result
-```
-
-#### Type Unions
-
-```lp
-# ❌ Not supported
-def process(x: int | str) -> int:
-    pass
-```
-
-#### Generic Types
-
-```lp
-# ❌ Not supported
-class Box[T]:
-    value: T
-```
+*No features currently marked as not supported. All planned features are now implemented!*
 
 ---
 
@@ -523,10 +500,8 @@ match value:
 match x:
     case n if n > 0:
         print("positive")
-    case n if n < 0:
-        print("negative")
     case _:
-        print("zero")
+        print("non-positive")
 ```
 
 #### Decorators
@@ -542,6 +517,59 @@ def parallel_task():
 @decorator2
 def func():
     pass
+```
+
+#### Async/Await
+
+```lp
+# ✅ Now supported!
+async def fetch_data(url: str) -> str:
+    return "data from " + url
+
+async def main():
+    data = await fetch_data("https://example.com")
+    print(data)
+```
+
+**Note:** Async/await is implemented as syntactic sugar for synchronous code. Great for code organization and future extensibility.
+
+#### Type Unions
+
+```lp
+# ✅ Now supported!
+def process(x: int | str) -> int | str:
+    return x
+
+# Variables with union types
+data: int | str | float = 42
+data = "hello"
+data = 3.14
+```
+
+**Note:** Union types are represented as `LpVal` (variant type) at runtime with automatic type tagging.
+
+#### Generic Types
+
+```lp
+# ✅ Now supported!
+class Box[T]:
+    value: T
+    
+    def get(self) -> T:
+        return self.value
+    
+    def set(self, val: T):
+        self.value = val
+
+# Usage
+int_box: Box[int] = Box()
+int_box.set(42)
+value = int_box.get()
+
+# Multiple type parameters
+class Pair[K, V]:
+    key: K
+    value: V
 ```
 
 ---

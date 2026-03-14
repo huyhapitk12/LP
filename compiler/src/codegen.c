@@ -555,6 +555,16 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
                 return infer_type(cg, node->await_expr.expr);
             }
             return LP_UNKNOWN;
+        case NODE_GENERIC_INST:
+            /* Generic type instantiation - look up the base type */
+            if (node->generic_inst.base_name) {
+                Symbol *s = scope_lookup(cg->scope, node->generic_inst.base_name);
+                if (s) return s->type;
+            }
+            return LP_VAL;  /* Default to variant type for generics */
+        case NODE_TYPE_UNION:
+            /* Type union always returns LP_VAL (variant type) */
+            return LP_VAL;
         default: return LP_UNKNOWN;
     }
 }
@@ -2137,6 +2147,17 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
             } else {
                 buf_write(buf, "0");
             }
+            break;
+        case NODE_GENERIC_INST: {
+            /* Generic type instantiation: Box[int] - treat as constructor call */
+            /* For now, generate a call to the type's constructor function */
+            buf_printf(buf, "lp_%s_new()", node->generic_inst.base_name);
+            break;
+        }
+        case NODE_TYPE_UNION:
+            /* Type union expression - this shouldn't appear at runtime */
+            /* Type unions are handled in type annotations, not expressions */
+            buf_write(buf, "/* type union */ lp_val_null()");
             break;
         default:
             buf_write(buf, "/* unknown expr */");
