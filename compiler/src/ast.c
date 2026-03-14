@@ -258,6 +258,24 @@ void ast_free(AstNode *node) {
                 free(node->type_union.types);
             }
             break;
+        case NODE_ASYNC_DEF:
+            free(node->async_def.name);
+            free(node->async_def.ret_type);
+            for (int i = 0; i < node->async_def.params.count; i++) {
+                free(node->async_def.params.items[i].name);
+                free(node->async_def.params.items[i].type_ann);
+            }
+            free(node->async_def.params.items);
+            for (int i = 0; i < node->async_def.body.count; i++)
+                ast_free(node->async_def.body.items[i]);
+            free(node->async_def.body.items);
+            for (int i = 0; i < node->async_def.decorators.count; i++)
+                ast_free(node->async_def.decorators.items[i]);
+            free(node->async_def.decorators.items);
+            break;
+        case NODE_AWAIT_EXPR:
+            ast_free(node->await_expr.expr);
+            break;
         default:
             break;
     }

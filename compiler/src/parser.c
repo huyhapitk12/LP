@@ -593,7 +593,7 @@ static AstNode *parse_postfix(Parser *p) {
                         AstNode *call = ast_new(NODE_CALL, line);
                         call->call.func = gen_inst;
                         node_list_init(&call->call.args);
-                        cap = 4;
+                        int cap = 4;
                         call->call.is_unpacked_list = (int*)malloc(cap * sizeof(int));
                         call->call.is_unpacked_dict = (int*)malloc(cap * sizeof(int));
                         
@@ -1481,8 +1481,7 @@ static AstNode *parse_assign_or_expr(Parser *p) {
     /* Check for annotated assignment: NAME: type = value */
     if (check(p, TOK_COLON) && expr->type == NODE_NAME) {
         advance(p); /* consume ':' */
-        expect(p, TOK_IDENTIFIER, "expected type");
-        char *type_ann = tok_to_str(p->previous);
+        char *type_ann = parse_type_annotation(p);
         AstNode *n = ast_new(NODE_ASSIGN, line);
         n->assign.name = expr->name_expr.name;
         expr->name_expr.name = NULL;
