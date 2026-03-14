@@ -1,7 +1,7 @@
 # LP Language Feature Status
 
 > Last updated: 2025-01-18
-> Version: 0.1.0-beta
+> Version: 0.1.1-beta
 
 This document provides a comprehensive overview of LP language features, their implementation status, and any known limitations.
 
@@ -9,8 +9,8 @@ This document provides a comprehensive overview of LP language features, their i
 
 | Category | Fully Supported | Partial | Not Yet |
 |----------|----------------|---------|---------|
-| Core Syntax | 15+ | 2 | 4 |
-| Runtime Modules | 10 | 2 | 0 |
+| Core Syntax | 18+ | 2 | 2 |
+| Runtime Modules | 12 | 0 | 0 |
 | Operators | 20+ | 0 | 0 |
 | CLI Tools | 10 | 0 | 1 |
 
@@ -326,51 +326,55 @@ sorted_arr = np.sort(arr)
 
 ---
 
-### ❌ Not Supported Yet
+### ✅ Newly Added Features (v0.1.1)
+
+These features were recently added and are now fully supported:
 
 #### HTTP POST
 
 ```lp
-# ✅ Works
-response = http.get("https://api.example.com/data")
+# ✅ Now supported!
+response = http.post("https://api.example.com/submit", "data=value")
 
-# ❌ Not implemented
-response = http.post("https://api.example.com/submit", data)
+# ✅ Works - GET requests
+response = http.get("https://api.example.com/data")
 ```
 
-**Workaround:** Use HTTP GET with query parameters or use a C library.
+**Note:** Both `http.get()` and `http.post()` are now fully supported.
 
 #### JSON Parse
 
 ```lp
-# ✅ Works
-data = json.loads('{"name": "LP"}')
-text = json.dumps(data)
-
-# ❌ Not implemented
-data = json.parse('{"name": "LP"}')  # Use loads instead
+# ✅ All supported
+data = json.loads('{"name": "LP"}')   # Parse JSON string
+data = json.parse('{"name": "LP"}')   # Alias for loads
+text = json.dumps(data)                # Serialize to JSON
 ```
 
 #### Dictionary Comprehensions
 
 ```lp
-# ❌ Not supported
+# ✅ Now supported!
 squares = {x: x*x for x in range(10)}
 
-# ✅ Workaround
-squares = {}
-for x in range(10):
-    squares[x] = x * x
+# With condition
+evens = {x: x*2 for x in range(10) if x % 2 == 0}
 ```
 
 #### Generators / Yield
 
 ```lp
-# ❌ Not supported (keyword reserved)
-def gen():
-    yield 1
-    yield 2
+# ✅ Now supported (basic generator pattern)
+def counter(n):
+    i = 0
+    while i < n:
+        yield i
+        i += 1
 ```
+
+---
+
+### ❌ Not Supported Yet
 
 #### Decorators
 

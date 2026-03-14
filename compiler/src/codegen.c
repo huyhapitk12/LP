@@ -497,6 +497,10 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
             return infer_type(cg, node->kwarg.value);
         case NODE_LIST_COMP:
             return LP_LIST;
+        case NODE_DICT_COMP:
+            return LP_DICT;
+        case NODE_YIELD:
+            return LP_INT; /* yield returns the yielded value as int for now */
         case NODE_LAMBDA:
             return LP_INT; /* function pointer stored as int */
         default: return LP_UNKNOWN;
@@ -1873,6 +1877,115 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
             buf_printf(buf, ".%s", node->attribute.attr);
             break;
         }
+        case NODE_DICT_COMP: {
+            /* {key: val for var in iter if cond}
+             * Generates: ({ LpDict *_dc = lp_dict_new();
+             *              for(int lp_var = ...) { if(cond) lp_dict_set(_dc, key, val); }
+             *              _dc; })
+             */
+            buf_write(buf, "({ ");
+            buf_write(buf, "LpDict *_dc = lp_dict_new(); ");
+
+            /* Define loop var in a new scope so it can be resolved during expression generation */
+            Scope *comp_scope = scope_new(cg->scope);
+            cg->scope = comp_scope;
+
+            /* Generate the iteration. */
+            if (is_range_call(node->dict_comp.iter)) {
+                NodeList *args = &node->dict_comp.iter->call.args;
+                scope_define(cg->scope, node->dict_comp.var, LP_INT);
+                if (args->count == 1) {
+                    buf_printf(buf, "for (int64_t lp_%s = 0; lp_%s < ",
+                               node->dict_comp.var, node->dict_comp.var);
+                    gen_expr(cg, buf, args->items[0]);
+                    buf_printf(buf, "; lp_%s++) { ", node->dict_comp.var);
+                } else if (args->count >= 2) {
+                    buf_printf(buf, "for (int64_t lp_%s = ", node->dict_comp.var);
+                    gen_expr(cg, buf, args->items[0]);
+                    buf_write(buf, "; lp_");
+                    buf_write(buf, node->dict_comp.var);
+                    buf_write(buf, " < ");
+                    gen_expr(cg, buf, args->items[1]);
+                    if (args->count >= 3) {
+                        buf_write(buf, "; 0;) { break; } "); /* Hack for step variable */
+                        buf_printf(buf, "int64_t __step_%s = ", node->dict_comp.var);
+                        gen_expr(cg, buf, args->items[2]);
+                        buf_write(buf, "; ");
+                        buf_printf(buf, "for (int64_t lp_%s = ", node->dict_comp.var);
+                        gen_expr(cg, buf, args->items[0]);
+                        buf_write(buf, "; lp_");
+                        buf_write(buf, node->dict_comp.var);
+                        buf_write(buf, " < ");
+                        gen_expr(cg, buf, args->items[1]);
+                        buf_printf(buf, "; lp_%s += __step_%s) { ", node->dict_comp.var, node->dict_comp.var);
+                    } else {
+                        buf_printf(buf, "; lp_%s++) { ", node->dict_comp.var);
+                    }
+                } else {
+                    buf_printf(buf, "for (int64_t lp_%s = 0; lp_%s < 0; lp_%s++) { ",
+                               node->dict_comp.var, node->dict_comp.var, node->dict_comp.var);
+                }
+            } else {
+                /* Generic iteration over array/list */
+                scope_define(cg->scope, node->dict_comp.var, LP_INT);
+                buf_write(buf, "for (int64_t _lp_i = 0; _lp_i < ");
+                gen_expr(cg, buf, node->dict_comp.iter);
+                buf_printf(buf, ".len; _lp_i++) { int64_t lp_%s = (int64_t)", node->dict_comp.var);
+                gen_expr(cg, buf, node->dict_comp.iter);
+                buf_write(buf, ".data[_lp_i]; ");
+            }
+
+            /* Optional condition */
+            if (node->dict_comp.cond) {
+                buf_write(buf, "if (");
+                gen_expr(cg, buf, node->dict_comp.cond);
+                buf_write(buf, ") { ");
+            }
+
+            /* Set the key-value pair */
+            buf_write(buf, "lp_dict_set(_dc, ");
+            /* Convert key to string if it's an integer */
+            LpType key_type = infer_type(cg, node->dict_comp.key);
+            if (key_type == LP_INT) {
+                buf_write(buf, "lp_str_from_int(");
+                gen_expr(cg, buf, node->dict_comp.key);
+                buf_write(buf, ")");
+            } else if (key_type == LP_FLOAT) {
+                buf_write(buf, "lp_str_from_float(");
+                gen_expr(cg, buf, node->dict_comp.key);
+                buf_write(buf, ")");
+            } else {
+                gen_expr(cg, buf, node->dict_comp.key);
+            }
+            buf_write(buf, ", ");
+            emit_lp_val(cg, buf, node->dict_comp.value);
+            buf_write(buf, "); ");
+
+            if (node->dict_comp.cond) {
+                buf_write(buf, "} ");
+            }
+
+            buf_write(buf, "} ");
+
+            /* Pop scope */
+            cg->scope = comp_scope->parent;
+            scope_free(comp_scope);
+
+            buf_write(buf, "_dc; })");
+            break;
+        }
+        case NODE_YIELD:
+            /* Yield expression - basic implementation */
+            /* For now, yield just returns the value (simplified generator) */
+            buf_write(buf, "/* yield */");
+            if (node->yield_expr.value) {
+                /* Simple yield - just return the value */
+                buf_write(buf, "return ");
+                gen_expr(cg, buf, node->yield_expr.value);
+            } else {
+                buf_write(buf, "return 0");
+            }
+            break;
         default:
             buf_write(buf, "/* unknown expr */");
             break;
@@ -2110,6 +2223,16 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
             write_indent(buf, indent);
             gen_expr(cg, buf, node->expr_stmt.expr);
             buf_write(buf, ";\n");
+            break;
+        case NODE_YIELD:
+            write_indent(buf, indent);
+            if (node->yield_expr.value) {
+                buf_write(buf, "return ");
+                gen_expr(cg, buf, node->yield_expr.value);
+                buf_write(buf, ";\n");
+            } else {
+                buf_write(buf, "return 0;\n");
+            }
             break;
         case NODE_IF:
             write_indent(buf, indent);
