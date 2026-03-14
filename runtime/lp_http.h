@@ -1,6 +1,9 @@
 /*
  * LP Native HTTP Module — Zero-dependency HTTP requests
  * Uses WinHTTP on Windows.
+ * 
+ * SECURITY NOTE: On Linux, this module uses fork/exec with curl instead of popen()
+ * to prevent command injection vulnerabilities. URLs are validated before use.
  */
 
 #ifndef LP_HTTP_H
@@ -15,31 +18,212 @@
   #include <winhttp.h>
   #pragma comment(lib, "winhttp.lib")
 #else
-  /* Basic POSIX HTTP using curl via popen for simplicity, or sockets later */
+  /* Basic POSIX HTTP using curl via fork/exec for security */
   #include <unistd.h>
+  #include <sys/wait.h>
+  #include <fcntl.h>
+  #include <errno.h>
 
-  /* Helper to escape shell arguments to prevent command injection */
-  static inline char* lp_escape_shell_arg(const char *arg) {
-      if (!arg) return NULL;
-      size_t len = strlen(arg);
-      /* Worst case: each char becomes 4 chars ('\'' -> '\'\\\'\''), plus 2 for outer quotes, plus null */
-      char *res = (char*)malloc(len * 4 + 3);
-      if (!res) return NULL;
-      char *p = res;
-      *p++ = '\'';
-      for (size_t i = 0; i < len; i++) {
-          if (arg[i] == '\'') {
-              *p++ = '\'';
-              *p++ = '\\';
-              *p++ = '\'';
-              *p++ = '\'';
-          } else {
-              *p++ = arg[i];
+  /* 
+   * Security: Validate URL to prevent command injection
+   * Returns 1 if URL appears safe, 0 otherwise
+   */
+  static inline int lp_url_is_safe(const char *url) {
+      if (!url || !*url) return 0;
+      
+      /* URL must start with http:// or https:// */
+      if (strncmp(url, "http://", 7) != 0 && strncmp(url, "https://", 8) != 0) {
+          return 0;
+      }
+      
+      /* Check for shell metacharacters that could enable command injection */
+      for (const char *p = url; *p; p++) {
+          switch (*p) {
+              case ';': case '|': case '&': case '`': case '$':
+              case '(': case ')': case '{': case '}': case '[': case ']':
+              case '<': case '>': case '\'': case '"': case '\\':
+              case '\n': case '\r': case '\0':
+                  return 0;
+              default:
+                  break;
           }
       }
-      *p++ = '\'';
-      *p = '\0';
-      return res;
+      return 1;
+  }
+
+  /* 
+   * Security: Run curl with fork/exec and capture output via pipe
+   * This avoids shell interpretation completely
+   */
+  static inline char* lp_curl_get(const char *url) {
+      int pipefd[2];
+      pid_t pid;
+      
+      if (!lp_url_is_safe(url)) {
+          return strdup("");
+      }
+      
+      if (pipe(pipefd) < 0) {
+          return strdup("");
+      }
+      
+      pid = fork();
+      if (pid < 0) {
+          close(pipefd[0]);
+          close(pipefd[1]);
+          return strdup("");
+      }
+      
+      if (pid == 0) {
+          /* Child process */
+          close(pipefd[0]);
+          dup2(pipefd[1], STDOUT_FILENO);
+          close(pipefd[1]);
+          
+          /* Use execvp to avoid shell - curl receives URL as separate arg */
+          const char *curl_args[] = {"curl", "-s", "-L", url, NULL};
+          execvp("curl", (char *const *)curl_args);
+          
+          /* If exec fails */
+          _exit(127);
+      }
+      
+      /* Parent process */
+      close(pipefd[1]);
+      
+      char *buffer = (char*)malloc(1);
+      buffer[0] = '\0';
+      size_t buffer_len = 0;
+      size_t buffer_cap = 1;
+      
+      char chunk[4096];
+      ssize_t n;
+      while ((n = read(pipefd[0], chunk, sizeof(chunk))) > 0) {
+          if (buffer_len + n >= buffer_cap) {
+              buffer_cap = buffer_len + n + 1;
+              char *new_buf = (char*)realloc(buffer, buffer_cap);
+              if (!new_buf) {
+                  free(buffer);
+                  close(pipefd[0]);
+                  waitpid(pid, NULL, 0);
+                  return strdup("");
+              }
+              buffer = new_buf;
+          }
+          memcpy(buffer + buffer_len, chunk, n);
+          buffer_len += n;
+          buffer[buffer_len] = '\0';
+      }
+      
+      close(pipefd[0]);
+      waitpid(pid, NULL, 0);
+      
+      return buffer;
+  }
+
+  /* 
+   * Security: Run curl POST with fork/exec
+   */
+  static inline char* lp_curl_post(const char *url, const char *data) {
+      int pipefd[2];
+      int data_pipe[2];
+      pid_t pid;
+      
+      if (!lp_url_is_safe(url)) {
+          return strdup("");
+      }
+      
+      if (pipe(pipefd) < 0) {
+          return strdup("");
+      }
+      
+      /* Create pipe for POST data if needed */
+      if (data && pipe(data_pipe) < 0) {
+          close(pipefd[0]);
+          close(pipefd[1]);
+          return strdup("");
+      }
+      
+      pid = fork();
+      if (pid < 0) {
+          close(pipefd[0]);
+          close(pipefd[1]);
+          if (data) {
+              close(data_pipe[0]);
+              close(data_pipe[1]);
+          }
+          return strdup("");
+      }
+      
+      if (pid == 0) {
+          /* Child process */
+          close(pipefd[0]);
+          dup2(pipefd[1], STDOUT_FILENO);
+          close(pipefd[1]);
+          
+          if (data) {
+              close(data_pipe[1]);
+              dup2(data_pipe[0], STDIN_FILENO);
+              close(data_pipe[0]);
+              
+              const char *curl_args[] = {"curl", "-s", "-L", "-X", "POST", 
+                                         "-d", "@-", url, NULL};
+              execvp("curl", (char *const *)curl_args);
+          } else {
+              const char *curl_args[] = {"curl", "-s", "-L", "-X", "POST", url, NULL};
+              execvp("curl", (char *const *)curl_args);
+          }
+          
+          _exit(127);
+      }
+      
+      /* Parent process */
+      close(pipefd[1]);
+      
+      if (data) {
+          close(data_pipe[0]);
+          /* Write POST data to child's stdin */
+          size_t data_len = strlen(data);
+          size_t written = 0;
+          while (written < data_len) {
+              ssize_t n = write(data_pipe[1], data + written, data_len - written);
+              if (n < 0) {
+                  if (errno == EINTR) continue;
+                  break;
+              }
+              written += n;
+          }
+          close(data_pipe[1]);
+      }
+      
+      char *buffer = (char*)malloc(1);
+      buffer[0] = '\0';
+      size_t buffer_len = 0;
+      size_t buffer_cap = 1;
+      
+      char chunk[4096];
+      ssize_t n;
+      while ((n = read(pipefd[0], chunk, sizeof(chunk))) > 0) {
+          if (buffer_len + n >= buffer_cap) {
+              buffer_cap = buffer_len + n + 1;
+              char *new_buf = (char*)realloc(buffer, buffer_cap);
+              if (!new_buf) {
+                  free(buffer);
+                  close(pipefd[0]);
+                  waitpid(pid, NULL, 0);
+                  return strdup("");
+              }
+              buffer = new_buf;
+          }
+          memcpy(buffer + buffer_len, chunk, n);
+          buffer_len += n;
+          buffer[buffer_len] = '\0';
+      }
+      
+      close(pipefd[0]);
+      waitpid(pid, NULL, 0);
+      
+      return buffer;
   }
 #endif
 
@@ -130,38 +314,8 @@ static inline char* lp_http_get(const char *url) {
     
     return buffer;
 #else
-    /* Fallback on Linux using curl */
-    char *escaped_url = lp_escape_shell_arg(url);
-    if (!escaped_url) return strdup("");
-
-    /* "curl -s " (8 chars) + escaped_url + null terminator */
-    size_t cmd_len = 8 + strlen(escaped_url) + 1;
-    char *cmd = (char*)malloc(cmd_len);
-    if (!cmd) {
-        free(escaped_url);
-        return strdup("");
-    }
-    snprintf(cmd, cmd_len, "curl -s %s", escaped_url);
-    free(escaped_url);
-
-    FILE *fp = popen(cmd, "r");
-    free(cmd);
-    if (!fp) return strdup("");
-    
-    char *buffer = (char*)malloc(1);
-    buffer[0] = '\0';
-    int buffer_len = 0;
-    
-    char chunk[4096];
-    while (fgets(chunk, sizeof(chunk), fp) != NULL) {
-        int len = strlen(chunk);
-        buffer = (char*)realloc(buffer, buffer_len + len + 1);
-        memcpy(buffer + buffer_len, chunk, len);
-        buffer_len += len;
-        buffer[buffer_len] = '\0';
-    }
-    pclose(fp);
-    return buffer;
+    /* SECURITY: Use fork/exec instead of popen() */
+    return lp_curl_get(url);
 #endif
 }
 
@@ -257,54 +411,8 @@ static inline char* lp_http_post(const char *url, const char *data) {
     
     return buffer;
 #else
-    /* Fallback on Linux using curl */
-    char *escaped_url = lp_escape_shell_arg(url);
-    if (!escaped_url) return strdup("");
-
-    char *cmd = NULL;
-    if (data) {
-        char *escaped_data = lp_escape_shell_arg(data);
-        if (!escaped_data) {
-            free(escaped_url);
-            return strdup("");
-        }
-        /* "curl -s -X POST -d " (19) + escaped_data + " " (1) + escaped_url + null terminator */
-        size_t cmd_len = 19 + strlen(escaped_data) + 1 + strlen(escaped_url) + 1;
-        cmd = (char*)malloc(cmd_len);
-        if (cmd) {
-            snprintf(cmd, cmd_len, "curl -s -X POST -d %s %s", escaped_data, escaped_url);
-        }
-        free(escaped_data);
-    } else {
-        /* "curl -s -X POST " (16) + escaped_url + null terminator */
-        size_t cmd_len = 16 + strlen(escaped_url) + 1;
-        cmd = (char*)malloc(cmd_len);
-        if (cmd) {
-            snprintf(cmd, cmd_len, "curl -s -X POST %s", escaped_url);
-        }
-    }
-    free(escaped_url);
-
-    if (!cmd) return strdup("");
-
-    FILE *fp = popen(cmd, "r");
-    free(cmd);
-    if (!fp) return strdup("");
-    
-    char *buffer = (char*)malloc(1);
-    buffer[0] = '\0';
-    int buffer_len = 0;
-    
-    char chunk[4096];
-    while (fgets(chunk, sizeof(chunk), fp) != NULL) {
-        int len = strlen(chunk);
-        buffer = (char*)realloc(buffer, buffer_len + len + 1);
-        memcpy(buffer + buffer_len, chunk, len);
-        buffer_len += len;
-        buffer[buffer_len] = '\0';
-    }
-    pclose(fp);
-    return buffer;
+    /* SECURITY: Use fork/exec instead of popen() */
+    return lp_curl_post(url, data);
 #endif
 }
 

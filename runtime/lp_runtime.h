@@ -180,10 +180,19 @@ static inline LpVal lp_val_add(LpVal a, LpVal b) {
         return lp_val_float(f_a + f_b);
     }
     if (a.type == LP_VAL_STRING && b.type == LP_VAL_STRING) {
-        char *str = (char*)malloc(strlen(a.as.s) + strlen(b.as.s) + 1);
+        /* SECURITY FIX: Use safe string operations */
+        size_t len_a = strlen(a.as.s);
+        size_t len_b = strlen(b.as.s);
+        /* Check for potential overflow */
+        if (len_a > SIZE_MAX - len_b - 1) {
+            return lp_val_null(); /* Would overflow */
+        }
+        char *str = (char*)malloc(len_a + len_b + 1);
         if (!str) return lp_val_null(); /* An toàn OOM */
-        strcpy(str, a.as.s);
-        strcat(str, b.as.s);
+        /* Use memcpy instead of strcpy/strcat for safety */
+        memcpy(str, a.as.s, len_a);
+        memcpy(str + len_a, b.as.s, len_b);
+        str[len_a + len_b] = '\0';
         LpVal v; v.type = LP_VAL_STRING; v.as.s = str; return v;
     }
     return lp_val_null();
