@@ -20,8 +20,10 @@
 
 static inline void lp_args_extend_array(LpVarArgs *vargs, LpArray arr) {
     /* Special helper to expand an LpArray into LpVarArgs */
+    if (!vargs || !arr.data || arr.shape[0] <= 0) return;
     for (int i = 0; i < arr.shape[0]; i++) {
         double *val_ptr = (double*)malloc(sizeof(double));
+        if (!val_ptr) continue; /* Skip on allocation failure */
         *val_ptr = arr.data[i];
         lp_args_push(vargs, 1, val_ptr); /* 1 corresponds to LP_FLOAT generally but generic int */
     }
@@ -29,7 +31,10 @@ static inline void lp_args_extend_array(LpVarArgs *vargs, LpArray arr) {
 
 static inline LpArray lp_args_to_array(LpVarArgs *vargs) {
     LpArray arr;
+    memset(&arr, 0, sizeof(LpArray));
+    if (!vargs || vargs->count <= 0) return arr;
     arr.data = (double*)malloc(vargs->count * sizeof(double));
+    if (!arr.data) return arr;
     arr.len = vargs->count;
     arr.cap = vargs->count;
     arr.shape[0] = vargs->count;
@@ -38,9 +43,9 @@ static inline LpArray lp_args_to_array(LpVarArgs *vargs) {
     arr.shape[3] = 0;
     for (int i = 0; i < vargs->count; i++) {
         /* Since we don't have deep run-time types mapped cleanly, fallback to float casts or pointer casting */
-        if (vargs->types[i] == 1) {
+        if (vargs->types && vargs->types[i] == 1 && vargs->values[i]) {
             arr.data[i] = *((double*)vargs->values[i]);
-        } else {
+        } else if (vargs->values[i]) {
             arr.data[i] = (double)(intptr_t)vargs->values[i];
         }
     }
@@ -56,7 +61,7 @@ static inline void lp_print_none(void) { printf("None\n"); }
 
 static inline void lp_print_tuple(LpTuple *t) {
     printf("(");
-    if (t) {
+    if (t && t->items) {
         for (int i = 0; i < t->count; i++) {
             if (i > 0) printf(", ");
             printf("%" PRId64, (int64_t)(intptr_t)t->items[i]);
@@ -70,7 +75,7 @@ static inline void lp_print_val(LpVal v) {
     switch (v.type) {
         case LP_VAL_INT:    printf("%" PRId64 "\n", (int64_t)v.as.i); break;
         case LP_VAL_FLOAT:  printf("%g\n", v.as.f); break;
-        case LP_VAL_STRING: printf("%s\n", v.as.s); break;
+        case LP_VAL_STRING: if (v.as.s) printf("%s\n", v.as.s); else printf("\n"); break;
         case LP_VAL_BOOL:   printf("%s\n", v.as.b ? "True" : "False"); break;
         case LP_VAL_NULL:   printf("None\n"); break;
         case LP_VAL_DICT:   if (v.as.d) lp_dict_print(v.as.d); printf("\n"); break;
@@ -104,11 +109,13 @@ static inline void lp_print_set(LpSet *s) {
 #define LP_NP_PRINT_DEFINED
 static inline void lp_np_print(LpArray arr) {
     printf("[");
-    for (int64_t i = 0; i < arr.len; i++) {
-        if (i > 0) printf(", ");
-        double v = arr.data[i];
-        if (v == (int64_t)v) printf("%" PRId64, (int64_t)v);
-        else printf("%g", v);
+    if (arr.data) {
+        for (int64_t i = 0; i < arr.len; i++) {
+            if (i > 0) printf(", ");
+            double v = arr.data[i];
+            if (v == (int64_t)v) printf("%" PRId64, (int64_t)v);
+            else printf("%g", v);
+        }
     }
     printf("]\n");
 }
@@ -249,7 +256,7 @@ static inline int lp_val_eq(LpVal a, LpVal b) {
     switch (a.type) {
         case LP_VAL_INT: return a.as.i == b.as.i;
         case LP_VAL_FLOAT: return a.as.f == b.as.f;
-        case LP_VAL_STRING: return strcmp(a.as.s, b.as.s) == 0;
+        case LP_VAL_STRING: return (a.as.s && b.as.s) ? (strcmp(a.as.s, b.as.s) == 0) : (a.as.s == b.as.s);
         case LP_VAL_BOOL: return a.as.b == b.as.b;
         case LP_VAL_NULL: return 1;
         default: return 0; /* pointer comparison for dict/list isn't full deep eq yet */
@@ -310,13 +317,13 @@ static inline int lp_val_cmp(const void *a, const void *b) {
 }
 
 static inline void lp_list_sort(LpList *l) {
-    if (l && l->len > 1) {
+    if (l && l->items && l->len > 1) {
         qsort(l->items, l->len, sizeof(LpVal), lp_val_cmp);
     }
 }
 
 static inline int64_t lp_list_binary_search(LpList *l, LpVal v) {
-    if (!l || l->len == 0) return -1;
+    if (!l || !l->items || l->len == 0) return -1;
     int64_t low = 0;
     int64_t high = l->len - 1;
     while (low <= high) {
@@ -330,28 +337,30 @@ static inline int64_t lp_list_binary_search(LpList *l, LpVal v) {
 
 /* JSON/Dict subscript helpers for LpVal */
 static inline LpVal lp_val_getitem_str(LpVal obj, const char *key) {
-    if (obj.type == LP_VAL_DICT) return lp_dict_get(obj.as.d, key);
+    if (obj.type == LP_VAL_DICT && obj.as.d) return lp_dict_get(obj.as.d, key);
     return lp_val_null();
 }
 
 static inline LpVal lp_val_getitem_int(LpVal obj, int64_t idx) {
-    if (obj.type == LP_VAL_LIST) {
+    if (obj.type == LP_VAL_LIST && obj.as.l && obj.as.l->items) {
         if (idx >= 0 && idx < obj.as.l->len) return obj.as.l->items[idx];
     }
     return lp_val_null();
 }
 
 static inline int64_t lp_val_len(LpVal obj) {
-    if (obj.type == LP_VAL_LIST) return obj.as.l->len;
-    if (obj.type == LP_VAL_STRING) return strlen(obj.as.s);
+    if (obj.type == LP_VAL_LIST && obj.as.l) return obj.as.l->len;
+    if (obj.type == LP_VAL_STRING && obj.as.s) return (int64_t)strlen(obj.as.s);
     return 0;
 }
 
 
 /* String helpers */
 static inline char *lp_str_concat(const char *a, const char *b) {
+    if (!a || !b) return NULL;
     size_t la = strlen(a), lb = strlen(b);
     char *r = (char *)malloc(la + lb + 1);
+    if (!r) return NULL;
     memcpy(r, a, la);
     memcpy(r + la, b, lb + 1);
     return r;

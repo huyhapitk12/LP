@@ -17,8 +17,10 @@
 
 /* str.upper() */
 static inline const char *lp_str_upper(const char *s) {
+    if (!s) return NULL;
     size_t len = strlen(s);
     char *r = (char *)malloc(len + 1);
+    if (!r) return NULL;
     for (size_t i = 0; i < len; i++) r[i] = (char)toupper((unsigned char)s[i]);
     r[len] = '\0';
     return r;
@@ -26,8 +28,10 @@ static inline const char *lp_str_upper(const char *s) {
 
 /* str.lower() */
 static inline const char *lp_str_lower(const char *s) {
+    if (!s) return NULL;
     size_t len = strlen(s);
     char *r = (char *)malloc(len + 1);
+    if (!r) return NULL;
     for (size_t i = 0; i < len; i++) r[i] = (char)tolower((unsigned char)s[i]);
     r[len] = '\0';
     return r;
@@ -61,18 +65,22 @@ static inline const char *lp_str_strip(const char *s) {
 
 /* str.lstrip() */
 static inline const char *lp_str_lstrip(const char *s) {
+    if (!s) return NULL;
     while (*s && isspace((unsigned char)*s)) s++;
     size_t len = strlen(s);
     char *r = (char *)malloc(len + 1);
+    if (!r) return NULL;
     memcpy(r, s, len + 1);
     return r;
 }
 
 /* str.rstrip() */
 static inline const char *lp_str_rstrip(const char *s) {
+    if (!s) return NULL;
     size_t len = strlen(s);
     while (len > 0 && isspace((unsigned char)s[len - 1])) len--;
     char *r = (char *)malloc(len + 1);
+    if (!r) return NULL;
     memcpy(r, s, len);
     r[len] = '\0';
     return r;
@@ -80,12 +88,14 @@ static inline const char *lp_str_rstrip(const char *s) {
 
 /* str.startswith(prefix) */
 static inline int lp_str_startswith(const char *s, const char *prefix) {
+    if (!s || !prefix) return 0;
     size_t plen = strlen(prefix);
     return (strncmp(s, prefix, plen) == 0);
 }
 
 /* str.endswith(suffix) */
 static inline int lp_str_endswith(const char *s, const char *suffix) {
+    if (!s || !suffix) return 0;
     size_t slen = strlen(s);
     size_t xlen = strlen(suffix);
     if (xlen > slen) return 0;
@@ -94,6 +104,7 @@ static inline int lp_str_endswith(const char *s, const char *suffix) {
 
 /* str.find(sub) — returns index or -1 */
 static inline int64_t lp_str_find(const char *s, const char *sub) {
+    if (!s || !sub) return -1;
     const char *p = strstr(s, sub);
     if (!p) return -1;
     return (int64_t)(p - s);
@@ -101,11 +112,13 @@ static inline int64_t lp_str_find(const char *s, const char *sub) {
 
 /* str.replace(old, new) */
 static inline const char *lp_str_replace(const char *s, const char *old, const char *new_s) {
+    if (!s) return NULL;
     size_t slen = strlen(s);
-    size_t olen = strlen(old);
-    size_t nlen = strlen(new_s);
+    size_t olen = old ? strlen(old) : 0;
+    size_t nlen = new_s ? strlen(new_s) : 0;
     if (olen == 0) {
         char *r = (char *)malloc(slen + 1);
+        if (!r) return NULL;
         memcpy(r, s, slen + 1);
         return r;
     }
@@ -116,6 +129,7 @@ static inline const char *lp_str_replace(const char *s, const char *old, const c
     /* Build result */
     size_t rlen = slen + count * ((int64_t)nlen - (int64_t)olen);
     char *r = (char *)malloc(rlen + 1);
+    if (!r) return NULL;
     char *dst = r;
     p = s;
     while (*p) {
@@ -133,6 +147,7 @@ static inline const char *lp_str_replace(const char *s, const char *old, const c
 
 /* str.count(sub) */
 static inline int64_t lp_str_count(const char *s, const char *sub) {
+    if (!s || !sub) return 0;
     size_t sublen = strlen(sub);
     if (sublen == 0) return 0;
     int64_t count = 0;
@@ -143,27 +158,28 @@ static inline int64_t lp_str_count(const char *s, const char *sub) {
 
 /* str.isdigit() */
 static inline int lp_str_isdigit(const char *s) {
-    if (!*s) return 0;
+    if (!s || !*s) return 0;
     while (*s) { if (!isdigit((unsigned char)*s)) return 0; s++; }
     return 1;
 }
 
 /* str.isalpha() */
 static inline int lp_str_isalpha(const char *s) {
-    if (!*s) return 0;
+    if (!s || !*s) return 0;
     while (*s) { if (!isalpha((unsigned char)*s)) return 0; s++; }
     return 1;
 }
 
 /* str.isalnum() */
 static inline int lp_str_isalnum(const char *s) {
-    if (!*s) return 0;
+    if (!s || !*s) return 0;
     while (*s) { if (!isalnum((unsigned char)*s)) return 0; s++; }
     return 1;
 }
 
 /* len(str) */
 static inline int64_t lp_str_len(const char *s) {
+    if (!s) return 0;
     return (int64_t)strlen(s);
 }
 
@@ -189,6 +205,9 @@ static inline LpStrArray lp_str_split(const char *s, const char *delim) {
     arr.items = (const char **)malloc(arr.cap * sizeof(char *));
     arr.count = 0;
 
+    if (!s) return arr;
+    if (!arr.items) { arr.cap = 0; return arr; }
+
     const char *p = s;
 
     if (!delim || !*delim) {
@@ -200,11 +219,14 @@ static inline LpStrArray lp_str_split(const char *s, const char *delim) {
             while (*p && !isspace((unsigned char)*p)) p++;
             size_t part_len = (size_t)(p - start);
             char *part = (char *)malloc(part_len + 1);
+            if (!part) continue;
             memcpy(part, start, part_len);
             part[part_len] = '\0';
             if (arr.count >= arr.cap) {
                 arr.cap *= 2;
-                arr.items = (const char **)realloc(arr.items, arr.cap * sizeof(char *));
+                const char **new_items = (const char **)realloc(arr.items, arr.cap * sizeof(char *));
+                if (!new_items) { free(part); continue; }
+                arr.items = new_items;
             }
             arr.items[arr.count++] = part;
         }
@@ -216,11 +238,18 @@ static inline LpStrArray lp_str_split(const char *s, const char *delim) {
         const char *found = strstr(p, delim);
         size_t part_len = found ? (size_t)(found - p) : strlen(p);
         char *part = (char *)malloc(part_len + 1);
+        if (!part) {
+            if (!found) break;
+            p = found + dlen;
+            continue;
+        }
         memcpy(part, p, part_len);
         part[part_len] = '\0';
         if (arr.count >= arr.cap) {
             arr.cap *= 2;
-            arr.items = (const char **)realloc(arr.items, arr.cap * sizeof(char *));
+            const char **new_items = (const char **)realloc(arr.items, arr.cap * sizeof(char *));
+            if (!new_items) { free(part); if (!found) break; p = found + dlen; continue; }
+            arr.items = new_items;
         }
         arr.items[arr.count++] = part;
         if (!found) break;
@@ -231,24 +260,27 @@ static inline LpStrArray lp_str_split(const char *s, const char *delim) {
 
 /* str.join(separator, array) */
 static inline const char *lp_str_join(const char *sep, LpStrArray arr) {
-    if (arr.count == 0) {
+    if (arr.count == 0 || !arr.items) {
         char *r = (char *)malloc(1);
-        r[0] = '\0';
-        return r;
+        if (r) r[0] = '\0';
+        return r ? r : "";
     }
-    size_t seplen = strlen(sep);
+    size_t seplen = sep ? strlen(sep) : 0;
     size_t total = 0;
     for (int64_t i = 0; i < arr.count; i++) {
-        total += strlen(arr.items[i]);
+        if (arr.items[i]) total += strlen(arr.items[i]);
         if (i > 0) total += seplen;
     }
     char *r = (char *)malloc(total + 1);
+    if (!r) return "";
     char *dst = r;
     for (int64_t i = 0; i < arr.count; i++) {
-        if (i > 0) { memcpy(dst, sep, seplen); dst += seplen; }
-        size_t len = strlen(arr.items[i]);
-        memcpy(dst, arr.items[i], len);
-        dst += len;
+        if (i > 0 && sep) { memcpy(dst, sep, seplen); dst += seplen; }
+        if (arr.items[i]) {
+            size_t len = strlen(arr.items[i]);
+            memcpy(dst, arr.items[i], len);
+            dst += len;
+        }
     }
     *dst = '\0';
     return r;

@@ -64,6 +64,7 @@ static inline int64_t lp_thread_join(LpThread thread) {
 
 static inline LpLock lp_thread_lock_init(void) {
     LpLock lock = (LpLock)malloc(sizeof(CRITICAL_SECTION));
+    if (!lock) return NULL;
     InitializeCriticalSection(lock);
     return lock;
 }
@@ -111,6 +112,7 @@ static inline int64_t lp_thread_join(LpThread thread) {
 
 static inline LpLock lp_thread_lock_init(void) {
     LpLock lock = (LpLock)malloc(sizeof(pthread_mutex_t));
+    if (!lock) return NULL;
     pthread_mutex_init(lock, NULL);
     return lock;
 }
