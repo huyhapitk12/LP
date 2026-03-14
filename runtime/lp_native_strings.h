@@ -35,14 +35,27 @@ static inline const char *lp_str_lower(const char *s) {
 
 /* str.strip() — remove leading/trailing whitespace */
 static inline const char *lp_str_strip(const char *s) {
+    if (!s || *s == '\0') {
+        char *r = (char *)malloc(1);
+        if (r) r[0] = '\0';
+        return r;
+    }
     const char *start = s;
     while (*start && isspace((unsigned char)*start)) start++;
-    const char *end = s + strlen(s) - 1;
+    size_t slen = strlen(s);
+    if (slen == 0) {
+        char *r = (char *)malloc(1);
+        if (r) r[0] = '\0';
+        return r;
+    }
+    const char *end = s + slen - 1;
     while (end > start && isspace((unsigned char)*end)) end--;
     size_t len = end - start + 1;
     char *r = (char *)malloc(len + 1);
-    memcpy(r, start, len);
-    r[len] = '\0';
+    if (r) {
+        memcpy(r, start, len);
+        r[len] = '\0';
+    }
     return r;
 }
 

@@ -12,7 +12,13 @@ void buf_write(Buffer *b, const char *s) {
     int slen = (int)strlen(s);
     if (b->len + slen >= b->cap) {
         b->cap = (b->len + slen + 1) * 2;
-        b->data = (char *)realloc(b->data, b->cap);
+        char *new_data = (char *)realloc(b->data, b->cap);
+        if (!new_data) {
+            /* Realloc failed - buffer remains unchanged but null-terminated */
+            if (b->data) b->data[b->len] = '\0';
+            return;
+        }
+        b->data = new_data;
     }
     memcpy(b->data + b->len, s, slen);
     b->len += slen;
@@ -2293,7 +2299,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     write_indent(buf, indent + 1);
                     scope_define(cg->scope, node->for_stmt.var, LP_VAL);
                     /* For OpenMP threads, the loop variable must be explicitly declared locally to be private */
-                    buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(__lp_p_iter_%d, __lp_p_i_%d);\n", node->for_stmt.var, cur_loop, cur_loop);
+                    buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(__lp_p_iter_%d, __lp_i_%d);\n", node->for_stmt.var, cur_loop, cur_loop);
                 } else {
                     /* Emit OpenMP parallel for pragma */
                     write_indent(buf, indent);
