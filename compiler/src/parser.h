@@ -3,6 +3,7 @@
 
 #include "lexer.h"
 #include "ast.h"
+#include "lp_memory.h"
 
 typedef struct {
     Lexer lexer;
@@ -10,9 +11,10 @@ typedef struct {
     Token previous;
     int had_error;
     char error_msg[512];
+    LpArena *arena;
 } Parser;
 
-void parser_init(Parser *p, const char *source);
+void parser_init(Parser *p, const char *source, LpArena *arena);
 AstNode *parser_parse(Parser *p);  /* Returns NODE_PROGRAM */
 
 #endif
