@@ -267,6 +267,27 @@ a >>= n
 # Parallel for loop (requires OpenMP)
 parallel for i in range(1000000):
     process_item(i)
+
+# Parallel for with range parameters
+parallel for i in range(0, 100, 5):
+    print(i)
+```
+
+**Generated C Code:**
+```c
+#pragma omp parallel for
+for (int64_t lp_i = 0; lp_i < 1000000; lp_i++) {
+    process_item(lp_i);
+}
+```
+
+**Compilation:**
+```bash
+# Generate C code
+lp file.lp -o file.c
+
+# Compile with OpenMP
+gcc -O3 -fopenmp file.c -o file -lm
 ```
 
 ---
@@ -554,12 +575,97 @@ lp export file.lp --library -o mylib
 
 ## Coming Soon (Roadmap)
 
-1. **HTTP POST** - Full HTTP method support
-2. **Dictionary comprehensions** - Similar to list comprehensions
-3. **Generators** - `yield` keyword implementation
-4. **Better error messages** - More descriptive compiler errors
-5. **Package manager** - Dependency management
-6. **Standard library expansion** - More modules and utilities
+1. **GPU Acceleration** - CUDA/OpenCL support via `@settings(device="gpu")`
+2. **Parallel Settings** - Fine-grained control: `@settings(threads=8, schedule="dynamic")`
+3. **Automatic Parallelization** - Compiler auto-detects parallelizable loops
+4. **Distributed Computing** - Multi-node parallel execution
+5. **Better error messages** - More descriptive compiler errors
+6. **Package manager** - Dependency management
+7. **Standard library expansion** - More modules and utilities
+
+---
+
+## Potential Future Features
+
+The following features are planned or being considered for future releases:
+
+### High Priority
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **GPU Computing** | CUDA/OpenCL kernel generation | Runtime ready, compiler integration planned |
+| **Parallel Reductions** | Built-in parallel sum, min, max | Runtime ready |
+| **Async/Await** | Asynchronous programming | Planned |
+| **Pattern Matching** | `match/case` statements | Planned |
+| **F-Strings** | Formatted string literals | Planned |
+| **Decorators** | Function decorators | Planned |
+
+### Medium Priority
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **Generic Types** | Type parameters for classes | Planned |
+| **Type Unions** | `int \| str` type annotations | Planned |
+| **Exception Types** | Custom exception classes | Planned |
+| **Iterator Protocol** | `__iter__`, `__next__` methods | Planned |
+| **Context Managers** | `__enter__`, `__exit__` methods | Planned |
+| **Operator Overloading** | `__add__`, `__sub__`, etc. | Planned |
+
+### Low Priority / Experimental
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **Metaclasses** | Advanced OOP features | Exploring |
+| **Macros** | Compile-time code generation | Exploring |
+| **Contracts** | Design by contract | Exploring |
+| **Effect System** | Track side effects | Exploring |
+| **Linear Types** | Resource management | Exploring |
+
+### Parallel Computing Features
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **OpenMP Integration** | `parallel for` loops | ✅ Implemented |
+| **Thread Management** | `parallel.threads()`, `parallel.cores()` | ✅ Runtime ready |
+| **Parallel Algorithms** | Parallel sort, reduce, scan | Runtime ready |
+| **GPU Detection** | `gpu.is_available()`, `gpu.device_name()` | ✅ Runtime ready |
+| **GPU Memory** | Unified memory allocation | Runtime ready |
+| **GPU Kernels** | Auto-generate CUDA/OpenCL | Planned |
+| **Distributed Computing** | Multi-node execution | Exploring |
+
+### Module Extensions
+
+| Module | New Functions | Status |
+|--------|--------------|--------|
+| `http` | PUT, DELETE, PATCH, headers, auth | Planned |
+| `json` | Schema validation, streaming | Planned |
+| `sqlite` | Migrations, ORM-like features | Planned |
+| `numpy` | Matrix operations, FFT, linear algebra | Planned |
+| `thread` | Thread pools, futures, channels | Planned |
+| `parallel` | Reductions, algorithms | Runtime ready |
+| `gpu` | Memory management, kernels | Runtime ready |
+
+---
+
+## Performance Tips
+
+### Parallel Computing
+
+1. **Use appropriate iteration counts** - Parallel overhead is worth it for large loops
+2. **Avoid data dependencies** - Each iteration should be independent
+3. **Use dynamic scheduling** - For uneven workloads: `@settings(schedule="dynamic")`
+4. **Set thread affinity** - Use `OMP_PROC_BIND=true` environment variable
+
+### Memory Management
+
+1. **Use arenas for temporary allocations** - Faster allocation/deallocation
+2. **Prefer pools for fixed-size objects** - Better cache locality
+3. **Minimize allocations in hot loops** - Allocate once, reuse
+
+### String Operations
+
+1. **Use `join()` for concatenation** - More efficient than `+` in loops
+2. **Cache frequently used strings** - Avoid repeated allocations
 
 ---
 
