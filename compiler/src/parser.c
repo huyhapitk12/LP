@@ -1156,6 +1156,228 @@ static AstNode *parse_settings_pragma(Parser *p) {
     return n;
 }
 
+/* Parse @security pragma - assumes '@' has already been consumed */
+static AstNode *parse_security_pragma(Parser *p) {
+    int line = p->current.line;
+    expect(p, TOK_SECURITY, "expected 'security' after '@'");
+    
+    AstNode *n = ast_new(NODE_SECURITY, line);
+    
+    /* Initialize with defaults */
+    n->security.enabled = 1;
+    n->security.level = 2;              /* medium by default */
+    n->security.require_auth = 0;
+    n->security.auth_type = NULL;
+    n->security.rate_limit = 0;         /* no limit by default */
+    n->security.validate_input = 1;
+    n->security.sanitize_output = 1;
+    n->security.prevent_injection = 1;
+    n->security.prevent_xss = 1;
+    n->security.prevent_csrf = 0;
+    n->security.enable_cors = 0;
+    n->security.cors_origins = NULL;
+    n->security.secure_headers = 1;
+    n->security.encrypt_data = 0;
+    n->security.hash_algorithm = NULL;
+    n->security.access_level = 1;       /* user by default */
+    n->security.readonly = 0;
+    
+    /* Parse optional parentheses with security settings */
+    if (match(p, TOK_LPAREN)) {
+        while (!check(p, TOK_RPAREN) && !p->had_error) {
+            if (check(p, TOK_LEVEL)) {
+                advance(p);
+                expect(p, TOK_ASSIGN, "expected '=' after 'level'");
+                if (check(p, TOK_INT_LIT)) {
+                    n->security.level = (int)p->current.int_val;
+                    if (n->security.level > 4) n->security.level = 4;
+                    if (n->security.level < 0) n->security.level = 0;
+                    advance(p);
+                } else if (check(p, TOK_STRING_LIT)) {
+                    char *lvl = tok_to_str(p->previous);
+                    advance(p);
+                    if (strcmp(lvl, "none") == 0) n->security.level = 0;
+                    else if (strcmp(lvl, "low") == 0) n->security.level = 1;
+                    else if (strcmp(lvl, "medium") == 0) n->security.level = 2;
+                    else if (strcmp(lvl, "high") == 0) n->security.level = 3;
+                    else if (strcmp(lvl, "critical") == 0) n->security.level = 4;
+                    free(lvl);
+                }
+            } else if (check(p, TOK_AUTH)) {
+                advance(p);
+                n->security.require_auth = 1;
+                if (match(p, TOK_ASSIGN)) {
+                    if (check(p, TOK_STRING_LIT)) {
+                        n->security.auth_type = tok_to_str(p->previous);
+                        advance(p);
+                    }
+                }
+            } else if (check(p, TOK_RATE)) {
+                advance(p);
+                expect(p, TOK_LIMIT, "expected 'limit' after 'rate'");
+                expect(p, TOK_ASSIGN, "expected '=' after 'limit'");
+                if (check(p, TOK_INT_LIT)) {
+                    n->security.rate_limit = (int)p->current.int_val;
+                    advance(p);
+                }
+            } else if (check(p, TOK_LIMIT)) {
+                advance(p);
+                expect(p, TOK_ASSIGN, "expected '=' after 'limit'");
+                if (check(p, TOK_INT_LIT)) {
+                    n->security.rate_limit = (int)p->current.int_val;
+                    advance(p);
+                }
+            } else if (check(p, TOK_VALIDATE)) {
+                advance(p);
+                n->security.validate_input = 1;
+                if (match(p, TOK_ASSIGN)) {
+                    if (check(p, TOK_TRUE)) { n->security.validate_input = 1; advance(p); }
+                    else if (check(p, TOK_FALSE)) { n->security.validate_input = 0; advance(p); }
+                }
+            } else if (check(p, TOK_SANITIZE)) {
+                advance(p);
+                n->security.sanitize_output = 1;
+                if (match(p, TOK_ASSIGN)) {
+                    if (check(p, TOK_TRUE)) { n->security.sanitize_output = 1; advance(p); }
+                    else if (check(p, TOK_FALSE)) { n->security.sanitize_output = 0; advance(p); }
+                }
+            } else if (check(p, TOK_INJECTION)) {
+                advance(p);
+                n->security.prevent_injection = 1;
+                if (match(p, TOK_ASSIGN)) {
+                    if (check(p, TOK_TRUE)) { n->security.prevent_injection = 1; advance(p); }
+                    else if (check(p, TOK_FALSE)) { n->security.prevent_injection = 0; advance(p); }
+                }
+            } else if (check(p, TOK_XSS)) {
+                advance(p);
+                n->security.prevent_xss = 1;
+                if (match(p, TOK_ASSIGN)) {
+                    if (check(p, TOK_TRUE)) { n->security.prevent_xss = 1; advance(p); }
+                    else if (check(p, TOK_FALSE)) { n->security.prevent_xss = 0; advance(p); }
+                }
+            } else if (check(p, TOK_CSRF)) {
+                advance(p);
+                n->security.prevent_csrf = 1;
+                if (match(p, TOK_ASSIGN)) {
+                    if (check(p, TOK_TRUE)) { n->security.prevent_csrf = 1; advance(p); }
+                    else if (check(p, TOK_FALSE)) { n->security.prevent_csrf = 0; advance(p); }
+                }
+            } else if (check(p, TOK_CORS)) {
+                advance(p);
+                n->security.enable_cors = 1;
+                if (match(p, TOK_ASSIGN)) {
+                    if (check(p, TOK_STRING_LIT)) {
+                        n->security.cors_origins = tok_to_str(p->previous);
+                        advance(p);
+                    } else if (check(p, TOK_TRUE)) { 
+                        n->security.enable_cors = 1; 
+                        advance(p); 
+                    } else if (check(p, TOK_FALSE)) { 
+                        n->security.enable_cors = 0; 
+                        advance(p); 
+                    }
+                }
+            } else if (check(p, TOK_HEADERS)) {
+                advance(p);
+                n->security.secure_headers = 1;
+                if (match(p, TOK_ASSIGN)) {
+                    if (check(p, TOK_TRUE)) { n->security.secure_headers = 1; advance(p); }
+                    else if (check(p, TOK_FALSE)) { n->security.secure_headers = 0; advance(p); }
+                }
+            } else if (check(p, TOK_ENCRYPT)) {
+                advance(p);
+                n->security.encrypt_data = 1;
+                if (match(p, TOK_ASSIGN)) {
+                    if (check(p, TOK_TRUE)) { n->security.encrypt_data = 1; advance(p); }
+                    else if (check(p, TOK_FALSE)) { n->security.encrypt_data = 0; advance(p); }
+                }
+            } else if (check(p, TOK_HASH)) {
+                advance(p);
+                if (match(p, TOK_ASSIGN)) {
+                    if (check(p, TOK_STRING_LIT)) {
+                        n->security.hash_algorithm = tok_to_str(p->previous);
+                        advance(p);
+                    }
+                }
+            } else if (check(p, TOK_READONLY)) {
+                advance(p);
+                n->security.readonly = 1;
+            } else if (check(p, TOK_WRITE)) {
+                advance(p);
+                n->security.readonly = 0;
+            } else if (check(p, TOK_ADMIN)) {
+                advance(p);
+                n->security.access_level = 2;
+            } else if (check(p, TOK_USER)) {
+                advance(p);
+                n->security.access_level = 1;
+            } else if (check(p, TOK_GUEST)) {
+                advance(p);
+                n->security.access_level = 0;
+            } else if (check(p, TOK_IDENTIFIER)) {
+                /* Generic keyword argument: name = value */
+                char *key = tok_to_str(p->current);
+                advance(p);
+                if (match(p, TOK_ASSIGN)) {
+                    if (check(p, TOK_INT_LIT)) {
+                        int val = (int)p->current.int_val;
+                        if (strcmp(key, "level") == 0) n->security.level = val;
+                        else if (strcmp(key, "rate_limit") == 0 || strcmp(key, "limit") == 0) n->security.rate_limit = val;
+                        else if (strcmp(key, "access_level") == 0) n->security.access_level = val;
+                        advance(p);
+                    } else if (check(p, TOK_STRING_LIT)) {
+                        char *val = tok_to_str(p->previous);
+                        advance(p);
+                        if (strcmp(key, "auth_type") == 0) n->security.auth_type = val;
+                        else if (strcmp(key, "hash") == 0 || strcmp(key, "hash_algorithm") == 0) n->security.hash_algorithm = val;
+                        else if (strcmp(key, "cors_origins") == 0) n->security.cors_origins = val;
+                        else if (strcmp(key, "level") == 0) {
+                            if (strcmp(val, "none") == 0) n->security.level = 0;
+                            else if (strcmp(val, "low") == 0) n->security.level = 1;
+                            else if (strcmp(val, "medium") == 0) n->security.level = 2;
+                            else if (strcmp(val, "high") == 0) n->security.level = 3;
+                            else if (strcmp(val, "critical") == 0) n->security.level = 4;
+                            free(val);
+                        } else {
+                            free(val);
+                        }
+                    } else if (check(p, TOK_TRUE)) {
+                        if (strcmp(key, "auth") == 0) n->security.require_auth = 1;
+                        else if (strcmp(key, "validate") == 0) n->security.validate_input = 1;
+                        else if (strcmp(key, "sanitize") == 0) n->security.sanitize_output = 1;
+                        else if (strcmp(key, "injection") == 0) n->security.prevent_injection = 1;
+                        else if (strcmp(key, "xss") == 0) n->security.prevent_xss = 1;
+                        else if (strcmp(key, "csrf") == 0) n->security.prevent_csrf = 1;
+                        else if (strcmp(key, "cors") == 0) n->security.enable_cors = 1;
+                        else if (strcmp(key, "headers") == 0) n->security.secure_headers = 1;
+                        else if (strcmp(key, "encrypt") == 0) n->security.encrypt_data = 1;
+                        else if (strcmp(key, "readonly") == 0) n->security.readonly = 1;
+                        advance(p);
+                    } else if (check(p, TOK_FALSE)) {
+                        if (strcmp(key, "auth") == 0) n->security.require_auth = 0;
+                        else if (strcmp(key, "validate") == 0) n->security.validate_input = 0;
+                        else if (strcmp(key, "sanitize") == 0) n->security.sanitize_output = 0;
+                        else if (strcmp(key, "injection") == 0) n->security.prevent_injection = 0;
+                        else if (strcmp(key, "xss") == 0) n->security.prevent_xss = 0;
+                        else if (strcmp(key, "csrf") == 0) n->security.prevent_csrf = 0;
+                        else if (strcmp(key, "cors") == 0) n->security.enable_cors = 0;
+                        else if (strcmp(key, "headers") == 0) n->security.secure_headers = 0;
+                        else if (strcmp(key, "encrypt") == 0) n->security.encrypt_data = 0;
+                        else if (strcmp(key, "readonly") == 0) n->security.readonly = 0;
+                        advance(p);
+                    }
+                }
+                free(key);
+            }
+            
+            if (!match(p, TOK_COMMA)) break;
+        }
+        expect(p, TOK_RPAREN, "expected ')' after security settings");
+    }
+    
+    return n;
+}
+
 static AstNode *parse_while_stmt(Parser *p) {
     int line = p->current.line;
     advance(p); /* consume 'while' */
@@ -1517,6 +1739,12 @@ static AstNode *parse_statement(Parser *p) {
             AstNode *settings = parse_settings_pragma(p);
             if (settings) {
                 node_list_push(&decorators, settings);
+            }
+        } else if (check(p, TOK_SECURITY)) {
+            /* Parse security pragma - for input validation and access control */
+            AstNode *security = parse_security_pragma(p);
+            if (security) {
+                node_list_push(&decorators, security);
             }
         } else {
             /* Regular decorator: @decorator or @decorator(args) */

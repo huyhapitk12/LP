@@ -20,6 +20,8 @@ typedef enum {
     NODE_PARALLEL_FOR,
     /* Settings/Pragma */
     NODE_SETTINGS, NODE_PARALLEL_SETTINGS,
+    /* Security/Pragma */
+    NODE_SECURITY,
     /* Pattern Matching */
     NODE_MATCH, NODE_MATCH_CASE,
     /* Async/Await */
@@ -138,6 +140,26 @@ struct AstNode {
             int unified_memory;       /* Use unified memory for GPU */
             int async_transfer;       /* Enable async memory transfer */
         } settings;
+        /* Security/Pragma for input validation and access control */
+        struct {
+            int enabled;              /* Enable security checks */
+            int level;                /* Security level: 0=none, 1=low, 2=medium, 3=high, 4=critical */
+            int require_auth;         /* Require authentication */
+            char *auth_type;          /* Auth type: "basic", "bearer", "api_key", "oauth" */
+            int rate_limit;           /* Rate limit: max requests per minute */
+            int validate_input;       /* Enable input validation */
+            int sanitize_output;      /* Enable output sanitization */
+            int prevent_injection;    /* Prevent SQL/command injection */
+            int prevent_xss;          /* Prevent XSS attacks */
+            int prevent_csrf;         /* Prevent CSRF attacks */
+            int enable_cors;          /* Enable CORS headers */
+            char *cors_origins;       /* Allowed CORS origins */
+            int secure_headers;       /* Enable security headers */
+            int encrypt_data;         /* Enable data encryption */
+            char *hash_algorithm;     /* Hash algorithm: "md5", "sha256", "sha512" */
+            int access_level;         /* Access level: 0=guest, 1=user, 2=admin, 3=super */
+            int readonly;             /* Read-only access mode */
+        } security;
         /* Pattern Matching: match value: case pattern: body */
         struct {
             AstNode *value;           /* The value being matched */
