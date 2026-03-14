@@ -51,6 +51,7 @@ Primary source files:
 | `12_Examples_Cookbook.md` | Cookbook | Everyone | Guided walkthroughs of `examples/`. |
 | `13_Troubleshooting.md` | Troubleshooting | Everyone | Fast fixes for setup, compiler, and tooling errors. |
 | `14_Language_Reference.md` | Reference | Everyone | Compact syntax, builtins, runtime surface, CLI summary. |
+| `15_Parallel_Computing.md` | Tutorial + Reference | Intermediate to advanced | OpenMP integration, GPU computing, parallel algorithms. |
 | `guide_vi.md` | Tutorial | Vietnamese readers | Fast onboarding in Vietnamese. |
 
 ## Learning Paths
@@ -85,11 +86,12 @@ Read in this order:
 
 1. `01_Installation_and_Setup.md`
 2. `07_Concurrency_and_Parallelism.md`
-3. `08_Runtime_Modules.md`
-4. `09_CLI_and_Tooling.md`
-5. `10_Build_Distribution_and_Cross_Targets.md`
-6. `11_C_API_Export.md`
-7. `14_Language_Reference.md`
+3. `15_Parallel_Computing.md`
+4. `08_Runtime_Modules.md`
+5. `09_CLI_and_Tooling.md`
+6. `10_Build_Distribution_and_Cross_Targets.md`
+7. `11_C_API_Export.md`
+8. `14_Language_Reference.md`
 
 ## Coverage Status
 
