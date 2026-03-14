@@ -15,23 +15,24 @@ BUILD_DIR := build
 SQLITE_OBJ := runtime/sqlite3.o
 
 SRCS := $(SRC_DIR)/main.c \
-        $(SRC_DIR)/lexer.c \
-        $(SRC_DIR)/ast.c \
-        $(SRC_DIR)/parser.c \
-        $(SRC_DIR)/codegen.c \
-        $(SRC_DIR)/repl.c \
-        $(SRC_DIR)/process_utils.c
+	$(SRC_DIR)/lexer.c \
+	$(SRC_DIR)/ast.c \
+	$(SRC_DIR)/parser.c \
+	$(SRC_DIR)/codegen.c \
+	$(SRC_DIR)/codegen_asm.c \
+	$(SRC_DIR)/repl.c \
+	$(SRC_DIR)/process_utils.c
 
 TARGET := $(BUILD_DIR)/lp
 
 # Windows detection
 ifeq ($(OS),Windows_NT)
-    TARGET := $(BUILD_DIR)/lp.exe
-    MKDIR  := if not exist "$(BUILD_DIR)" mkdir "$(BUILD_DIR)"
-    EXE_EXT := .exe
+	TARGET := $(BUILD_DIR)/lp.exe
+	MKDIR  := if not exist "$(BUILD_DIR)" mkdir "$(BUILD_DIR)"
+	EXE_EXT := .exe
 else
-    MKDIR  := mkdir -p $(BUILD_DIR)
-    EXE_EXT :=
+	MKDIR  := mkdir -p $(BUILD_DIR)
+	EXE_EXT :=
 endif
 
 # Default target
