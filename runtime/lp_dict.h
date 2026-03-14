@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <inttypes.h>
 
 #define LP_DICT_INITIAL_CAPACITY 16
 #define LP_DICT_LOAD_FACTOR 0.75
@@ -85,17 +86,27 @@ static inline uint32_t lp_hash(const char* key) {
 
 static inline LpDict* lp_dict_new(void) {
     LpDict *d = (LpDict*)malloc(sizeof(LpDict));
+    if (!d) return NULL;
     d->capacity = LP_DICT_INITIAL_CAPACITY;
     d->count = 0;
     d->entries = (LpDictEntry*)calloc(d->capacity, sizeof(LpDictEntry));
+    if (!d->entries) {
+        free(d);
+        return NULL;
+    }
     return d;
 }
 
 static inline LpList* lp_list_new(void) {
     LpList *l = (LpList*)malloc(sizeof(LpList));
+    if (!l) return NULL;
     l->cap = 8;
     l->len = 0;
     l->items = (LpVal*)malloc(sizeof(LpVal) * l->cap);
+    if (!l->items) {
+        free(l);
+        return NULL;
+    }
     return l;
 }
 
@@ -113,6 +124,7 @@ static inline void lp_list_free(LpList *l) {
 }
 
 static inline void lp_list_append(LpList *l, LpVal value) {
+    if (!l || !l->items) return;
     if (l->len >= l->cap) {
         int64_t new_cap = l->cap * 2;
         if (new_cap == 0) new_cap = 8;  /* Initial capacity */
@@ -124,6 +136,7 @@ static inline void lp_list_append(LpList *l, LpVal value) {
     if (value.type == LP_VAL_STRING) {
         LpVal vcopy = value;
         vcopy.as.s = strdup(value.as.s);
+        if (!vcopy.as.s) return; /* strdup failed */
         l->items[l->len++] = vcopy;
     } else {
         l->items[l->len++] = value; /* Deep copy for dict/list isn't done yet, assume ownership transfer or shared */
@@ -168,6 +181,7 @@ static inline void lp_dict_resize(LpDict *d, int64_t new_capacity) {
 }
 
 static inline void lp_dict_set(LpDict *d, const char *key, LpVal value) {
+    if (!d || !d->entries || !key) return;
     if (d->count >= d->capacity * LP_DICT_LOAD_FACTOR) {
         lp_dict_resize(d, d->capacity * 2);
     }
@@ -182,6 +196,7 @@ static inline void lp_dict_set(LpDict *d, const char *key, LpVal value) {
             if (value.type == LP_VAL_STRING) {
                 LpVal vcopy = value;
                 vcopy.as.s = strdup(value.as.s);
+                if (!vcopy.as.s) return; /* strdup failed */
                 d->entries[index].value = vcopy;
             } else {
                 d->entries[index].value = value;
@@ -191,10 +206,17 @@ static inline void lp_dict_set(LpDict *d, const char *key, LpVal value) {
         index = (index + 1) % d->capacity;
     }
 
-    d->entries[index].key = strdup(key);
+    char *key_copy = strdup(key);
+    if (!key_copy) return; /* strdup failed */
+    d->entries[index].key = key_copy;
     if (value.type == LP_VAL_STRING) {
         LpVal vcopy = value;
         vcopy.as.s = strdup(value.as.s);
+        if (!vcopy.as.s) {
+            free(key_copy);
+            d->entries[index].key = NULL;
+            return; /* strdup failed */
+        }
         d->entries[index].value = vcopy;
     } else {
         d->entries[index].value = value;
@@ -204,6 +226,7 @@ static inline void lp_dict_set(LpDict *d, const char *key, LpVal value) {
 }
 
 static inline LpVal lp_dict_get(LpDict *d, const char *key) {
+    if (!d || !d->entries || !key) return lp_val_null();
     uint32_t index = lp_hash(key) % d->capacity;
     uint32_t start_index = index;
 
@@ -218,6 +241,7 @@ static inline LpVal lp_dict_get(LpDict *d, const char *key) {
 }
 
 static inline int lp_dict_contains(LpDict *d, const char *key) {
+    if (!d || !d->entries || !key) return 0;
     uint32_t index = lp_hash(key) % d->capacity;
     uint32_t start_index = index;
 
@@ -234,6 +258,7 @@ static inline int lp_dict_contains(LpDict *d, const char *key) {
 static inline void lp_list_print(LpList *l);
 
 static inline void lp_dict_print(LpDict *d) {
+    if (!d || !d->entries) { printf("{}"); return; }
     printf("{");
     int first = 1;
     for (int64_t i = 0; i < d->capacity; i++) {
@@ -241,7 +266,7 @@ static inline void lp_dict_print(LpDict *d) {
             if (!first) printf(", ");
             printf("\"%s\": ", d->entries[i].key);
             switch (d->entries[i].value.type) {
-                case LP_VAL_INT: printf("%lld", (long long)d->entries[i].value.as.i); break;
+                case LP_VAL_INT: printf("%" PRId64, d->entries[i].value.as.i); break;
                 case LP_VAL_FLOAT: printf("%f", d->entries[i].value.as.f); break;
                 case LP_VAL_STRING: printf("\"%s\"", d->entries[i].value.as.s); break;
                 case LP_VAL_BOOL: printf(d->entries[i].value.as.b ? "True" : "False"); break;
@@ -256,11 +281,12 @@ static inline void lp_dict_print(LpDict *d) {
 }
 
 static inline void lp_list_print(LpList *l) {
+    if (!l || !l->items) { printf("[]"); return; }
     printf("[");
     for (int64_t i = 0; i < l->len; i++) {
         if (i > 0) printf(", ");
         switch (l->items[i].type) {
-            case LP_VAL_INT: printf("%lld", (long long)l->items[i].as.i); break;
+            case LP_VAL_INT: printf("%" PRId64, l->items[i].as.i); break;
             case LP_VAL_FLOAT: printf("%f", l->items[i].as.f); break;
             case LP_VAL_STRING: printf("\"%s\"", l->items[i].as.s); break;
             case LP_VAL_BOOL: printf(l->items[i].as.b ? "True" : "False"); break;
@@ -274,7 +300,7 @@ static inline void lp_list_print(LpList *l) {
 
 /* Merge another dict into this one (for **kwargs unpacking) */
 static inline void lp_dict_merge(LpDict *dst, LpDict *src) {
-    if (!src) return;
+    if (!dst || !src || !src->entries) return;
     for (int64_t i = 0; i < src->capacity; i++) {
         if (src->entries[i].is_occupied) {
             lp_dict_set(dst, src->entries[i].key, src->entries[i].value);
