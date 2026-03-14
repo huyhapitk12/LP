@@ -66,10 +66,16 @@ def main():
 main()
 ```
 
-Chay:
+Chay (Native ASM - khong can GCC!):
 
 ```bash
 lp hello.lp
+```
+
+Chay voi GCC backend:
+
+```bash
+lp hello.lp --gcc
 ```
 
 Sinh C:
@@ -82,6 +88,65 @@ Compile ra executable:
 
 ```bash
 lp hello.lp -c hello.exe
+```
+
+## Compilation Backends
+
+### Native Assembly Backend (Mac dinh)
+
+LP bien dich truc tiep sang assembly ma khong can GCC/LLVM:
+
+```bash
+lp file.lp              # Native compilation (default)
+```
+
+**Uu diem:**
+- Khong can heavy compiler dependencies (~5MB thay vi ~1GB)
+- Compilation nhanh
+- Control truct tiep generated code
+
+### GCC Backend (Tuy chon)
+
+De su dung GCC backend:
+
+```bash
+lp file.lp --gcc        # Use GCC backend
+```
+
+## Optimizations
+
+LP tu dong ap dung cac optimizations sau:
+
+### Constant Folding
+
+Evaluate constant expressions tai compile time:
+
+```lp
+# Truoc optimization
+x: int = 1 + 2 * 3
+
+# Sau optimization (compile-time)
+x: int = 7
+```
+
+### Dead Code Elimination
+
+Loai bo unreachable code:
+
+```lp
+if False:
+    # Doan code nay bi loai bo
+    print("Never executed")
+```
+
+### Loop Unrolling
+
+Unroll small loops cho performance tot hon:
+
+```lp
+# Small constant loops duoc unroll
+for i in range(4):
+    print(i)
 ```
 
 ## Cu phap co ban
@@ -119,6 +184,54 @@ else:
 
 for i in range(5):
     print(i)
+```
+
+### F-Strings
+
+```lp
+name = "LP"
+version = 1
+greeting = f"Hello from {name} v{version}!"
+print(greeting)  # Output: Hello from LP v1!
+
+# Bieu thuc trong f-string
+x = 10
+y = 20
+print(f"Sum: {x + y}")  # Output: Sum: 30
+```
+
+### Pattern Matching (match/case)
+
+```lp
+match value:
+    case 1:
+        print("one")
+    case 2:
+        print("two")
+    case _:
+        print("other")
+
+# Voi guard expression
+match x:
+    case n if n > 0:
+        print("positive")
+    case _:
+        print("non-positive")
+```
+
+### Decorators
+
+```lp
+# Settings decorator cho parallel execution
+@settings(threads=4)
+def parallel_task():
+    print("Running with 4 threads")
+
+# Multiple decorators
+@decorator1
+@decorator2
+def func():
+    pass
 ```
 
 ### Class va ke thua

@@ -46,6 +46,156 @@ static AstNode *parse_expression(Parser *p);
 static AstNode *parse_statement(Parser *p);
 static void parse_block(Parser *p, NodeList *body);
 
+/* --- Type annotation parsing (supports unions: int | str and generics: Box[int]) --- */
+static char *parse_type_annotation(Parser *p) {
+    /* Parse a type annotation, which can be a single type, a union of types, or a generic type.
+     * Examples: int, str, int | str, Box[int], dict[str, int]
+     * Returns a string with types (e.g., "int|str|float" or "Box[int]" or "dict[str,int]")
+     */
+    if (!check(p, TOK_IDENTIFIER)) {
+        error(p, "expected type identifier");
+        return NULL;
+    }
+    
+    /* Start with the first type */
+    char *first_type = tok_to_str(p->current);
+    advance(p);
+    
+    /* Check for generic type arguments: Box[int] or dict[str, int] */
+    if (check(p, TOK_LBRACKET)) {
+        /* Build a generic type string: Base[type1, type2, ...] */
+        size_t capacity = strlen(first_type) + 64;
+        char *result = (char *)malloc(capacity);
+        if (!result) {
+            free(first_type);
+            return NULL;
+        }
+        size_t len = 0;
+        
+        /* Copy base type */
+        size_t base_len = strlen(first_type);
+        memcpy(result, first_type, base_len);
+        len = base_len;
+        free(first_type);
+        
+        /* Add opening bracket */
+        result[len++] = '[';
+        result[len] = '\0';
+        
+        advance(p); /* consume '[' */
+        
+        /* Parse type arguments */
+        int first_arg = 1;
+        while (!check(p, TOK_RBRACKET) && !p->had_error) {
+            if (!first_arg) {
+                expect(p, TOK_COMMA, "expected ',' between type arguments");
+                if (len + 1 >= capacity) {
+                    capacity = len + 64;
+                    char *new_result = (char *)realloc(result, capacity);
+                    if (!new_result) break;
+                    result = new_result;
+                }
+                result[len++] = ',';
+                result[len] = '\0';
+            }
+            first_arg = 0;
+            
+            /* Parse the type argument (could be another generic) */
+            char *arg_type = parse_type_annotation(p);
+            if (arg_type) {
+                size_t arg_len = strlen(arg_type);
+                if (len + arg_len + 1 >= capacity) {
+                    capacity = len + arg_len + 64;
+                    char *new_result = (char *)realloc(result, capacity);
+                    if (!new_result) {
+                        free(arg_type);
+                        break;
+                    }
+                    result = new_result;
+                }
+                memcpy(result + len, arg_type, arg_len + 1);
+                len += arg_len;
+                free(arg_type);
+            }
+        }
+        
+        expect(p, TOK_RBRACKET, "expected ']' after type arguments");
+        
+        /* Add closing bracket */
+        if (len + 1 >= capacity) {
+            capacity = len + 2;
+            char *new_result = (char *)realloc(result, capacity);
+            if (new_result) result = new_result;
+        }
+        result[len++] = ']';
+        result[len] = '\0';
+        
+        return result;
+    }
+    
+    /* Check for union types */
+    if (check(p, TOK_BIT_OR)) {
+        /* Build a union type string */
+        size_t capacity = 64;
+        char *result = (char *)malloc(capacity);
+        if (!result) {
+            free(first_type);
+            return NULL;
+        }
+        size_t len = 0;
+        
+        /* Copy first type */
+        size_t first_len = strlen(first_type);
+        if (first_len >= capacity) {
+            capacity = first_len + 64;
+            char *new_result = (char *)realloc(result, capacity);
+            if (!new_result) {
+                free(result);
+                free(first_type);
+                return NULL;
+            }
+            result = new_result;
+        }
+        memcpy(result, first_type, first_len + 1);
+        len = first_len;
+        free(first_type);
+        
+        /* Parse additional types in the union */
+        while (match(p, TOK_BIT_OR)) {
+            /* Skip optional whitespace (already handled by lexer) */
+            if (!check(p, TOK_IDENTIFIER)) {
+                error(p, "expected type identifier after '|'");
+                break;
+            }
+            char *next_type = tok_to_str(p->current);
+            advance(p);
+            
+            size_t next_len = strlen(next_type);
+            size_t needed = len + 1 + next_len + 1; /* |type\0 */
+            
+            if (needed > capacity) {
+                capacity = needed * 2;
+                char *new_result = (char *)realloc(result, capacity);
+                if (!new_result) {
+                    free(next_type);
+                    break;
+                }
+                result = new_result;
+            }
+            
+            result[len++] = '|';
+            memcpy(result + len, next_type, next_len + 1);
+            len += next_len;
+            free(next_type);
+        }
+        
+        return result;
+    } else {
+        /* Single type, just return it */
+        return first_type;
+    }
+}
+
 /* --- Expression parsing (precedence climbing) --- */
 
 static AstNode *parse_primary(Parser *p) {
@@ -65,6 +215,108 @@ static AstNode *parse_primary(Parser *p) {
     if (match(p, TOK_STRING_LIT)) {
         AstNode *n = ast_new(NODE_STRING_LIT, line);
         n->str_lit.value = tok_to_str(p->previous);
+        return n;
+    }
+    if (match(p, TOK_FSTRING_LIT)) {
+        /* Parse f-string: f"Hello {name}!" 
+         * The lexer returns the content without f and quotes.
+         * We need to parse {expr} inside and create alternating string/expr parts.
+         */
+        AstNode *n = ast_new(NODE_FSTRING, line);
+        node_list_init(&n->fstring_expr.parts);
+        
+        /* Get the raw f-string content */
+        char *content = tok_to_str(p->previous);
+        char *ptr = content;
+        char *start = content;
+        
+        while (*ptr) {
+            if (*ptr == '{') {
+                /* Save string part before { */
+                if (ptr > start) {
+                    AstNode *str_part = ast_new(NODE_STRING_LIT, line);
+                    size_t len = ptr - start;
+                    str_part->str_lit.value = (char *)malloc(len + 1);
+                    memcpy(str_part->str_lit.value, start, len);
+                    str_part->str_lit.value[len] = '\0';
+                    node_list_push(&n->fstring_expr.parts, str_part);
+                }
+                
+                /* Skip { */
+                ptr++;
+                start = ptr;
+                
+                /* Handle {{ as escaped { */
+                if (*ptr == '{') {
+                    ptr++;
+                    start = ptr;
+                    continue;
+                }
+                
+                /* Find closing } */
+                int brace_count = 1;
+                while (*ptr && brace_count > 0) {
+                    if (*ptr == '{') brace_count++;
+                    else if (*ptr == '}') brace_count--;
+                    if (brace_count > 0) ptr++;
+                }
+                
+                if (*ptr == '}') {
+                    /* Extract expression */
+                    size_t len = ptr - start;
+                    char *expr_str = (char *)malloc(len + 1);
+                    memcpy(expr_str, start, len);
+                    expr_str[len] = '\0';
+                    
+                    /* Parse the expression */
+                    Parser sub_parser;
+                    parser_init(&sub_parser, expr_str);
+                    AstNode *expr = parse_expression(&sub_parser);
+                    free(expr_str);
+                    
+                    if (expr && !sub_parser.had_error) {
+                        node_list_push(&n->fstring_expr.parts, expr);
+                    } else {
+                        /* Add None if parsing failed */
+                        node_list_push(&n->fstring_expr.parts, ast_new(NODE_NONE_LIT, line));
+                    }
+                    
+                    ptr++;
+                    start = ptr;
+                }
+            } else if (*ptr == '}') {
+                /* Handle }} as escaped } */
+                if (*(ptr + 1) == '}') {
+                    /* Save string part before }} */
+                    if (ptr > start) {
+                        AstNode *str_part = ast_new(NODE_STRING_LIT, line);
+                        size_t len = ptr - start;
+                        str_part->str_lit.value = (char *)malloc(len + 1);
+                        memcpy(str_part->str_lit.value, start, len);
+                        str_part->str_lit.value[len] = '\0';
+                        node_list_push(&n->fstring_expr.parts, str_part);
+                    }
+                    ptr += 2;
+                    start = ptr;
+                } else {
+                    ptr++;
+                }
+            } else {
+                ptr++;
+            }
+        }
+        
+        /* Save remaining string part */
+        if (ptr > start) {
+            AstNode *str_part = ast_new(NODE_STRING_LIT, line);
+            size_t len = ptr - start;
+            str_part->str_lit.value = (char *)malloc(len + 1);
+            memcpy(str_part->str_lit.value, start, len);
+            str_part->str_lit.value[len] = '\0';
+            node_list_push(&n->fstring_expr.parts, str_part);
+        }
+        
+        free(content);
         return n;
     }
     if (match(p, TOK_TRUE) || match(p, TOK_FALSE)) {
@@ -232,11 +484,17 @@ static AstNode *parse_primary(Parser *p) {
         }
         return n;
     }
+    /* Await expression */
+    if (match(p, TOK_AWAIT)) {
+        AstNode *n = ast_new(NODE_AWAIT_EXPR, line);
+        n->await_expr.expr = parse_expression(p);
+        return n;
+    }
     error(p, "expected expression");
     return ast_new(NODE_NONE_LIT, line);
 }
 
-/* Parse postfix: calls, subscripts, attributes */
+/* Parse postfix: calls, subscripts, attributes, and generic instantiation */
 static AstNode *parse_postfix(Parser *p) {
     AstNode *expr = parse_primary(p);
     while (!p->had_error) {
@@ -282,6 +540,130 @@ static AstNode *parse_postfix(Parser *p) {
             expect(p, TOK_RPAREN, "expected ')'");
             expr = call;
         } else if (match(p, TOK_LBRACKET)) {
+            /* Check for generic instantiation: Name[Type1, Type2, ...]()
+             * We detect this by looking ahead: if we see identifiers followed by comma or ],
+             * and then a '(' for a call, it's a generic instantiation.
+             */
+            if (expr->type == NODE_NAME && check(p, TOK_IDENTIFIER)) {
+                /* Look ahead to see if this is a generic type argument list */
+                /* Save parser state */
+                Token saved_current = p->current;
+                Token saved_previous = p->previous;
+                
+                /* Try to parse as type arguments */
+                int is_generic = 1;
+                advance(p); /* consume first identifier */
+                
+                while (match(p, TOK_COMMA)) {
+                    if (!check(p, TOK_IDENTIFIER)) {
+                        is_generic = 0;
+                        break;
+                    }
+                    advance(p);
+                }
+                
+                if (check(p, TOK_RBRACKET)) {
+                    /* This could be a generic type instantiation */
+                    advance(p); /* consume ']' */
+                    
+                    if (check(p, TOK_LPAREN)) {
+                        /* This IS a generic instantiation followed by a call! */
+                        AstNode *gen_inst = ast_new(NODE_GENERIC_INST, line);
+                        gen_inst->generic_inst.base_name = expr->name_expr.name;
+                        node_list_init(&gen_inst->generic_inst.type_args);
+                        
+                        /* Now we need to re-parse the type arguments properly */
+                        /* Reset and re-parse */
+                        p->current = saved_current;
+                        p->previous = saved_previous;
+                        advance(p); /* consume '[' */
+                        
+                        do {
+                            expect(p, TOK_IDENTIFIER, "expected type argument");
+                            AstNode *type_arg = ast_new(NODE_NAME, p->previous.line);
+                            type_arg->name_expr.name = tok_to_str(p->previous);
+                            node_list_push(&gen_inst->generic_inst.type_args, type_arg);
+                        } while (match(p, TOK_COMMA));
+                        
+                        expect(p, TOK_RBRACKET, "expected ']'");
+                        
+                        /* Now parse the call */
+                        expect(p, TOK_LPAREN, "expected '(' after generic instantiation");
+                        
+                        AstNode *call = ast_new(NODE_CALL, line);
+                        call->call.func = gen_inst;
+                        node_list_init(&call->call.args);
+                        cap = 4;
+                        call->call.is_unpacked_list = (int*)malloc(cap * sizeof(int));
+                        call->call.is_unpacked_dict = (int*)malloc(cap * sizeof(int));
+                        
+                        if (!check(p, TOK_RPAREN)) {
+                            do {
+                                int is_list = 0;
+                                int is_dict = 0;
+                                if (match(p, TOK_STAR)) {
+                                    is_list = 1;
+                                } else if (match(p, TOK_DSTAR)) {
+                                    is_dict = 1;
+                                }
+                                
+                                if (call->call.args.count >= cap) {
+                                    cap *= 2;
+                                    call->call.is_unpacked_list = (int*)realloc(call->call.is_unpacked_list, cap * sizeof(int));
+                                    call->call.is_unpacked_dict = (int*)realloc(call->call.is_unpacked_dict, cap * sizeof(int));
+                                }
+                                
+                                call->call.is_unpacked_list[call->call.args.count] = is_list;
+                                call->call.is_unpacked_dict[call->call.args.count] = is_dict;
+                                AstNode *arg_expr = parse_expression(p);
+                                if (arg_expr->type == NODE_NAME && match(p, TOK_ASSIGN)) {
+                                    AstNode *kw = ast_new(NODE_KWARG, arg_expr->line);
+                                    kw->kwarg.name = arg_expr->name_expr.name;
+                                    kw->kwarg.value = parse_expression(p);
+                                    arg_expr = kw;
+                                }
+                                node_list_push(&call->call.args, arg_expr);
+                            } while (match(p, TOK_COMMA) && !check(p, TOK_RPAREN));
+                        }
+                        expect(p, TOK_RPAREN, "expected ')'");
+                        
+                        /* Free the original name expression since we took ownership of the name */
+                        free(expr);
+                        expr = call;
+                        continue;
+                    } else {
+                        /* Just a generic type reference (like in a type annotation context) */
+                        /* Create a NODE_GENERIC_INST but don't call it */
+                        AstNode *gen_inst = ast_new(NODE_GENERIC_INST, line);
+                        gen_inst->generic_inst.base_name = expr->name_expr.name;
+                        node_list_init(&gen_inst->generic_inst.type_args);
+                        
+                        /* Re-parse the type arguments */
+                        p->current = saved_current;
+                        p->previous = saved_previous;
+                        advance(p); /* consume '[' */
+                        
+                        do {
+                            expect(p, TOK_IDENTIFIER, "expected type argument");
+                            AstNode *type_arg = ast_new(NODE_NAME, p->previous.line);
+                            type_arg->name_expr.name = tok_to_str(p->previous);
+                            node_list_push(&gen_inst->generic_inst.type_args, type_arg);
+                        } while (match(p, TOK_COMMA));
+                        
+                        expect(p, TOK_RBRACKET, "expected ']'");
+                        
+                        free(expr);
+                        expr = gen_inst;
+                        continue;
+                    }
+                } else {
+                    /* Not a generic type list, restore and parse as subscript */
+                    p->current = saved_current;
+                    p->previous = saved_previous;
+                }
+            }
+            
+            /* Parse as regular subscript */
             AstNode *sub = ast_new(NODE_SUBSCRIPT, line);
             sub->subscript.obj = expr;
             sub->subscript.index = parse_expression(p);
@@ -423,18 +805,33 @@ static AstNode *parse_bit_or(Parser *p) {
     return left;
 }
 
-/* Comparison: ==, !=, <, >, <=, >= */
+/* Comparison: ==, !=, <, >, <=, >=, is */
 static AstNode *parse_comparison(Parser *p) {
     AstNode *left = parse_bit_or(p);
     while (check(p, TOK_EQ) || check(p, TOK_NEQ) || check(p, TOK_LT) ||
-           check(p, TOK_GT) || check(p, TOK_LTE) || check(p, TOK_GTE)) {
+           check(p, TOK_GT) || check(p, TOK_LTE) || check(p, TOK_GTE) ||
+           check(p, TOK_IS)) {
         int line = p->current.line;
         TokenType op = p->current.type;
         advance(p);
         AstNode *n = ast_new(NODE_BIN_OP, line);
         n->bin_op.left = left;
         n->bin_op.op = op;
-        n->bin_op.right = parse_add(p);
+        /* For 'is' operator, parse the type name (identifier) */
+        if (op == TOK_IS) {
+            /* Expect a type name (identifier) after 'is' */
+            if (check(p, TOK_IDENTIFIER)) {
+                AstNode *type_name = ast_new(NODE_NAME, line);
+                type_name->name_expr.name = tok_to_str(p->current);
+                advance(p);
+                n->bin_op.right = type_name;
+            } else {
+                error(p, "expected type name after 'is'");
+                n->bin_op.right = ast_new(NODE_NONE_LIT, line);
+            }
+        } else {
+            n->bin_op.right = parse_add(p);
+        }
         left = n;
     }
     return left;
@@ -505,6 +902,7 @@ static AstNode *parse_func_def(Parser *p) {
     n->func_def.name = tok_to_str(p->previous);
     param_list_init(&n->func_def.params);
     node_list_init(&n->func_def.body);
+    node_list_init(&n->func_def.decorators);
     n->func_def.ret_type = NULL;
     n->func_def.access = 0;
 
@@ -525,8 +923,7 @@ static AstNode *parse_func_def(Parser *p) {
             param.name = tok_to_str(p->previous);
             param.type_ann = NULL;
             if (match(p, TOK_COLON)) {
-                expect(p, TOK_IDENTIFIER, "expected type");
-                param.type_ann = tok_to_str(p->previous);
+                param.type_ann = parse_type_annotation(p);
             }
             /* Skip default value: = expr */
             if (match(p, TOK_ASSIGN)) {
@@ -538,8 +935,7 @@ static AstNode *parse_func_def(Parser *p) {
     expect(p, TOK_RPAREN, "expected ')'");
 
     if (match(p, TOK_ARROW)) {
-        expect(p, TOK_IDENTIFIER, "expected return type");
-        n->func_def.ret_type = tok_to_str(p->previous);
+        n->func_def.ret_type = parse_type_annotation(p);
     }
     expect(p, TOK_COLON, "expected ':'");
     parse_block(p, &n->func_def.body);
@@ -554,7 +950,19 @@ static AstNode *parse_class_def(Parser *p) {
     AstNode *n = ast_new(NODE_CLASS_DEF, line);
     n->class_def.name = tok_to_str(p->previous);
     n->class_def.base_class = NULL;
+    type_param_list_init(&n->class_def.type_params);
     node_list_init(&n->class_def.body);
+
+    /* Parse generic type parameters: class Name[T, U] */
+    if (match(p, TOK_LBRACKET)) {
+        do {
+            expect(p, TOK_IDENTIFIER, "expected type parameter name");
+            TypeParam tp;
+            tp.name = tok_to_str(p->previous);
+            type_param_list_push(&n->class_def.type_params, tp);
+        } while (match(p, TOK_COMMA));
+        expect(p, TOK_RBRACKET, "expected ']' after type parameters");
+    }
 
     if (match(p, TOK_LPAREN)) {
         expect(p, TOK_IDENTIFIER, "expected base class name");
@@ -625,10 +1033,9 @@ static AstNode *parse_parallel_for_stmt(Parser *p) {
     return n;
 }
 
-/* Parse @settings pragma */
+/* Parse @settings pragma - assumes '@' has already been consumed */
 static AstNode *parse_settings_pragma(Parser *p) {
     int line = p->current.line;
-    advance(p); /* consume '@' */
     expect(p, TOK_SETTINGS, "expected 'settings' after '@'");
     
     AstNode *n = ast_new(NODE_SETTINGS, line);
@@ -911,6 +1318,71 @@ static AstNode *parse_raise_stmt(Parser *p) {
     return n;
 }
 
+/* Parse match statement: match value: case pattern: body ... */
+static AstNode *parse_match_stmt(Parser *p) {
+    int line = p->current.line;
+    advance(p); /* consume 'match' */
+    
+    AstNode *n = ast_new(NODE_MATCH, line);
+    n->match_stmt.value = parse_expression(p);
+    node_list_init(&n->match_stmt.cases);
+    
+    expect(p, TOK_COLON, "expected ':' after match value");
+    expect(p, TOK_NEWLINE, "expected newline before match cases");
+    skip_newlines(p);
+    expect(p, TOK_INDENT, "expected indented block for match cases");
+    
+    while (!check(p, TOK_DEDENT) && !check(p, TOK_EOF) && !p->had_error) {
+        skip_newlines(p);
+        if (check(p, TOK_DEDENT) || check(p, TOK_EOF)) break;
+        
+        /* Must be a case */
+        if (!match(p, TOK_CASE)) {
+            error(p, "expected 'case' in match statement");
+            break;
+        }
+        
+        AstNode *case_node = ast_new(NODE_MATCH_CASE, p->previous.line);
+        node_list_init(&case_node->match_case.body);
+        case_node->match_case.guard = NULL;
+        case_node->match_case.is_wildcard = 0;
+        
+        /* Parse pattern: could be literal, identifier (for capture), or _ for wildcard */
+        if (match(p, TOK_IDENTIFIER)) {
+            char *pattern_name = tok_to_str(p->previous);
+            if (strcmp(pattern_name, "_") == 0) {
+                case_node->match_case.is_wildcard = 1;
+                case_node->match_case.pattern = NULL;
+            } else {
+                /* It's a capture variable - we'll treat it as a name expression */
+                case_node->match_case.pattern = ast_new(NODE_NAME, p->previous.line);
+                case_node->match_case.pattern->name_expr.name = pattern_name;
+            }
+        } else if (check(p, TOK_INT_LIT) || check(p, TOK_FLOAT_LIT) || 
+                   check(p, TOK_STRING_LIT) || check(p, TOK_TRUE) || 
+                   check(p, TOK_FALSE) || check(p, TOK_NONE)) {
+            /* Literal pattern */
+            case_node->match_case.pattern = parse_primary(p);
+        } else {
+            error(p, "expected pattern in case clause");
+            case_node->match_case.pattern = ast_new(NODE_NONE_LIT, line);
+        }
+        
+        /* Optional guard: if condition */
+        if (match(p, TOK_IF)) {
+            case_node->match_case.guard = parse_expression(p);
+        }
+        
+        expect(p, TOK_COLON, "expected ':' after case pattern");
+        parse_block(p, &case_node->match_case.body);
+        
+        node_list_push(&n->match_stmt.cases, case_node);
+    }
+    
+    if (check(p, TOK_DEDENT)) advance(p);
+    return n;
+}
+
 /* Assignment or expression statement */
 static AstNode *parse_assign_or_expr(Parser *p) {
     int line = p->current.line;
@@ -1033,20 +1505,28 @@ static AstNode *parse_statement(Parser *p) {
     skip_newlines(p);
     if (p->had_error || check(p, TOK_EOF)) return NULL;
 
-    /* Check for @settings pragma decorator */
-    AstNode *settings_node = NULL;
-    if (check(p, TOK_AT)) {
-        Token next = p->current;
-        /* Peek ahead to see if it's @settings */
+    /* Collect decorators */
+    NodeList decorators;
+    node_list_init(&decorators);
+    
+    while (check(p, TOK_AT)) {
         advance(p);  /* consume '@' */
+        
+        /* Check for @settings pragma */
         if (check(p, TOK_SETTINGS)) {
-            /* Go back and parse the settings */
-            p->current = next;  /* Restore to '@' */
-            settings_node = parse_settings_pragma(p);
+            /* Parse settings pragma - we'll handle this specially */
+            AstNode *settings = parse_settings_pragma(p);
+            if (settings) {
+                node_list_push(&decorators, settings);
+            }
         } else {
-            /* Not @settings, go back and parse as expression */
-            p->current = next;
+            /* Regular decorator: @decorator or @decorator(args) */
+            AstNode *decorator = parse_expression(p);
+            if (decorator) {
+                node_list_push(&decorators, decorator);
+            }
         }
+        skip_newlines(p);
     }
 
     TokenType access = 0;
@@ -1070,26 +1550,93 @@ static AstNode *parse_statement(Parser *p) {
         case TOK_TRY:       stmt = parse_try_stmt(p); break;
         case TOK_RAISE:     stmt = parse_raise_stmt(p); break;
         case TOK_PARALLEL:  stmt = parse_parallel_for_stmt(p); break;
+        case TOK_MATCH:     stmt = parse_match_stmt(p); break;
         case TOK_PASS:      advance(p); stmt = ast_new(NODE_PASS, p->previous.line); break;
         case TOK_BREAK:     advance(p); stmt = ast_new(NODE_BREAK, p->previous.line); break;
         case TOK_CONTINUE:  advance(p); stmt = ast_new(NODE_CONTINUE, p->previous.line); break;
+        case TOK_ASYNC: {
+            /* async def name(params): body */
+            advance(p); /* consume 'async' */
+            if (!match(p, TOK_DEF)) {
+                error(p, "expected 'def' after 'async'");
+                stmt = NULL;
+            } else {
+                /* Parse async function - similar to regular function but mark as async */
+                int async_line = p->previous.line;
+                expect(p, TOK_IDENTIFIER, "expected function name");
+                
+                AstNode *n = ast_new(NODE_ASYNC_DEF, async_line);
+                n->async_def.name = tok_to_str(p->previous);
+                param_list_init(&n->async_def.params);
+                node_list_init(&n->async_def.body);
+                node_list_init(&n->async_def.decorators);
+                n->async_def.ret_type = NULL;
+                n->async_def.access = access;
+                
+                expect(p, TOK_LPAREN, "expected '('");
+                if (!check(p, TOK_RPAREN)) {
+                    do {
+                        Param param;
+                        param.is_vararg = 0;
+                        param.is_kwarg = 0;
+                        
+                        if (match(p, TOK_STAR)) {
+                            param.is_vararg = 1;
+                        } else if (match(p, TOK_DSTAR)) {
+                            param.is_kwarg = 1;
+                        }
+                        
+                        expect(p, TOK_IDENTIFIER, "expected parameter name");
+                        param.name = tok_to_str(p->previous);
+                        param.type_ann = NULL;
+                        if (match(p, TOK_COLON)) {
+                            param.type_ann = parse_type_annotation(p);
+                        }
+                        /* Skip default value: = expr */
+                        if (match(p, TOK_ASSIGN)) {
+                            parse_expression(p); /* discard default for now */
+                        }
+                        param_list_push(&n->async_def.params, param);
+                    } while (match(p, TOK_COMMA));
+                }
+                expect(p, TOK_RPAREN, "expected ')'");
+                
+                if (match(p, TOK_ARROW)) {
+                    n->async_def.ret_type = parse_type_annotation(p);
+                }
+                expect(p, TOK_COLON, "expected ':'");
+                parse_block(p, &n->async_def.body);
+                
+                /* Attach decorators */
+                if (decorators.count > 0) {
+                    n->async_def.decorators = decorators;
+                }
+                
+                stmt = n;
+            }
+            break;
+        }
         default:            stmt = parse_assign_or_expr(p); break;
     }
 
-    /* Attach settings to the statement if present */
-    if (settings_node && stmt) {
-        if (stmt->type == NODE_PARALLEL_FOR) {
-            /* For parallel for, attach settings to modify behavior */
-            /* Store settings in a wrapper or as metadata */
-            /* For now, we'll just pass through - the codegen will handle it */
+    /* Attach decorators to function definition */
+    if (stmt && stmt->type == NODE_FUNC_DEF && decorators.count > 0) {
+        stmt->func_def.decorators = decorators;
+    } else if (stmt && stmt->type == NODE_ASYNC_DEF && decorators.count > 0) {
+        stmt->async_def.decorators = decorators;
+    } else if (decorators.count > 0) {
+        /* Decorators on non-function statements - for now, just free them */
+        for (int i = 0; i < decorators.count; i++) {
+            ast_free(decorators.items[i]);
         }
-        /* Free settings node as we've captured its values */
-        /* In a more complete implementation, we'd attach it to the statement */
+        free(decorators.items);
     }
 
     if (stmt) {
         if (stmt->type == NODE_FUNC_DEF) {
             stmt->func_def.access = access;
+        } else if (stmt->type == NODE_ASYNC_DEF) {
+            stmt->async_def.access = access;
         } else if (stmt->type == NODE_ASSIGN) {
             stmt->assign.access = access;
         } else if (access != 0) {

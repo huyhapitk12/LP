@@ -9,11 +9,12 @@ This document provides a comprehensive overview of LP language features, their i
 
 | Category | Fully Supported | Partial | Not Yet |
 |----------|----------------|---------|---------|
-| Core Syntax | 18+ | 2 | 2 |
+| Core Syntax | 21+ | 2 | 3 |
 | Runtime Modules | 12 | 0 | 0 |
 | Operators | 20+ | 0 | 0 |
 | CLI Tools | 10 | 0 | 1 |
 | Optimizations | 3 | 0 | 0 |
+| Modern Features | 3 | 0 | 0 |
 
 ## Compilation Backends
 
@@ -460,15 +461,6 @@ def counter(n):
 
 ### ❌ Not Supported Yet
 
-#### Decorators
-
-```lp
-# ❌ Not supported
-@decorator
-def func():
-    pass
-```
-
 #### Async/Await
 
 ```lp
@@ -476,17 +468,6 @@ def func():
 async def fetch():
     result = await http.get(url)
     return result
-```
-
-#### Pattern Matching
-
-```lp
-# ❌ Not supported
-match value:
-    case 1:
-        print("one")
-    case _:
-        print("other")
 ```
 
 #### Type Unions
@@ -505,17 +486,62 @@ class Box[T]:
     value: T
 ```
 
+---
+
+### ✅ Newly Added Features (v0.3.0)
+
+These features were recently added and are now fully supported:
+
 #### F-Strings
 
 ```lp
-# ❌ Not supported
+# ✅ Now supported!
 name = "LP"
-print(f"Hello {name}")  # Syntax error
+version = 1
+greeting = f"Hello from {name} v{version}!"
+print(greeting)  # Output: Hello from LP v1!
 
-# ✅ Workaround
-name = "LP"
-print("Hello " + name)
-print("Hello " + str(name))
+# Expressions in f-strings
+x = 10
+y = 20
+print(f"Sum: {x + y}")  # Output: Sum: 30
+```
+
+#### Pattern Matching (match/case)
+
+```lp
+# ✅ Now supported!
+match value:
+    case 1:
+        print("one")
+    case 2:
+        print("two")
+    case _:
+        print("other")
+
+# With guard expressions
+match x:
+    case n if n > 0:
+        print("positive")
+    case n if n < 0:
+        print("negative")
+    case _:
+        print("zero")
+```
+
+#### Decorators
+
+```lp
+# ✅ Now supported!
+@settings(threads=4)
+def parallel_task():
+    print("Running with 4 threads")
+
+# Multiple decorators
+@decorator1
+@decorator2
+def func():
+    pass
 ```
 
 ---
