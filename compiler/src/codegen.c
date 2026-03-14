@@ -2364,6 +2364,8 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
             break;
         case NODE_PARALLEL_FOR: {
             /* Generate OpenMP parallel for with optional settings */
+            cg->uses_parallel = 1;  /* Mark that we use OpenMP */
+            
             /* Check if this parallel_for has extended settings */
             int num_threads = 0;
             const char *schedule = "static";
@@ -2944,6 +2946,8 @@ void codegen_init(CodeGen *cg) {
     cg->uses_thread = 0;
     cg->uses_memory = 0;
     cg->uses_platform = 0;
+    cg->uses_parallel = 0;
+    cg->uses_gpu = 0;
     cg->thread_adapter_count = 0;
 }
 void codegen_generate(CodeGen *cg, AstNode *program) {
