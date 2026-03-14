@@ -82,37 +82,101 @@ lp your_program.lp -o your_program.c
 
 The LP compiler automatically adds `-fopenmp` when it detects parallel loops.
 
-## Parallel Settings (Future Feature)
+## Parallel Settings with @settings Decorator
 
-LP will support fine-grained control over parallel execution through the `@settings` decorator:
+LP provides fine-grained control over parallel execution through the `@settings` decorator:
+
+### Basic Usage
 
 ```lp
-# Set number of threads
+# Configure thread count
 @settings(threads=8)
-parallel for i in range(1000):
-    process(i)
+def parallel_process(data: list) -> list:
+    results = []
+    parallel for i in range(len(data)):
+        results.append(process(data[i]))
+    return results
 
-# Set scheduling policy
-@settings(schedule="dynamic", chunk=100)
-parallel for i in range(10000):
-    process(i)
+# Set scheduling policy and chunk size
+@settings(threads=4, schedule="dynamic", chunk=100)
+def process_large_dataset(data: list) -> int:
+    count = 0
+    parallel for item in data:
+        count += item
+    return count
 
 # GPU execution
-@settings(device="gpu")
-parallel for i in range(1000000):
-    compute(i)
+@settings(device="gpu", gpu_id=0)
+def gpu_compute(n: int) -> int:
+    result = 0
+    parallel for i in range(n):
+        result += i * i
+    return result
+
+# Auto device selection (GPU if available, otherwise CPU)
+@settings(device="auto")
+def auto_parallel(n: int) -> int:
+    result = 0
+    parallel for i in range(n):
+        result += i
+    return result
+
+# Unified memory for GPU (seamless CPU/GPU data sharing)
+@settings(device="gpu", unified=True)
+def unified_memory_compute(size: int) -> list:
+    results = []
+    parallel for i in range(size):
+        results.append(i)
+    return results
 ```
 
 ### Available Settings
 
-| Setting | Type | Description |
-|---------|------|-------------|
-| `threads` | int | Number of threads (0 = auto) |
-| `schedule` | string | Scheduling policy: "static", "dynamic", "guided", "auto" |
-| `chunk` | int | Chunk size for scheduling |
-| `device` | string | Execution device: "cpu", "gpu", "auto" |
-| `gpu_id` | int | GPU device ID |
-| `unified` | bool | Use unified memory for GPU |
+| Setting | Type | Description | Default |
+|---------|------|-------------|---------|
+| `threads` | int | Number of threads (0 = auto) | 0 (auto) |
+| `schedule` | string | Scheduling policy: "static", "dynamic", "guided", "auto" | "static" |
+| `chunk` | int | Chunk size for scheduling | 0 (auto) |
+| `device` | string | Execution device: "cpu", "gpu", "auto" | "cpu" |
+| `gpu_id` | int | GPU device ID | 0 |
+| `unified` | bool | Use unified memory for GPU | false |
+
+### Scheduling Policies
+
+- **static**: Divide work evenly across threads (default, best for uniform workloads)
+- **dynamic**: Work in chunks assigned on-demand (best for uneven workloads)
+- **guided**: Decreasing chunk sizes (hybrid approach)
+- **auto**: Let OpenMP runtime decide
+
+### Generated C Code
+
+When you use `@settings`, LP generates appropriate OpenMP pragmas:
+
+```lp
+@settings(threads=4, schedule="dynamic", chunk=100)
+def process(data: list) -> int:
+    result = 0
+    parallel for item in data:
+        result += item
+    return result
+```
+
+Generates:
+
+```c
+void lp_process(LpArray data) {
+    /* === PARALLEL/GPU SETTINGS === */
+    lp_parallel_set_threads(4);
+    lp_parallel_configure(4, "dynamic", 100, 0, 0);
+    /* === END PARALLEL/GPU SETTINGS === */
+    
+    int64_t result = 0;
+    #pragma omp parallel for num_threads(4) schedule(dynamic, 100)
+    for (int64_t i = 0; i < data.len; i++) {
+        result += data.items[i];
+    }
+}
+```
 
 ## Runtime Functions
 
@@ -163,7 +227,7 @@ minimum: int = parallel.min(data)
 
 ## GPU Computing
 
-LP includes GPU abstraction for future CUDA/OpenCL support:
+LP includes GPU abstraction for CUDA/OpenCL support:
 
 ### GPU Detection
 
@@ -178,12 +242,55 @@ else:
     print("No GPU available, using CPU")
 ```
 
-### GPU Execution (Planned)
+### GPU Execution with @settings
 
 ```lp
-@settings(device="gpu", threads=256)
-parallel for i in range(1000000):
-    result[i] = compute(data[i])
+# Use specific GPU device
+@settings(device="gpu", gpu_id=0)
+def gpu_compute(n: int) -> int:
+    result = 0
+    parallel for i in range(n):
+        result += i * i
+    return result
+
+# Auto-select best device (GPU if available)
+@settings(device="auto")
+def auto_device_compute(data: list) -> list:
+    results = []
+    parallel for item in data:
+        results.append(process(item))
+    return results
+
+# Unified memory for seamless CPU/GPU data sharing
+@settings(device="gpu", unified=True)
+def unified_compute(data: list) -> list:
+    results = []
+    parallel for i in range(len(data)):
+        results.append(data[i] * 2)
+    return results
+```
+
+### GPU Runtime Functions
+
+The `lp_gpu.h` module provides GPU management:
+
+```lp
+import gpu
+
+# Get device count
+num_gpus: int = gpu.device_count()
+
+# Get device info
+device = gpu.get_device(0)
+print("Name:", device.name)
+print("Memory:", device.total_memory)
+print("Compute Units:", device.compute_units)
+
+# Select device
+gpu.select_device(0)
+
+# Synchronize (wait for GPU operations to complete)
+gpu.sync()
 ```
 
 ## Best Practices
@@ -274,7 +381,10 @@ OMP_NUM_THREADS=8 ./program
 
 ## Future Roadmap
 
-- **GPU Kernel Generation**: Automatic CUDA/OpenCL code generation
-- **Distributed Computing**: Multi-node parallel execution
-- **Automatic Parallelization**: Compiler auto-detects parallelizable loops
-- **Parallel Algorithms**: Built-in parallel sort, reduce, scan, etc.
+- ✅ **@settings Decorator**: Fine-grained parallel/GPU control (implemented)
+- ✅ **GPU Device Selection**: Select GPU device with `device="gpu"` (implemented)
+- ✅ **Scheduling Policies**: Static, dynamic, guided, auto (implemented)
+- 🔧 **GPU Kernel Generation**: Automatic CUDA/OpenCL code generation (in progress)
+- 🔧 **Distributed Computing**: Multi-node parallel execution (planned)
+- 🔧 **Automatic Parallelization**: Compiler auto-detects parallelizable loops (planned)
+- 🔧 **Parallel Algorithms**: Built-in parallel sort, reduce, scan, etc. (planned)
