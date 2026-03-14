@@ -26,6 +26,7 @@
 #else
 #include <dirent.h>
 #include <unistd.h>
+#include <sys/wait.h>
 #endif
 /* We need Sleep() but can't include <windows.h> due to TokenType conflict */
 #ifdef _WIN32
@@ -993,6 +994,11 @@ int main(int argc, char **argv) {
         asm_codegen_free(&acg);
         ast_free(program);
         free(source);
+#ifndef _WIN32
+        if (WIFEXITED(ret)) {
+            return WEXITSTATUS(ret);
+        }
+#endif
         return ret;
     }
 

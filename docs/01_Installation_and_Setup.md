@@ -14,9 +14,17 @@ This guide shows how to build the LP compiler on Windows, Linux, and macOS, how 
 LP is a compiler front-end plus runtime headers.
 
 - The compiler executable is built from `compiler/src/*.c`.
-- LP source is translated to C.
-- A host C compiler then builds the final native executable.
+- **Default: LP compiles directly to x86-64 assembly** (no GCC/LLVM required!)
+- **Optional: LP can generate C code** and use a host C compiler for maximum compatibility.
 - Runtime headers are loaded from the repository `runtime/` directory at compile time.
+
+### Compilation Backends
+
+| Backend | Command | Dependencies | Use Case |
+|---------|---------|--------------|----------|
+| **Native ASM** (default) | `lp file.lp` | binutils (~5MB) | Fast, lightweight |
+| **GCC C** | `lp file.lp --gcc` | GCC (~500MB) | Maximum optimization |
+| **C output** | `lp file.lp -o out.c` | Any C compiler | Portability |
 
 In the rest of the docs, `lp` means one of these:
 

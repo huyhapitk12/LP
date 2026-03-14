@@ -7,6 +7,7 @@
 
 #define _GNU_SOURCE
 #include "codegen_asm.h"
+#include "asm_optimize.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
@@ -531,6 +532,24 @@ static void asm_gen_expr(AsmCodeGen *gen, AstNode *node) {
             break;
         }
 
+        case NODE_FSTRING: {
+            /* F-string: for assembly, we need to call a runtime function to concatenate parts */
+            /* This is a simplified implementation - just emit a comment for now */
+            asm_emit(gen, "    # F-string with %d parts\n", node->fstring_expr.parts.count);
+            /* Generate each part and call string concat */
+            for (int i = 0; i < node->fstring_expr.parts.count; i++) {
+                asm_gen_expr(gen, node->fstring_expr.parts.items[i]);
+                asm_emit(gen, "    pushq %%rax\n");
+            }
+            /* Pop and concatenate (simplified - just return last part) */
+            if (node->fstring_expr.parts.count > 0) {
+                for (int i = 0; i < node->fstring_expr.parts.count; i++) {
+                    asm_emit(gen, "    popq %%rax\n");
+                }
+            }
+            break;
+        }
+
         case NODE_NAME: {
             VarInfo *vi = asm_lookup_var(gen, node->name_expr.name);
             if (vi) {
@@ -957,6 +976,62 @@ static void asm_gen_stmt_list(AsmCodeGen *gen, NodeList *list) {
                 break;
             }
 
+            case NODE_MATCH: {
+                /* Match statement: generate as if-else chain */
+                /* Store match value in a register */
+                asm_gen_expr(gen, node->match_stmt.value);
+                asm_emit(gen, "    pushq %%rax\n");  /* Save match value on stack */
+                
+                char end_label[32];
+                asm_new_label(gen, end_label, sizeof(end_label));
+                
+                int first_case = 1;
+                for (int i = 0; i < node->match_stmt.cases.count; i++) {
+                    AstNode *case_node = node->match_stmt.cases.items[i];
+                    char case_label[32], next_label[32];
+                    asm_new_label(gen, case_label, sizeof(case_label));
+                    asm_new_label(gen, next_label, sizeof(next_label));
+                    
+                    if (first_case) {
+                        /* First case - compare directly */
+                        asm_emit(gen, "    popq %%rax\n");  /* Get match value */
+                        asm_emit(gen, "    pushq %%rax\n"); /* Put it back */
+                        
+                        if (!case_node->match_case.is_wildcard && case_node->match_case.pattern) {
+                            asm_gen_expr(gen, case_node->match_case.pattern);
+                            asm_emit(gen, "    popq %%rcx\n");  /* pattern in rcx */
+                            asm_emit(gen, "    pushq %%rcx\n");
+                            asm_emit(gen, "    cmpq %%rax, %%rcx\n");
+                            asm_emit_jcc(gen, I_JNE, next_label);
+                        }
+                        
+                        asm_emit_label(gen, case_label);
+                        asm_gen_stmt_list(gen, &case_node->match_case.body);
+                        asm_emit_jmp(gen, end_label);
+                        asm_emit_label(gen, next_label);
+                    } else {
+                        /* Subsequent cases */
+                        if (!case_node->match_case.is_wildcard && case_node->match_case.pattern) {
+                            asm_emit(gen, "    movq -8(%%rbp), %%rax\n");  /* Get match value */
+                            asm_gen_expr(gen, case_node->match_case.pattern);
+                            asm_emit(gen, "    cmpq %%rax, %%rcx\n");
+                            asm_emit_jcc(gen, I_JNE, next_label);
+                        }
+                        
+                        asm_emit_label(gen, case_label);
+                        asm_gen_stmt_list(gen, &case_node->match_case.body);
+                        asm_emit_jmp(gen, end_label);
+                        asm_emit_label(gen, next_label);
+                    }
+                    
+                    first_case = 0;
+                }
+                
+                asm_emit_label(gen, end_label);
+                asm_emit(gen, "    addq $8, %%rsp\n");  /* Clean up match value */
+                break;
+            }
+
             default:
                 asm_emit(gen, "    # Unhandled stmt type: %d\n", node->type);
                 break;
@@ -1020,6 +1095,15 @@ int asm_generate(AsmCodeGen *gen, AstNode *program) {
         gen->had_error = 1;
         strcpy(gen->error_msg, "Invalid AST: expected NODE_PROGRAM");
         return 0;
+    }
+
+    /* Apply optimizations if enabled */
+    if (gen->opt_level > 0) {
+        int opt_count = asm_optimize_ast(gen, program);
+        if (opt_count > 0) {
+            fprintf(stderr, "[LP ASM] Optimizations applied: %d (folded: %d, dead_code: %d, unrolled: %d)\n",
+                    opt_count, gen->constants_folded, gen->dead_code_removed, gen->loops_unrolled);
+        }
     }
 
     /* File header */

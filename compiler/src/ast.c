@@ -37,6 +37,26 @@ void param_list_push(ParamList *list, Param p) {
     list->items[list->count++] = p;
 }
 
+void type_param_list_init(TypeParamList *list) {
+    list->items = NULL;
+    list->count = 0;
+    list->capacity = 0;
+}
+
+void type_param_list_push(TypeParamList *list, TypeParam p) {
+    if (list->count + 1 > list->capacity) {
+        int new_cap = list->capacity < 8 ? 8 : list->capacity * 2;
+        TypeParam *new_items = (TypeParam *)realloc(list->items, new_cap * sizeof(TypeParam));
+        if (!new_items) {
+            fprintf(stderr, "Fatal error: Out of memory in type_param_list_push\n");
+            exit(1);
+        }
+        list->items = new_items;
+        list->capacity = new_cap;
+    }
+    list->items[list->count++] = p;
+}
+
 AstNode *ast_new(NodeType type, int line) {
     AstNode *n = (AstNode *)calloc(1, sizeof(AstNode));
     n->type = type;
@@ -56,6 +76,10 @@ void ast_free(AstNode *node) {
         case NODE_FUNC_DEF:
             free(node->func_def.name);
             free(node->func_def.ret_type);
+            for (int i = 0; i < node->func_def.type_params.count; i++) {
+                free(node->func_def.type_params.items[i].name);
+            }
+            free(node->func_def.type_params.items);
             for (int i = 0; i < node->func_def.params.count; i++) {
                 free(node->func_def.params.items[i].name);
                 free(node->func_def.params.items[i].type_ann);
@@ -64,9 +88,17 @@ void ast_free(AstNode *node) {
             for (int i = 0; i < node->func_def.body.count; i++)
                 ast_free(node->func_def.body.items[i]);
             free(node->func_def.body.items);
+            for (int i = 0; i < node->func_def.decorators.count; i++)
+                ast_free(node->func_def.decorators.items[i]);
+            free(node->func_def.decorators.items);
             break;
         case NODE_CLASS_DEF:
             free(node->class_def.name);
+            free(node->class_def.base_class);
+            for (int i = 0; i < node->class_def.type_params.count; i++) {
+                free(node->class_def.type_params.items[i].name);
+            }
+            free(node->class_def.type_params.items);
             for (int i = 0; i < node->class_def.body.count; i++)
                 ast_free(node->class_def.body.items[i]);
             free(node->class_def.body.items);
@@ -136,6 +168,11 @@ void ast_free(AstNode *node) {
         case NODE_STRING_LIT:
             free(node->str_lit.value);
             break;
+        case NODE_FSTRING:
+            for (int i = 0; i < node->fstring_expr.parts.count; i++)
+                ast_free(node->fstring_expr.parts.items[i]);
+            free(node->fstring_expr.parts.items);
+            break;
         case NODE_LIST_EXPR:
             for (int i = 0; i < node->list_expr.elems.count; i++)
                 ast_free(node->list_expr.elems.items[i]);
@@ -193,6 +230,33 @@ void ast_free(AstNode *node) {
             break;
         case NODE_RAISE:
             if (node->raise_stmt.exc) ast_free(node->raise_stmt.exc);
+            break;
+        case NODE_MATCH:
+            ast_free(node->match_stmt.value);
+            for (int i = 0; i < node->match_stmt.cases.count; i++)
+                ast_free(node->match_stmt.cases.items[i]);
+            free(node->match_stmt.cases.items);
+            break;
+        case NODE_MATCH_CASE:
+            ast_free(node->match_case.pattern);
+            ast_free(node->match_case.guard);
+            for (int i = 0; i < node->match_case.body.count; i++)
+                ast_free(node->match_case.body.items[i]);
+            free(node->match_case.body.items);
+            break;
+        case NODE_GENERIC_INST:
+            free(node->generic_inst.base_name);
+            for (int i = 0; i < node->generic_inst.type_args.count; i++)
+                ast_free(node->generic_inst.type_args.items[i]);
+            free(node->generic_inst.type_args.items);
+            break;
+        case NODE_TYPE_UNION:
+            if (node->type_union.types) {
+                for (int i = 0; i < node->type_union.count; i++) {
+                    free(node->type_union.types[i]);
+                }
+                free(node->type_union.types);
+            }
             break;
         default:
             break;

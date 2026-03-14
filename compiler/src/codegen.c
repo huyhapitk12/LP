@@ -1,3 +1,5 @@
+/* Enable POSIX functions like strtok_r */
+#define _POSIX_C_SOURCE 200809L
 #include "codegen.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -191,8 +193,50 @@ static void buf_write_c_string_literal(Buffer *buf, const char *s) {
 }
 
 /* --- Type mapping --- */
+/* Helper: check if annotation is a union type (contains '|') */
+static int is_union_type(const char *ann) {
+    if (!ann) return 0;
+    return strchr(ann, '|') != NULL;
+}
+
+/* Helper: check if a type name matches one of the types in a union */
+static int type_matches_union(const char *type_name, const char *union_ann) {
+    if (!type_name || !union_ann) return 0;
+    
+    /* Make a copy to tokenize */
+    char *copy = strdup(union_ann);
+    if (!copy) return 0;
+    
+    char *saveptr;
+    char *token = strtok_r(copy, "|", &saveptr);
+    int found = 0;
+    
+    while (token != NULL) {
+        /* Skip leading/trailing whitespace */
+        while (*token == ' ') token++;
+        char *end = token + strlen(token) - 1;
+        while (end > token && *end == ' ') end--;
+        *(end + 1) = '\0';
+        
+        if (strcmp(token, type_name) == 0) {
+            found = 1;
+            break;
+        }
+        token = strtok_r(NULL, "|", &saveptr);
+    }
+    
+    free(copy);
+    return found;
+}
+
 static LpType type_from_annotation(CodeGen *cg, const char *ann) {
     if (!ann) return LP_UNKNOWN;
+    
+    /* Check for union types: int|str|float -> return LP_VAL (variant type) */
+    if (is_union_type(ann)) {
+        return LP_VAL;
+    }
+    
     if (strcmp(ann, "int") == 0 || strcmp(ann, "i64") == 0) return LP_INT;
     if (strcmp(ann, "float") == 0 || strcmp(ann, "f64") == 0) return LP_FLOAT;
     if (strcmp(ann, "str") == 0) return LP_STRING;
@@ -271,6 +315,7 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
         case NODE_INT_LIT:    return LP_INT;
         case NODE_FLOAT_LIT:  return LP_FLOAT;
         case NODE_STRING_LIT: return LP_STRING;
+        case NODE_FSTRING:    return LP_STRING;  /* F-strings always produce strings */
         case NODE_BOOL_LIT:   return LP_BOOL;
         case NODE_NONE_LIT:   return LP_VOID;
         case NODE_LIST_EXPR:  return LP_LIST;
@@ -286,7 +331,8 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
             LpType rt = infer_type(cg, node->bin_op.right);
             TokenType op = node->bin_op.op;
             if (op == TOK_EQ || op == TOK_NEQ || op == TOK_LT || op == TOK_GT ||
-                op == TOK_LTE || op == TOK_GTE || op == TOK_AND || op == TOK_OR)
+                op == TOK_LTE || op == TOK_GTE || op == TOK_AND || op == TOK_OR ||
+                op == TOK_IS)
                 return LP_BOOL;
             /* String + anything = string concat */
             if (op == TOK_PLUS && (lt == LP_STRING || rt == LP_STRING))
@@ -503,6 +549,12 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
             return LP_INT; /* yield returns the yielded value as int for now */
         case NODE_LAMBDA:
             return LP_INT; /* function pointer stored as int */
+        case NODE_AWAIT_EXPR:
+            /* await expr returns the type of the awaited expression */
+            if (node->await_expr.expr) {
+                return infer_type(cg, node->await_expr.expr);
+            }
+            return LP_UNKNOWN;
         default: return LP_UNKNOWN;
     }
 }
@@ -683,6 +735,57 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
         case NODE_NAME:
             buf_printf(buf, "lp_%s", node->name_expr.name);
             break;
+        case NODE_FSTRING: {
+            /* Generate f-string: concatenate all parts into a string */
+            /* We'll use snprintf with a buffer for each part */
+            NodeList *parts = &node->fstring_expr.parts;
+            if (parts->count == 0) {
+                buf_write(buf, "\"\"");
+                break;
+            }
+            
+            /* Calculate total buffer size needed */
+            buf_write(buf, "({ ");
+            buf_write(buf, "char _fs_buf[4096]; ");
+            buf_write(buf, "int _fs_len = 0; ");
+            
+            for (int i = 0; i < parts->count; i++) {
+                AstNode *part = parts->items[i];
+                if (part->type == NODE_STRING_LIT) {
+                    /* String literal - append directly */
+                    buf_printf(buf, "_fs_len += snprintf(_fs_buf + _fs_len, sizeof(_fs_buf) - _fs_len, \"%s\"); ", 
+                              part->str_lit.value);
+                } else {
+                    /* Expression - convert to string and append */
+                    LpType part_type = infer_type(cg, part);
+                    if (part_type == LP_INT) {
+                        buf_write(buf, "_fs_len += snprintf(_fs_buf + _fs_len, sizeof(_fs_buf) - _fs_len, \"%lld\", (long long)");
+                        gen_expr(cg, buf, part);
+                        buf_write(buf, "); ");
+                    } else if (part_type == LP_FLOAT) {
+                        buf_write(buf, "_fs_len += snprintf(_fs_buf + _fs_len, sizeof(_fs_buf) - _fs_len, \"%g\", ");
+                        gen_expr(cg, buf, part);
+                        buf_write(buf, "); ");
+                    } else if (part_type == LP_STRING) {
+                        buf_write(buf, "_fs_len += snprintf(_fs_buf + _fs_len, sizeof(_fs_buf) - _fs_len, \"%s\", ");
+                        gen_expr(cg, buf, part);
+                        buf_write(buf, "); ");
+                    } else if (part_type == LP_BOOL) {
+                        buf_write(buf, "_fs_len += snprintf(_fs_buf + _fs_len, sizeof(_fs_buf) - _fs_len, \"%s\", ");
+                        gen_expr(cg, buf, part);
+                        buf_write(buf, " ? \"True\" : \"False\"); ");
+                    } else {
+                        /* Default: convert to string representation */
+                        buf_write(buf, "_fs_len += snprintf(_fs_buf + _fs_len, sizeof(_fs_buf) - _fs_len, \"%lld\", (long long)");
+                        gen_expr(cg, buf, part);
+                        buf_write(buf, "); ");
+                    }
+                }
+            }
+            
+            buf_write(buf, "lp_strdup(_fs_buf); })");
+            break;
+        }
         case NODE_LIST_EXPR: {
             NodeList *elems = &node->list_expr.elems;
             if (elems->count == 0) {
@@ -742,6 +845,42 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
         }
         case NODE_BIN_OP: {
             TokenType op = node->bin_op.op;
+            /* Handle 'is' operator for type checking */
+            if (op == TOK_IS) {
+                LpType lt = infer_type(cg, node->bin_op.left);
+                /* For LpVal types, use lp_val_isinstance */
+                if (lt == LP_VAL || lt == LP_DICT || lt == LP_LIST) {
+                    buf_write(buf, "lp_val_isinstance(");
+                    gen_expr(cg, buf, node->bin_op.left);
+                    buf_write(buf, ", ");
+                    /* Get the type name from the right side */
+                    if (node->bin_op.right && node->bin_op.right->type == NODE_NAME) {
+                        buf_write(buf, "\"");
+                        buf_write(buf, node->bin_op.right->name_expr.name);
+                        buf_write(buf, "\"");
+                    } else {
+                        buf_write(buf, "\"unknown\"");
+                    }
+                    buf_write(buf, ")");
+                } else {
+                    /* For native types, compare type sizes or use type inference */
+                    /* 'x is int' for native int64_t always returns true if x is int */
+                    const char *type_name = "";
+                    if (node->bin_op.right && node->bin_op.right->type == NODE_NAME) {
+                        type_name = node->bin_op.right->name_expr.name;
+                    }
+                    if (strcmp(type_name, "int") == 0) {
+                        buf_write(buf, "(1)"); /* Native int is always int */
+                    } else if (strcmp(type_name, "float") == 0) {
+                        buf_write(buf, "(1)"); /* Native float is always float */
+                    } else if (strcmp(type_name, "str") == 0) {
+                        buf_write(buf, "(1)"); /* Native str is always str */
+                    } else {
+                        buf_write(buf, "(0)"); /* Unknown type check */
+                    }
+                }
+                break;
+            }
             if (op == TOK_DSTAR) {
                 LpType lt = infer_type(cg, node->bin_op.left);
                 if (lt == LP_FLOAT) {
@@ -1986,6 +2125,19 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 buf_write(buf, "return 0");
             }
             break;
+        case NODE_AWAIT_EXPR:
+            /* Await expression - synchronous implementation
+             * In this simple approach, await just evaluates the expression directly.
+             * This treats async/await as syntactic sugar for synchronous code.
+             * For true async, a coroutine-based or callback implementation would be needed.
+             */
+            buf_write(buf, "/* await */ ");
+            if (node->await_expr.expr) {
+                gen_expr(cg, buf, node->await_expr.expr);
+            } else {
+                buf_write(buf, "0");
+            }
+            break;
         default:
             buf_write(buf, "/* unknown expr */");
             break;
@@ -2572,6 +2724,71 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
             write_indent(buf, indent);
             buf_write(buf, "continue;\n");
             break;
+        case NODE_MATCH: {
+            /* Generate match statement as a chain of if-else */
+            write_indent(buf, indent);
+            
+            /* Store match value in a temporary variable */
+            buf_write(buf, "{\n");
+            write_indent(buf, indent + 1);
+            buf_write(buf, "__auto_type _match_val = ");
+            gen_expr(cg, buf, node->match_stmt.value);
+            buf_write(buf, ";\n");
+            
+            int first_case = 1;
+            for (int i = 0; i < node->match_stmt.cases.count; i++) {
+                AstNode *case_node = node->match_stmt.cases.items[i];
+                
+                write_indent(buf, indent + 1);
+                if (!first_case) {
+                    buf_write(buf, "} else ");
+                }
+                
+                if (case_node->match_case.is_wildcard) {
+                    /* Wildcard case: matches everything */
+                    buf_write(buf, "{ /* default case */\n");
+                } else {
+                    /* Pattern match: compare value */
+                    buf_write(buf, "if (");
+                    if (case_node->match_case.pattern) {
+                        LpType pattern_type = infer_type(cg, case_node->match_case.pattern);
+                        if (pattern_type == LP_STRING) {
+                            buf_write(buf, "strcmp(_match_val, ");
+                            gen_expr(cg, buf, case_node->match_case.pattern);
+                            buf_write(buf, ") == 0");
+                        } else {
+                            buf_write(buf, "_match_val == ");
+                            gen_expr(cg, buf, case_node->match_case.pattern);
+                        }
+                    }
+                    
+                    /* Add guard if present */
+                    if (case_node->match_case.guard) {
+                        buf_write(buf, " && (");
+                        gen_expr(cg, buf, case_node->match_case.guard);
+                        buf_write(buf, ")");
+                    }
+                    buf_write(buf, ") {\n");
+                }
+                
+                /* Generate case body */
+                for (int j = 0; j < case_node->match_case.body.count; j++) {
+                    gen_stmt(cg, buf, case_node->match_case.body.items[j], indent + 2);
+                }
+                
+                first_case = 0;
+            }
+            
+            /* Close the last if block */
+            if (node->match_stmt.cases.count > 0) {
+                write_indent(buf, indent + 1);
+                buf_write(buf, "}\n");
+            }
+            
+            write_indent(buf, indent);
+            buf_write(buf, "}\n");
+            break;
+        }
         default:
             write_indent(buf, indent);
             buf_write(buf, "/* unknown statement */\n");
@@ -2798,6 +3015,121 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
     cg->scope = func_scope->parent;
     scope_free(func_scope);
 }
+
+/* Generate async function definition - simplified synchronous implementation
+ * Async functions are generated as regular C functions.
+ * The 'async' keyword serves as syntactic sugar for documentation/annotation purposes.
+ * 'await' expressions inside async functions simply evaluate synchronously.
+ * 
+ * Future enhancement: Could generate coroutine-based code with:
+ * - State machine for suspension points
+ * - Promise/Future return types
+ * - Event loop integration
+ */
+static void gen_async_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
+    Symbol *func_sym = scope_lookup(cg->scope, node->async_def.name);
+    LpType ret;
+
+    if (!func_sym) {
+        func_sym = scope_define(cg->scope, node->async_def.name, LP_VOID);
+    }
+    
+    /* Populate function symbol similar to regular functions */
+    if (func_sym) {
+        /* Infer return type from body or annotation */
+        if (node->async_def.ret_type) {
+            func_sym->type = type_from_annotation(cg, node->async_def.ret_type);
+        } else {
+            Scope *temp_scope = scope_new(cg->scope);
+            cg->scope = temp_scope;
+            for (int i = 0; i < node->async_def.params.count; i++) {
+                Param *p = &node->async_def.params.items[i];
+                LpType pt = type_from_annotation(cg, p->type_ann);
+                if (pt == LP_UNKNOWN) pt = LP_VAL;
+                scope_define(cg->scope, p->name, pt);
+            }
+            func_sym->type = infer_return_type(cg, &node->async_def.body);
+            cg->scope = temp_scope->parent;
+            scope_free(temp_scope);
+            if (func_sym->type == LP_UNKNOWN) func_sym->type = LP_VOID;
+        }
+        func_sym->is_function = 1;
+        func_sym->num_params = node->async_def.params.count;
+        func_sym->access = node->async_def.access;
+    }
+    
+    ret = func_sym ? func_sym->type : LP_VOID;
+
+    /* Generate function header declaration */
+    buf_printf(&cg->header, "/* async */ %s lp_%s(", lp_type_to_c(ret), node->async_def.name);
+    for (int i = 0; i < node->async_def.params.count; i++) {
+        Param *p = &node->async_def.params.items[i];
+        if (i > 0) buf_write(&cg->header, ", ");
+        if (class_name && strcmp(p->name, "self") == 0) {
+            buf_printf(&cg->header, "LpObj_%s* lp_%s", class_name, p->name);
+        } else if (p->is_vararg) {
+            buf_printf(&cg->header, "LpArray lp_%s", p->name);
+        } else if (p->is_kwarg) {
+            buf_printf(&cg->header, "LpDict* lp_%s", p->name);
+        } else {
+            LpType pt = type_from_annotation(cg, p->type_ann);
+            if (pt == LP_UNKNOWN) pt = LP_VAL;
+            if (pt == LP_OBJECT) {
+                buf_printf(&cg->header, "LpObj_%s* lp_%s", p->type_ann, p->name);
+            } else {
+                buf_printf(&cg->header, "%s lp_%s", lp_type_to_c(pt), p->name);
+            }
+        }
+    }
+    if (node->async_def.params.count == 0) {
+        buf_write(&cg->header, "void");
+    }
+    buf_write(&cg->header, ");\n");
+
+    /* Function scope */
+    Scope *func_scope = scope_new(cg->scope);
+    cg->scope = func_scope;
+
+    /* Generate function definition with async comment */
+    buf_write(&cg->funcs, "/* async function - synchronous implementation */\n");
+    buf_printf(&cg->funcs, "%s lp_%s(", lp_type_to_c(ret), node->async_def.name);
+    for (int i = 0; i < node->async_def.params.count; i++) {
+        if (i > 0) buf_write(&cg->funcs, ", ");
+        Param *p = &node->async_def.params.items[i];
+        if (class_name && strcmp(p->name, "self") == 0) {
+            buf_printf(&cg->funcs, "LpObj_%s* lp_%s", class_name, p->name);
+            scope_define_obj(func_scope, p->name, LP_OBJECT, class_name);
+        } else if (p->is_vararg) {
+            buf_printf(&cg->funcs, "LpArray lp_%s", p->name);
+            scope_define(func_scope, p->name, LP_ARRAY);
+        } else if (p->is_kwarg) {
+            buf_printf(&cg->funcs, "LpDict* lp_%s", p->name);
+            scope_define(func_scope, p->name, LP_DICT);
+        } else {
+            LpType pt = type_from_annotation(cg, p->type_ann);
+            if (pt == LP_UNKNOWN) pt = LP_VAL;
+            if (pt == LP_OBJECT) {
+                buf_printf(&cg->funcs, "LpObj_%s* lp_%s", p->type_ann, p->name);
+                scope_define_obj(func_scope, p->name, pt, p->type_ann);
+            } else {
+                buf_printf(&cg->funcs, "%s lp_%s", lp_type_to_c(pt), p->name);
+                scope_define(func_scope, p->name, pt);
+            }
+        }
+    }
+    buf_write(&cg->funcs, ") {\n");
+
+    /* Body */
+    for (int i = 0; i < node->async_def.body.count; i++)
+        gen_stmt(cg, &cg->funcs, node->async_def.body.items[i], 1);
+
+    buf_write(&cg->funcs, "}\n\n");
+
+    /* Restore scope */
+    cg->scope = func_scope->parent;
+    scope_free(func_scope);
+}
+
 static void gen_class_def(CodeGen *cg, AstNode *node) {
     const char *class_name = node->class_def.name;
     const char *base_class = node->class_def.base_class;
@@ -3059,13 +3391,21 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
     }
     buf_write(&cg->header, "\n");
 
-    /* Second pass: forward register all function symbols */
+    /* Second pass: forward register all function symbols (including async functions) */
     for (int i = 0; i < program->program.stmts.count; i++) {
         AstNode *stmt = program->program.stmts.items[i];
         if (stmt->type == NODE_FUNC_DEF) {
             Symbol *func_sym = scope_define(cg->scope, stmt->func_def.name, LP_VOID);
             if (func_sym) {
                 populate_function_symbol(cg, func_sym, stmt, NULL);
+            }
+        } else if (stmt->type == NODE_ASYNC_DEF) {
+            /* Register async functions similarly to regular functions */
+            Symbol *func_sym = scope_define(cg->scope, stmt->async_def.name, LP_VOID);
+            if (func_sym) {
+                func_sym->is_function = 1;
+                func_sym->num_params = stmt->async_def.params.count;
+                func_sym->access = stmt->async_def.access;
             }
         }
     }
@@ -3074,6 +3414,8 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
         AstNode *stmt = program->program.stmts.items[i];
         if (stmt->type == NODE_FUNC_DEF) {
             gen_func_def(cg, stmt, NULL);
+        } else if (stmt->type == NODE_ASYNC_DEF) {
+            gen_async_func_def(cg, stmt, NULL);
         } else if (stmt->type == NODE_CLASS_DEF) {
             gen_class_def(cg, stmt);
         } else if (stmt->type == NODE_IMPORT) {
@@ -3163,7 +3505,7 @@ char *codegen_get_output(CodeGen *cg) {
         buf_write(&out, "    lp_py_finalize();\n");
     }
 
-    buf_write(&out, "    return 0;\n}\n");
+    buf_write(&out, "    return (int)lp_main();\n}\n");
     return out.data;
 }
 void codegen_free(CodeGen *cg) {

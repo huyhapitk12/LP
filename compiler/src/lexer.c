@@ -55,6 +55,8 @@ static TokenType check_keyword(const char *s, int len) {
         {"lambda", TOK_LAMBDA}, {"yield", TOK_YIELD},
         {"parallel", TOK_PARALLEL},
         {"private", TOK_PRIVATE}, {"protected", TOK_PROTECTED},
+        /* Pattern Matching */
+        {"match", TOK_MATCH}, {"case", TOK_CASE},
         /* Settings/Pragma keywords */
         {"settings", TOK_SETTINGS}, {"gpu", TOK_GPU}, {"cpu", TOK_CPU},
         {"device", TOK_DEVICE}, {"threads", TOK_THREADS},
@@ -73,6 +75,18 @@ static TokenType check_keyword(const char *s, int len) {
 static Token lex_token(Lexer *lex) {
     const char *start = lex->current;
     char c = *lex->current++;
+
+    /* F-Strings: f"..." or f'...' */
+    if (c == 'f' && (*lex->current == '"' || *lex->current == '\'')) {
+        char quote = *lex->current++;
+        while (*lex->current && *lex->current != quote && *lex->current != '\n') {
+            if (*lex->current == '\\') lex->current++;
+            lex->current++;
+        }
+        if (*lex->current == quote) lex->current++;
+        /* Return f-string content (without f and quotes) */
+        return make_token(TOK_FSTRING_LIT, start + 2, (int)(lex->current - start - 3), lex->line);
+    }
 
     /* Identifiers and keywords */
     if (is_id_start(c)) {
@@ -307,16 +321,18 @@ Token lexer_next(Lexer *lex) {
 
 const char *token_type_name(TokenType type) {
     static const char *names[] = {
-        "INT", "FLOAT", "STRING", "IDENT",
+        "INT", "FLOAT", "STRING", "FSTRING", "IDENT",
         "def", "class", "if", "elif", "else",
         "for", "while", "return", "import", "from", "as",
         "and", "or", "not", "in", "is",
         "True", "False", "None",
         "pass", "break", "continue",
-        "const", "struct", "async", "await", "with",
-        "try", "except", "finally", "raise",
+        "const", "struct", "async", "await",
+        "with", "try", "except", "finally", "raise",
         "lambda", "yield", "parallel",
         "private", "protected",
+        /* Pattern Matching */
+        "match", "case",
         /* Settings/Pragma keywords */
         "settings", "gpu", "cpu", "device", "threads",
         "schedule", "chunk", "unified",

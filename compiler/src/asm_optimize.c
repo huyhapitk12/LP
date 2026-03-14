@@ -96,30 +96,44 @@ int64_t asm_get_constant_value(AstNode *node) {
 /* Constant folding optimization - modifies AST in place */
 static int asm_opt_constant_fold(AstNode *node) {
     if (!node) return 0;
-    
+
     int folded = 0;
-    
+
     switch (node->type) {
+        case NODE_PROGRAM:
+            /* Traverse all statements in program */
+            for (int i = 0; i < node->program.stmts.count; i++) {
+                folded += asm_opt_constant_fold(node->program.stmts.items[i]);
+            }
+            break;
+
+        case NODE_FUNC_DEF:
+            /* Traverse function body - it's a NodeList */
+            for (int i = 0; i < node->func_def.body.count; i++) {
+                folded += asm_opt_constant_fold(node->func_def.body.items[i]);
+            }
+            break;
+
         case NODE_BIN_OP:
             /* Recursively fold children first */
             folded += asm_opt_constant_fold(node->bin_op.left);
             folded += asm_opt_constant_fold(node->bin_op.right);
-            
+
             /* If both operands are now constants, fold this node */
             if (asm_is_constant_expr(node->bin_op.left) &&
                 asm_is_constant_expr(node->bin_op.right)) {
                 int64_t value = asm_get_constant_value(node);
-                
+
                 /* Transform this node into an integer literal */
                 node->type = NODE_INT_LIT;
                 node->int_lit.value = value;
                 folded++;
             }
             break;
-        
+
         case NODE_UNARY_OP:
             folded += asm_opt_constant_fold(node->unary_op.operand);
-            
+
             if (asm_is_constant_expr(node->unary_op.operand)) {
                 int64_t value = asm_get_constant_value(node);
                 node->type = NODE_INT_LIT;
@@ -127,47 +141,66 @@ static int asm_opt_constant_fold(AstNode *node) {
                 folded++;
             }
             break;
-        
+
         case NODE_ASSIGN:
             if (node->assign.value) {
                 folded += asm_opt_constant_fold(node->assign.value);
             }
             break;
-        
+
         case NODE_CONST_DECL:
             if (node->const_decl.value) {
                 folded += asm_opt_constant_fold(node->const_decl.value);
             }
             break;
-        
+
         case NODE_RETURN:
             if (node->return_stmt.value) {
                 folded += asm_opt_constant_fold(node->return_stmt.value);
             }
             break;
-        
+
         case NODE_IF:
             folded += asm_opt_constant_fold(node->if_stmt.cond);
+            /* then_body is NodeList */
+            for (int i = 0; i < node->if_stmt.then_body.count; i++) {
+                folded += asm_opt_constant_fold(node->if_stmt.then_body.items[i]);
+            }
+            /* else_branch is AstNode* */
+            if (node->if_stmt.else_branch) {
+                folded += asm_opt_constant_fold(node->if_stmt.else_branch);
+            }
             break;
-        
+
         case NODE_WHILE:
             folded += asm_opt_constant_fold(node->while_stmt.cond);
+            /* body is NodeList */
+            for (int i = 0; i < node->while_stmt.body.count; i++) {
+                folded += asm_opt_constant_fold(node->while_stmt.body.items[i]);
+            }
             break;
-        
+
+        case NODE_FOR:
+            /* body is NodeList */
+            for (int i = 0; i < node->for_stmt.body.count; i++) {
+                folded += asm_opt_constant_fold(node->for_stmt.body.items[i]);
+            }
+            break;
+
         case NODE_EXPR_STMT:
             folded += asm_opt_constant_fold(node->expr_stmt.expr);
             break;
-        
+
         case NODE_CALL:
             for (int i = 0; i < node->call.args.count; i++) {
                 folded += asm_opt_constant_fold(node->call.args.items[i]);
             }
             break;
-        
+
         default:
             break;
     }
-    
+
     return folded;
 }
 
@@ -177,17 +210,39 @@ static int asm_opt_constant_fold(AstNode *node) {
 
 static int asm_opt_eliminate_dead_code(AstNode *node) {
     if (!node) return 0;
-    
+
     int removed = 0;
-    
+
     switch (node->type) {
+        case NODE_PROGRAM:
+            /* Traverse all statements in program */
+            for (int i = 0; i < node->program.stmts.count; i++) {
+                removed += asm_opt_eliminate_dead_code(node->program.stmts.items[i]);
+            }
+            break;
+
+        case NODE_FUNC_DEF:
+            /* body is NodeList */
+            for (int i = 0; i < node->func_def.body.count; i++) {
+                removed += asm_opt_eliminate_dead_code(node->func_def.body.items[i]);
+            }
+            break;
+
         case NODE_IF:
             /* If condition is constant, we can eliminate dead branch */
             if (asm_is_constant_expr(node->if_stmt.cond)) {
                 removed++;
             }
+            /* then_body is NodeList */
+            for (int i = 0; i < node->if_stmt.then_body.count; i++) {
+                removed += asm_opt_eliminate_dead_code(node->if_stmt.then_body.items[i]);
+            }
+            /* else_branch is AstNode* */
+            if (node->if_stmt.else_branch) {
+                removed += asm_opt_eliminate_dead_code(node->if_stmt.else_branch);
+            }
             break;
-        
+
         case NODE_WHILE:
             /* If condition is constant false, loop never executes */
             if (asm_is_constant_expr(node->while_stmt.cond)) {
@@ -197,12 +252,23 @@ static int asm_opt_eliminate_dead_code(AstNode *node) {
                     removed++;
                 }
             }
+            /* body is NodeList */
+            for (int i = 0; i < node->while_stmt.body.count; i++) {
+                removed += asm_opt_eliminate_dead_code(node->while_stmt.body.items[i]);
+            }
             break;
-        
+
+        case NODE_FOR:
+            /* body is NodeList */
+            for (int i = 0; i < node->for_stmt.body.count; i++) {
+                removed += asm_opt_eliminate_dead_code(node->for_stmt.body.items[i]);
+            }
+            break;
+
         default:
             break;
     }
-    
+
     return removed;
 }
 
@@ -210,42 +276,87 @@ static int asm_opt_eliminate_dead_code(AstNode *node) {
  * Loop Unrolling
  * ══════════════════════════════════════════════════════════════ */
 
-int asm_opt_unroll_loop(AstNode *node, int max_iterations) {
+static int asm_opt_unroll_loop_impl(AstNode *node, int max_iterations) {
     if (!node) return 0;
-    
+
     int unrolled = 0;
-    
-    if (node->type == NODE_FOR) {
-        AstNode *iter = node->for_stmt.iter;
-        if (iter && iter->type == NODE_CALL) {
-            if (iter->call.args.count >= 1) {
-                /* Try to determine iteration count */
-                int can_unroll = 0;
-                int64_t iterations = 0;
-                
-                if (iter->call.args.count == 1) {
-                    if (asm_is_constant_expr(iter->call.args.items[0])) {
-                        iterations = asm_get_constant_value(iter->call.args.items[0]);
-                        can_unroll = 1;
+
+    switch (node->type) {
+        case NODE_PROGRAM:
+            for (int i = 0; i < node->program.stmts.count; i++) {
+                unrolled += asm_opt_unroll_loop_impl(node->program.stmts.items[i], max_iterations);
+            }
+            break;
+
+        case NODE_FUNC_DEF:
+            /* body is NodeList */
+            for (int i = 0; i < node->func_def.body.count; i++) {
+                unrolled += asm_opt_unroll_loop_impl(node->func_def.body.items[i], max_iterations);
+            }
+            break;
+
+        case NODE_FOR: {
+            AstNode *iter = node->for_stmt.iter;
+            if (iter && iter->type == NODE_CALL) {
+                if (iter->call.args.count >= 1) {
+                    /* Try to determine iteration count */
+                    int can_unroll = 0;
+                    int64_t iterations = 0;
+
+                    if (iter->call.args.count == 1) {
+                        if (asm_is_constant_expr(iter->call.args.items[0])) {
+                            iterations = asm_get_constant_value(iter->call.args.items[0]);
+                            can_unroll = 1;
+                        }
+                    } else if (iter->call.args.count >= 2) {
+                        if (asm_is_constant_expr(iter->call.args.items[0]) &&
+                            asm_is_constant_expr(iter->call.args.items[1])) {
+                            int64_t start = asm_get_constant_value(iter->call.args.items[0]);
+                            int64_t end = asm_get_constant_value(iter->call.args.items[1]);
+                            iterations = end - start;
+                            can_unroll = 1;
+                        }
                     }
-                } else if (iter->call.args.count >= 2) {
-                    if (asm_is_constant_expr(iter->call.args.items[0]) &&
-                        asm_is_constant_expr(iter->call.args.items[1])) {
-                        int64_t start = asm_get_constant_value(iter->call.args.items[0]);
-                        int64_t end = asm_get_constant_value(iter->call.args.items[1]);
-                        iterations = end - start;
-                        can_unroll = 1;
+
+                    if (can_unroll && iterations > 0 && iterations <= max_iterations) {
+                        unrolled++;
                     }
-                }
-                
-                if (can_unroll && iterations > 0 && iterations <= max_iterations) {
-                    unrolled++;
                 }
             }
+            /* Recurse into body - it's a NodeList */
+            for (int i = 0; i < node->for_stmt.body.count; i++) {
+                unrolled += asm_opt_unroll_loop_impl(node->for_stmt.body.items[i], max_iterations);
+            }
+            break;
         }
+
+        case NODE_IF:
+            /* then_body is NodeList */
+            for (int i = 0; i < node->if_stmt.then_body.count; i++) {
+                unrolled += asm_opt_unroll_loop_impl(node->if_stmt.then_body.items[i], max_iterations);
+            }
+            /* else_branch is AstNode* */
+            if (node->if_stmt.else_branch) {
+                unrolled += asm_opt_unroll_loop_impl(node->if_stmt.else_branch, max_iterations);
+            }
+            break;
+
+        case NODE_WHILE:
+            /* body is NodeList */
+            for (int i = 0; i < node->while_stmt.body.count; i++) {
+                unrolled += asm_opt_unroll_loop_impl(node->while_stmt.body.items[i], max_iterations);
+            }
+            break;
+
+        default:
+            break;
     }
-    
+
     return unrolled;
+}
+
+int asm_opt_unroll_loop(AstNode *node, int max_iterations) {
+    return asm_opt_unroll_loop_impl(node, max_iterations);
 }
 
 /* ══════════════════════════════════════════════════════════════
