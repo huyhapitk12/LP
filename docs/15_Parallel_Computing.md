@@ -4,7 +4,7 @@ LP provides built-in support for parallel computing using OpenMP and GPU acceler
 
 ## Overview
 
-LP integrates OpenMP directly into the language through the `parallel` keyword, allowing you to easily parallelize loops for multi-core CPU execution. The compiler also includes GPU abstraction layers for future CUDA/OpenCL support.
+LP integrates OpenMP directly into the language through the `parallel` keyword, allowing you to easily parallelize loops for multi-core CPU execution. The compiler automatically adds `-fopenmp` flag when compiling, so you don't need to worry about compiler flags.
 
 ## Quick Start
 
@@ -55,15 +55,20 @@ main()
 
 ## Compilation
 
-To compile LP programs with OpenMP support, use the `-fopenmp` flag when compiling the generated C code:
+OpenMP is automatically enabled when you use `parallel for` in your code. Just compile normally:
 
 ```bash
-# Compile LP to C
-lp your_program.lp -o your_program.c
+# Compile and run directly
+lp your_program.lp
 
-# Compile C with OpenMP
-gcc -O3 -fopenmp your_program.c -o your_program -lm
+# Compile to executable
+lp your_program.lp -c your_program
+
+# Generate C code only
+lp your_program.lp -o your_program.c
 ```
+
+The LP compiler automatically adds `-fopenmp` when it detects parallel loops.
 
 ## Parallel Settings (Future Feature)
 

@@ -264,7 +264,7 @@ a >>= n
 #### Parallel Execution
 
 ```lp
-# Parallel for loop (requires OpenMP)
+# Parallel for loop (OpenMP is automatically enabled)
 parallel for i in range(1000000):
     process_item(i)
 
@@ -283,12 +283,13 @@ for (int64_t lp_i = 0; lp_i < 1000000; lp_i++) {
 
 **Compilation:**
 ```bash
-# Generate C code
-lp file.lp -o file.c
-
-# Compile with OpenMP
-gcc -O3 -fopenmp file.c -o file -lm
+# OpenMP is automatically detected and enabled
+lp file.lp              # Run directly
+lp file.lp -c output    # Compile to executable
+lp file.lp -o file.c    # Generate C only
 ```
+
+**Note:** The LP compiler automatically adds `-fopenmp` when it detects `parallel for` loops. No manual flags needed!
 
 ---
 
