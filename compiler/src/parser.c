@@ -1023,13 +1023,22 @@ static AstNode *parse_parallel_for_stmt(Parser *p) {
     expect(p, TOK_IDENTIFIER, "expected loop variable");
 
     AstNode *n = ast_new(NODE_PARALLEL_FOR, line);
-    n->for_stmt.var = tok_to_str(p->previous);
-    node_list_init(&n->for_stmt.body);
+    
+    /* Use parallel_for struct for settings */
+    n->parallel_for.var = tok_to_str(p->previous);
+    node_list_init(&n->parallel_for.body);
+    
+    /* Initialize default settings */
+    n->parallel_for.num_threads = 0;      /* auto */
+    n->parallel_for.schedule = NULL;      /* default: static */
+    n->parallel_for.chunk_size = 0;       /* auto */
+    n->parallel_for.device_type = 0;      /* CPU */
+    n->parallel_for.gpu_id = 0;
 
     expect(p, TOK_IN, "expected 'in'");
-    n->for_stmt.iter = parse_expression(p);
+    n->parallel_for.iter = parse_expression(p);
     expect(p, TOK_COLON, "expected ':'");
-    parse_block(p, &n->for_stmt.body);
+    parse_block(p, &n->parallel_for.body);
     return n;
 }
 
