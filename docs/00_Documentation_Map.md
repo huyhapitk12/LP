@@ -36,6 +36,7 @@ Primary source files:
 
 | File | Type | Audience | Purpose |
 | --- | --- | --- | --- |
+| `FEATURES.md` | Reference | Everyone | **Comprehensive feature status: supported, partial, and unsupported.** |
 | `01_Installation_and_Setup.md` | Tutorial | Everyone | Build the compiler and verify the environment. |
 | `02_First_Programs.md` | Tutorial | Beginners | Run LP files, use the REPL, generate C, compile executables. |
 | `03_Language_Basics.md` | Tutorial | Beginners | Variables, functions, control flow, inference, annotations. |
@@ -94,21 +95,42 @@ Read in this order:
 
 LP docs use the following status language:
 
-- Supported: implemented and documented as normal public behavior.
-- Partially supported: implemented with important restrictions or platform dependencies.
-- Unsupported: explicitly rejected or missing in the current compiler/runtime.
-- Internal or experimental: code paths exist, but they are not presented as stable public workflow.
+- ✅ **Supported**: implemented and documented as normal public behavior.
+- ⚠️ **Partially supported**: implemented with important restrictions or platform dependencies.
+- ❌ **Not supported**: explicitly rejected or missing in the current compiler/runtime.
+- 🔧 **Internal or experimental**: code paths exist, but they are not presented as stable public workflow.
 
-Current high-value status notes:
+For a comprehensive feature status table, see **[FEATURES.md](FEATURES.md)**.
 
-- `http.get(...)`: supported.
-- `http.post(...)`: unsupported.
-- `json.loads(...)` and `json.dumps(...)`: supported.
-- `json.parse(...)`: unsupported.
-- `thread.spawn(...)`: partially supported with strict worker restrictions.
-- `parallel for`: partially supported because toolchain OpenMP behavior is platform-dependent.
-- Dictionary comprehensions: not documented as supported public syntax in the current compiler.
-- `yield`: reserved in the lexer/AST but not documented as public syntax yet.
+### Quick Status Reference
+
+| Category | Status |
+|----------|--------|
+| Core syntax (variables, functions, classes) | ✅ Full |
+| Control flow (if, for, while, try) | ✅ Full |
+| Operators (arithmetic, bitwise, comparison) | ✅ Full |
+| String methods | ✅ Full |
+| Collections (list, dict, set, tuple) | ✅ Full |
+| OOP (classes, inheritance, access control) | ✅ Full |
+| Lambda functions | ✅ Full |
+| `parallel for` | ✅ Full (needs OpenMP) |
+| List comprehensions | ⚠️ Partial (numeric-focused) |
+| `thread.spawn` | ⚠️ Partial (worker restrictions) |
+| `numpy` module | ⚠️ Partial (basic functions) |
+| `http.post` | ❌ Not yet |
+| `json.parse` | ❌ Not yet |
+| Dictionary comprehensions | ❌ Not yet |
+| `yield` / Generators | ❌ Not yet |
+| Async/await | ❌ Not yet |
+| Decorators | ❌ Not yet |
+| F-strings | ❌ Not yet |
+
+### Key Limitations
+
+- `thread.spawn(...)`: Worker must be a named LP function, 0 or 1 argument, return `int` or `void`
+- `parallel for`: Requires OpenMP-capable toolchain for actual parallelism
+- Integer division `//` and modulo `%` follow Python semantics
+- Cross-target builds require matching external toolchains
 
 ## Common errors and limitations
 
@@ -117,6 +139,7 @@ Current high-value status notes:
 
 ## See also
 
+- [FEATURES.md](FEATURES.md) - Comprehensive feature status
 - [Installation and Setup](01_Installation_and_Setup.md)
 - [CLI and Tooling](09_CLI_and_Tooling.md)
 - [Language Reference](14_Language_Reference.md)

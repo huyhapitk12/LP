@@ -30,6 +30,23 @@ def add(a: int, b: int) -> int:
     return a + b
 ```
 
+Functions with default values:
+
+```lp
+def greet(name: str = "World") -> str:
+    return "Hello " + name
+```
+
+Variadic functions:
+
+```lp
+def sum_all(*args) -> int:
+    total = 0
+    for i in args:
+        total = total + i
+    return total
+```
+
 ### Class definition
 
 ```lp
@@ -120,33 +137,89 @@ Common builtins documented for normal use:
 
 - integers: `1`
 - floats: `3.14`
-- booleans: `true`, `false`
-- string: `"text"`
-- null-like value: `None`
+- booleans: `true`, `false`, `True`, `False`
+- string: `"text"`, `'text'`, `"""multiline"""`
+- null-like value: `None`, `none`
 - list: `[1, 2, 3]`
 - dict: `{"k": 1}`
 - set: `{1, 2, 3}`
 - tuple: `(1, 2)`
 
+## Operators
+
+### Arithmetic
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `+` | Addition | `a + b` |
+| `-` | Subtraction | `a - b` |
+| `*` | Multiplication | `a * b` |
+| `/` | Division (float) | `a / b` |
+| `//` | Floor division | `a // b` |
+| `%` | Modulo | `a % b` |
+| `**` | Power | `a ** b` |
+
+### Bitwise
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `&` | AND | `a & b` |
+| `\|` | OR | `a \| b` |
+| `^` | XOR | `a ^ b` |
+| `~` | NOT | `~a` |
+| `<<` | Left shift | `a << n` |
+| `>>` | Right shift | `a >> n` |
+
+### Comparison
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `==` | Equal | `a == b` |
+| `!=` | Not equal | `a != b` |
+| `<` | Less than | `a < b` |
+| `>` | Greater than | `a > b` |
+| `<=` | Less or equal | `a <= b` |
+| `>=` | Greater or equal | `a >= b` |
+
+### Logical
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `and` | Logical AND | `a and b` |
+| `or` | Logical OR | `a or b` |
+| `not` | Logical NOT | `not a` |
+| `is` | Identity | `a is None` |
+| `in` | Membership | `x in list` |
+
+### Assignment
+| Operator | Example | Equivalent |
+|----------|---------|------------|
+| `=` | `a = b` | - |
+| `+=` | `a += b` | `a = a + b` |
+| `-=` | `a -= b` | `a = a - b` |
+| `*=` | `a *= b` | `a = a * b` |
+| `/=` | `a /= b` | `a = a / b` |
+| `&=` | `a &= b` | `a = a & b` |
+| `\|=` | `a \|= b` | `a = a \| b` |
+| `^=` | `a ^= b` | `a = a ^ b` |
+| `<<=` | `a <<= n` | `a = a << n` |
+| `>>=` | `a >>= n` | `a = a >> n` |
+
 ## String methods
 
 Supported method-style calls:
 
-- `upper()`
-- `lower()`
-- `strip()`
-- `lstrip()`
-- `rstrip()`
-- `find(sub)`
-- `replace(old, new)`
-- `count(sub)`
-- `split(delim)`
-- `join(parts)`
-- `startswith(prefix)`
-- `endswith(suffix)`
-- `isdigit()`
-- `isalpha()`
-- `isalnum()`
+- `upper()` - Convert to uppercase
+- `lower()` - Convert to lowercase
+- `strip()` - Remove leading/trailing whitespace
+- `lstrip()` - Remove leading whitespace
+- `rstrip()` - Remove trailing whitespace
+- `find(sub)` - Find substring, returns index or -1
+- `replace(old, new)` - Replace all occurrences
+- `count(sub)` - Count substring occurrences
+- `split(delim)` - Split into array
+- `join(parts)` - Join array with separator
+- `startswith(prefix)` - Check prefix
+- `endswith(suffix)` - Check suffix
+- `isdigit()` - Check if all digits
+- `isalpha()` - Check if all letters
+- `isalnum()` - Check if alphanumeric
 
 ## Collection notes
 
@@ -154,105 +227,190 @@ Supported method-style calls:
 - list comprehensions exist but are currently documented as partial and numeric-focused
 - dictionary comprehensions are not documented as supported public syntax today
 
+## Type annotations
+
+### Basic types
+
+```lp
+x: int = 42
+y: float = 3.14
+name: str = "LP"
+flag: bool = True
+```
+
+### Special types
+
+```lp
+data: val = json.loads(s)      # Dynamic JSON value
+ptr: ptr = memory.cast(addr)   # Raw pointer
+arena: arena = memory.arena_new(1024)  # Memory arena
+pool: pool = memory.pool_new(64, 10)   # Memory pool
+```
+
 ## Runtime modules
 
 ### `math`
 
 Representative API:
 
-- `pi`, `e`, `tau`
-- `sin`, `cos`, `tan`
-- `sqrt`, `pow`
-- `factorial`, `gcd`, `lcm`
+- `pi`, `e`, `tau` - Constants
+- `sin(x)`, `cos(x)`, `tan(x)` - Trigonometry
+- `sqrt(x)`, `pow(x, y)` - Power functions
+- `factorial(n)`, `gcd(a, b)`, `lcm(a, b)` - Integer math
+- `isnan(x)`, `isinf(x)` - Float checks
+- `floor(x)`, `ceil(x)`, `round(x)` - Rounding
+- `abs(x)`, `log(x)`, `exp(x)` - Other functions
 
 ### `random`
 
-- `seed`
-- `random`
-- `randint`
-- `uniform`
+- `seed(n)` - Set seed
+- `random()` - Float in [0, 1)
+- `randint(a, b)` - Integer in [a, b]
+- `uniform(a, b)` - Float in [a, b]
 
 ### `time`
 
-- `time`
-- `sleep`
+- `time()` - Current timestamp (seconds)
+- `sleep(seconds)` - Sleep for duration
 
 ### `os`
 
-- `getcwd`
-- `remove`
-- `rename`
-- `mkdir`
-- `sep`
-- `name`
+- `getcwd()` - Current working directory
+- `remove(path)` - Delete file
+- `rename(src, dst)` - Rename/move file
+- `mkdir(path)` - Create directory
+- `sep` - Path separator (`/` or `\`)
+- `name` - OS name (`"posix"` or `"nt"`)
 
 ### `os.path`
 
-- `join`
-- `exists`
-- `isfile`
-- `isdir`
-- `basename`
-- `dirname`
-- `getsize`
+- `join(a, b)` - Join path components
+- `exists(path)` - Check if path exists
+- `isfile(path)` - Check if file
+- `isdir(path)` - Check if directory
+- `basename(path)` - Get filename
+- `dirname(path)` - Get directory
+- `getsize(path)` - Get file size
 
 ### `sys`
 
-- `platform`
-- `maxsize`
-- `exit`
-- `getrecursionlimit`
+- `platform` - Platform string (`"linux"`, `"win32"`, `"darwin"`)
+- `maxsize` - Maximum integer value
+- `exit(code)` - Exit program
+- `getrecursionlimit()` - Get recursion limit
+- `argv_len()` - Argument count
+- `argv_get(i)` - Get argument by index
 
 ### `http`
 
-- supported: `get`
-- unsupported: `post`
+- `get(url)` - HTTP GET request (returns response body)
+- `post(url, data)` - HTTP POST request (NOT SUPPORTED YET)
 
 ### `json`
 
-- supported: `loads`, `dumps`
-- unsupported: `parse`
+- `loads(s)` - Parse JSON string to val
+- `dumps(v)` - Serialize val to JSON string
+- `parse(s)` - Alternative parser (NOT SUPPORTED YET)
 
 ### `sqlite`
 
-- `connect`
-- `execute`
-- `query`
+- `connect(path)` - Open database
+- `execute(db, sql)` - Execute SQL
+- `query(db, sql)` - Query and return results
 
 ### `thread`
 
-- `spawn`
-- `join`
-- `lock_init`
-- `lock_acquire`
-- `lock_release`
+- `spawn(worker, arg)` - Spawn thread with worker function
+- `join(thread)` - Wait for thread completion
+- `lock_init()` - Create mutex lock
+- `lock_acquire(lock)` - Acquire lock
+- `lock_release(lock)` - Release lock
+
+**Restrictions:**
+- Worker must be a named LP function
+- Worker can have 0 or 1 argument only
+- Worker must return `int` or `void`
 
 ### `memory`
 
-- `arena_new`
-- `arena_alloc`
-- `arena_reset`
-- `arena_free`
-- `pool_new`
-- `pool_alloc`
-- `pool_free`
-- `pool_destroy`
-- `cast`
+- `arena_new(size)` - Create arena allocator
+- `arena_alloc(arena, size)` - Allocate from arena
+- `arena_reset(arena)` - Reset arena
+- `arena_free(arena)` - Free arena
+- `pool_new(chunk_size, count)` - Create pool allocator
+- `pool_alloc(pool)` - Allocate from pool
+- `pool_free(pool, ptr)` - Free to pool
+- `pool_destroy(pool)` - Destroy pool
+- `cast(ptr)` - Cast pointer to object
 
 ### `platform`
 
-- `os`
-- `arch`
-- `cores`
+- `os()` - OS name string
+- `arch()` - Architecture string
+- `cores()` - Number of CPU cores
 
-## Unsupported or partial public surface
+### `numpy` (Partial)
 
-- `http.post(...)`: unsupported
-- `json.parse(...)`: unsupported
-- typed exception objects: partial syntax, generic runtime behavior
-- `yield`: reserved but not documented as public syntax yet
-- dictionary comprehensions: not documented as supported public syntax yet
-- `parallel for`: syntax is supported, runtime acceleration depends on toolchain OpenMP configuration
+- `np.array(data)` - Create array
+- `np.zeros(n)` - Array of zeros
+- `np.ones(n)` - Array of ones
+- `np.arange(start, stop, step)` - Range array
+- `np.linspace(a, b, n)` - Linearly spaced array
+- `np.sqrt(arr)` - Element-wise sqrt
+- `np.abs(arr)` - Element-wise absolute
+- `np.sin(arr)`, `np.cos(arr)` - Trigonometry
+- `np.sort(arr)` - Sort array
+
+## Feature Status
+
+### Fully Supported ✅
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Variables & type inference | ✅ | |
+| Functions | ✅ | Including default args, *args |
+| Classes | ✅ | With inheritance |
+| `private`/`protected` | ✅ | Compile-time checked |
+| `if`/`elif`/`else` | ✅ | |
+| `for` loops | ✅ | With `range()` |
+| `while` loops | ✅ | With `break`, `continue` |
+| `try`/`except`/`finally` | ✅ | |
+| `raise` | ✅ | |
+| `with` statement | ✅ | |
+| Lambda (single-line) | ✅ | |
+| Lambda (multiline) | ✅ | |
+| String methods | ✅ | Full set |
+| List literals | ✅ | |
+| Dict literals | ✅ | |
+| Set literals | ✅ | |
+| Tuple literals | ✅ | |
+| Bitwise operators | ✅ | All 6 operators |
+| Compound assignment | ✅ | `+=`, `-=`, etc. |
+| `parallel for` | ✅ | Requires OpenMP toolchain |
+
+### Partially Supported ⚠️
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| List comprehensions | ⚠️ | Numeric-focused, limited |
+| `thread.spawn` | ⚠️ | Strict worker restrictions |
+| `numpy` module | ⚠️ | Basic functions only |
+| Typed exceptions | ⚠️ | Generic runtime behavior |
+
+### Not Supported Yet ❌
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| `http.post` | ❌ | Planned |
+| `json.parse` | ❌ | Use `loads` instead |
+| Dictionary comprehensions | ❌ | Planned |
+| `yield` / Generators | ❌ | Keyword reserved |
+| Decorators | ❌ | Not implemented |
+| Async/await | ❌ | Not implemented |
+| Pattern matching | ❌ | Not implemented |
+| Type unions | ❌ | Not implemented |
+| Generic types | ❌ | Not implemented |
+| F-strings | ❌ | Use `str()` + concat |
 
 ## CLI summary
 
@@ -275,6 +433,8 @@ lp export file.lp [-o name] [--library]
 - If a feature is not listed here as supported, assume it needs confirmation before treating it as stable public surface.
 - Cross-target builds need matching external toolchains.
 - C API export currently has Windows-oriented shared-library naming in the implementation.
+- Integer division `//` follows Python semantics (floor division).
+- Modulo `%` follows Python semantics (result has same sign as divisor).
 
 ## See also
 
