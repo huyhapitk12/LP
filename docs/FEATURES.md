@@ -1,7 +1,7 @@
 # LP Language Feature Status
 
-> Last updated: 2025-01-18
-> Version: 0.1.1-beta
+> Last updated: 2025-03-14
+> Version: 0.3.0
 
 This document provides a comprehensive overview of LP language features, their implementation status, and any known limitations.
 
@@ -13,6 +13,68 @@ This document provides a comprehensive overview of LP language features, their i
 | Runtime Modules | 12 | 0 | 0 |
 | Operators | 20+ | 0 | 0 |
 | CLI Tools | 10 | 0 | 1 |
+| Optimizations | 3 | 0 | 0 |
+
+## Compilation Backends
+
+### ✅ Native Assembly Backend (Default)
+
+LP compiles directly to x86-64 assembly without requiring GCC or LLVM:
+
+```bash
+lp file.lp              # Native compilation (default)
+lp file.lp --gcc        # Use GCC backend (optional)
+```
+
+**Benefits:**
+- No heavy compiler dependencies (~5MB vs ~1GB)
+- Fast compilation
+- Direct control over generated code
+
+### ✅ GCC C Backend (Optional)
+
+For maximum compatibility and optimization:
+
+```bash
+lp file.lp --gcc        # Use GCC backend
+lp file.lp -o out.c     # Generate C code
+```
+
+## Optimizations
+
+### ✅ Constant Folding
+
+Evaluate constant expressions at compile time:
+
+```lp
+# Before optimization
+x: int = 1 + 2 * 3
+y: int = 100 / 5
+
+# After optimization (compile-time)
+x: int = 7
+y: int = 20
+```
+
+### ✅ Dead Code Elimination
+
+Remove unreachable code:
+
+```lp
+if False:
+    # This code is removed
+    print("Never executed")
+```
+
+### ✅ Loop Unrolling
+
+Unroll small loops for better performance:
+
+```lp
+# Small constant loops are unrolled
+for i in range(4):
+    print(i)
+```
 
 ---
 
@@ -490,8 +552,11 @@ print("Hello " + str(name))
 ### ✅ All Supported
 
 ```bash
-# Run directly
+# Run directly (native ASM backend - default, no GCC!)
 lp file.lp
+
+# Run with GCC backend (optional)
+lp file.lp --gcc
 
 # Generate C code
 lp file.lp -o output.c
