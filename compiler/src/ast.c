@@ -276,6 +276,11 @@ void ast_free(AstNode *node) {
         case NODE_AWAIT_EXPR:
             ast_free(node->await_expr.expr);
             break;
+        case NODE_SECURITY:
+            free(node->security.auth_type);
+            free(node->security.cors_origins);
+            free(node->security.hash_algorithm);
+            break;
         default:
             break;
     }

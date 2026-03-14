@@ -91,6 +91,7 @@ typedef struct {
     int uses_platform;/* needs lp_platform.h */
     int uses_parallel;/* needs lp_parallel.h (OpenMP) */
     int uses_gpu;     /* needs lp_gpu.h */
+    int uses_security;/* needs lp_security.h */
     int thread_adapter_count;
 } CodeGen;
 

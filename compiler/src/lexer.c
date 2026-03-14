@@ -62,6 +62,15 @@ static TokenType check_keyword(const char *s, int len) {
         {"device", TOK_DEVICE}, {"threads", TOK_THREADS},
         {"schedule", TOK_SCHEDULE}, {"chunk", TOK_CHUNK},
         {"unified", TOK_UNIFIED},
+        /* Security keywords */
+        {"security", TOK_SECURITY}, {"level", TOK_LEVEL},
+        {"auth", TOK_AUTH}, {"rate", TOK_RATE}, {"limit", TOK_LIMIT},
+        {"validate", TOK_VALIDATE}, {"sanitize", TOK_SANITIZE},
+        {"encrypt", TOK_ENCRYPT}, {"hash", TOK_HASH},
+        {"injection", TOK_INJECTION}, {"xss", TOK_XSS},
+        {"csrf", TOK_CSRF}, {"cors", TOK_CORS}, {"headers", TOK_HEADERS},
+        {"readonly", TOK_READONLY}, {"write", TOK_WRITE},
+        {"admin", TOK_ADMIN}, {"user", TOK_USER}, {"guest", TOK_GUEST},
         {NULL, TOK_ERROR}
     };
     for (int i = 0; keywords[i].kw; i++) {
@@ -336,6 +345,11 @@ const char *token_type_name(TokenType type) {
         /* Settings/Pragma keywords */
         "settings", "gpu", "cpu", "device", "threads",
         "schedule", "chunk", "unified",
+        /* Security keywords */
+        "security", "level", "auth", "rate", "limit",
+        "validate", "sanitize", "encrypt", "hash",
+        "injection", "xss", "csrf", "cors", "headers",
+        "readonly", "write", "admin", "user", "guest",
         "+", "-", "*", "/", "//", "**", "%",
         "&", "|", "^", "~", "<<", ">>",
         "=", "==", "!=", "<", ">", "<=", ">=",
