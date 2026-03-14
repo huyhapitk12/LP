@@ -25,6 +25,8 @@ gcc -std=c99 -O2 $WARN_FLAGS \
     compiler/src/ast.c \
     compiler/src/parser.c \
     compiler/src/codegen.c \
+    compiler/src/codegen_asm.c \
+    compiler/src/asm_optimize.c \
     compiler/src/repl.c \
     compiler/src/process_utils.c \
     -I compiler/src \
