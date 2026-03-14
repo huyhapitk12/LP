@@ -79,6 +79,7 @@ static inline double lp_math_pow(double x, double y) { return pow(x, y); }
 /* Integer math */
 static inline int64_t lp_math_factorial(int64_t n) {
     if (n < 0) return 0;
+    if (n > 20) return INT64_MAX;  /* 21! overflows int64_t */
     int64_t r = 1;
     for (int64_t i = 2; i <= n; i++) r *= i;
     return r;

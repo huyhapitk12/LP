@@ -18,7 +18,12 @@ typedef struct LpArena {
 
 static inline LpArena* lp_memory_arena_new(int64_t size) {
     LpArena* arena = (LpArena*)malloc(sizeof(LpArena));
+    if (!arena) return NULL;
     arena->region = (char*)malloc(size);
+    if (!arena->region) {
+        free(arena);
+        return NULL;
+    }
     arena->size = size;
     arena->offset = 0;
     return arena;
@@ -56,8 +61,17 @@ typedef struct LpPool {
 } LpPool;
 
 static inline LpPool* lp_memory_pool_new(int64_t chunk_size, int64_t num_chunks) {
+    if (chunk_size <= 0 || num_chunks <= 0) return NULL;
+    
     LpPool* pool = (LpPool*)malloc(sizeof(LpPool));
+    if (!pool) return NULL;
+    
     pool->region = (char*)malloc(chunk_size * num_chunks);
+    if (!pool->region) {
+        free(pool);
+        return NULL;
+    }
+    
     pool->chunk_size = chunk_size;
     pool->total_chunks = num_chunks;
     

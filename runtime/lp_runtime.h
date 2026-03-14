@@ -118,9 +118,24 @@ static inline void lp_np_print(LpArray arr) {
 static inline int64_t lp_pow_int(int64_t base, int64_t exp) {
     int64_t result = 1;
     if (exp < 0) return 0;
+    if (base == 0) return 0;
+    if (base == 1) return 1;
+    if (base == -1) return (exp % 2 == 0) ? 1 : -1;
     while (exp > 0) {
-        if (exp & 1) result *= base;
-        base *= base;
+        if (exp & 1) {
+            /* Check for overflow before multiplication */
+            if (result > INT64_MAX / base || result < INT64_MIN / base) {
+                return (base > 0) ? INT64_MAX : INT64_MIN;  /* Overflow */
+            }
+            result *= base;
+        }
+        if (exp > 1) {  /* Don't square on last iteration */
+            /* Check for overflow before squaring */
+            if (base > INT64_MAX / base || base < INT64_MIN / base) {
+                return (base > 0) ? INT64_MAX : INT64_MIN;  /* Overflow */
+            }
+            base *= base;
+        }
         exp >>= 1;
     }
     return result;
@@ -128,6 +143,8 @@ static inline int64_t lp_pow_int(int64_t base, int64_t exp) {
 
 static inline int64_t lp_floordiv(int64_t a, int64_t b) {
     int64_t q, r;
+    /* Division by zero check */
+    if (b == 0) return 0;  /* Return 0 on error, caller should handle */
     /* Use portable C code for correctness - compiler will optimize */
     q = a / b;
     r = a % b;
@@ -137,6 +154,8 @@ static inline int64_t lp_floordiv(int64_t a, int64_t b) {
 
 static inline int64_t lp_mod(int64_t a, int64_t b) {
     int64_t r;
+    /* Division by zero check */
+    if (b == 0) return 0;  /* Return 0 on error, caller should handle */
     /* Use portable C code for correctness - compiler will optimize */
     r = a % b;
     if ((r != 0) && ((r ^ b) < 0)) r += b;
