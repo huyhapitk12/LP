@@ -1,0 +1,60 @@
+name: 🔒 Security Issue
+description: Report a security vulnerability (use GitHub Security Advisories for sensitive issues)
+labels: ["security"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## ⚠️ Important
+        
+        **For sensitive security vulnerabilities, please use GitHub's private vulnerability reporting instead:**
+        
+        [Report a vulnerability privately](https://github.com/huyhapitk12/LP/security/advisories/new)
+        
+        This form is for non-sensitive security issues only.
+
+  - type: checkboxes
+    id: sensitivity
+    attributes:
+      label: Is this a sensitive security issue?
+      options:
+        - label: No, this is a non-sensitive security issue that can be discussed publicly
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Issue Description
+      description: Describe the security issue
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Potential Impact
+      description: What is the potential security impact?
+      placeholder: |
+        - Privilege escalation
+        - Data leak
+        - Code injection
+        - etc.
+    validations:
+      required: true
+
+  - type: textarea
+    id: affected
+    attributes:
+      label: Affected Components
+      description: Which parts of LP are affected?
+      placeholder: "Compiler, runtime, @security decorator, etc."
+    validations:
+      required: true
+
+  - type: textarea
+    id: mitigation
+    attributes:
+      label: Suggested Mitigation
+      description: Do you have suggestions for fixing this issue?
+    validations:
+      required: false
