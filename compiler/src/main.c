@@ -840,7 +840,7 @@ int main(int argc, char **argv) {
     int emit_c_only = 0;
     int compile_only = 0;
     int emit_asm = 0;
-    int use_asm_backend = 0;         /* --asm-backend: use direct assembly, no C */
+    int use_gcc_backend = 0;         /* --gcc: use GCC backend (default is native ASM) */
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
@@ -852,25 +852,25 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "-asm") == 0 && i + 1 < argc) {
             output_asm = argv[++i];
             emit_asm = 1;
-        } else if (strcmp(argv[i], "--asm-backend") == 0) {
-            use_asm_backend = 1;  /* Direct assembly, no C intermediate */
+        } else if (strcmp(argv[i], "--gcc") == 0 || strcmp(argv[i], "--with-gcc") == 0) {
+            use_gcc_backend = 1;  /* Use GCC backend instead of native ASM */
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             printf("LP Language v0.3 - Lightweight Native Compiler\n");
             printf("Accepts .lp and .py files\n\n");
             printf("Usage:\n");
-            printf("  lp <file.lp|.py>               Run directly (via GCC)\n");
-            printf("  lp <file.lp|.py> --asm-backend Run directly (native ASM, no GCC needed!)\n");
-            printf("  lp <file.lp|.py> -o out.c      Generate C code\n");
-            printf("  lp <file.lp|.py> -c out.exe    Compile to executable\n");
-            printf("  lp <file.lp|.py> -asm out.s    Generate assembly\n");
+            printf("  lp <file.lp|.py>            Run directly (native ASM, no GCC!)\n");
+            printf("  lp <file.lp|.py> --gcc      Run using GCC backend\n");
+            printf("  lp <file.lp|.py> -o out.c   Generate C code\n");
+            printf("  lp <file.lp|.py> -c out.exe Compile to executable\n");
+            printf("  lp <file.lp|.py> -asm out.s Generate assembly\n");
             printf("  lp build <file.lp> [options]   Build standalone executable\n");
             printf("  lp package <file.lp>           Package executable\n");
             printf("  lp test [dir]                  Run tests\n");
             printf("  lp profile <file>              Profile execution\n");
             printf("  lp watch <file>                Hot reload mode\n");
             printf("  lp                             Interactive REPL\n");
-            printf("\nNative ASM backend (no GCC required):\n");
-            printf("  lp file.lp --asm-backend       Compile and run using only as+ld\n");
+            printf("\nNative compilation (default, no GCC required!):\n");
+            printf("  lp file.lp                  Compile and run using only as+ld\n");
             return 0;
         } else {
             input_file = argv[i];
@@ -899,10 +899,10 @@ int main(int argc, char **argv) {
     }
 
     /* ══════════════════════════════════════════════════════════════
-     * NATIVE ASSEMBLY BACKEND - No GCC required!
+     * NATIVE ASSEMBLY BACKEND (DEFAULT) - No GCC required!
      * ══════════════════════════════════════════════════════════════ */
-    if (use_asm_backend) {
-        printf("[LP ASM] Using native assembly backend (no GCC)\n");
+    if (!use_gcc_backend && !emit_c_only && !emit_asm) {
+        printf("[LP] Native compilation (no GCC)\n");
 
         AsmCodeGen acg;
         asm_codegen_init(&acg, TARGET_LINUX_X64, 2);  /* O2 optimization */
