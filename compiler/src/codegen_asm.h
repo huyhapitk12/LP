@@ -49,20 +49,14 @@ typedef enum {
     /* Return value */
     REG_RET = REG_RAX,
 
-    /* Caller-saved (volatile) */
-    /* RAX, RCX, RDX, RSI, RDI, R8-R11 */
-
-    /* Callee-saved (non-volatile) */
-    /* RBX, RBP, R12-R15 */
-
     REG_COUNT = 16
 } X64Reg;
 
 typedef enum {
-    SIZE_8  = 1,   /* byte  - al, bl, ... */
-    SIZE_16 = 2,   /* word  - ax, bx, ... */
-    SIZE_32 = 4,   /* dword - eax, ebx, ... */
-    SIZE_64 = 8    /* qword - rax, rbx, ... */
+    SIZE_8  = 1,
+    SIZE_16 = 2,
+    SIZE_32 = 4,
+    SIZE_64 = 8
 } OperandSize;
 
 /* ══════════════════════════════════════════════════════════════
@@ -70,35 +64,18 @@ typedef enum {
  * ══════════════════════════════════════════════════════════════ */
 
 typedef enum {
-    /* Data movement */
     I_MOV, I_MOVZX, I_MOVSX, I_LEA,
     I_PUSH, I_POP, I_XCHG,
-
-    /* Arithmetic */
     I_ADD, I_SUB, I_MUL, I_IMUL, I_DIV, I_IDIV,
-    I_INC, I_DEC, I_NEG,
-    I_ADC, I_SBB,
-
-    /* Logical */
+    I_INC, I_DEC, I_NEG, I_ADC, I_SBB,
     I_AND, I_OR, I_XOR, I_NOT,
     I_SHL, I_SHR, I_SAR,
-
-    /* Comparison */
     I_CMP, I_TEST,
-
-    /* Control flow */
     I_JMP, I_JE, I_JNE, I_JL, I_JLE, I_JG, I_JGE,
     I_JA, I_JAE, I_JB, I_JBE, I_JZ, I_JNZ,
     I_CALL, I_RET,
-
-    /* Stack frame */
     I_ENTER, I_LEAVE,
-
-    /* String */
-    I_NOP, I_CPUID, I_SYSCALL,
-
-    /* SIMD (future optimization) */
-    I_MOVDQA, I_PADDD, I_PADDQ, I_MOVAPS, I_ADDPS, I_ADDPD
+    I_NOP, I_CPUID, I_SYSCALL
 } Instruction;
 
 /* ══════════════════════════════════════════════════════════════
@@ -106,11 +83,7 @@ typedef enum {
  * ══════════════════════════════════════════════════════════════ */
 
 typedef enum {
-    OPER_REG,       /* Register: rax, rbx, ... */
-    OPER_IMM,       /* Immediate: 42, -100, ... */
-    OPER_MEM,       /* Memory: [rbp-8], [rax+rbx*4], ... */
-    OPER_LABEL,     /* Label: L1, _main, ... */
-    OPER_SYM        /* Symbol: printf, global_var */
+    OPER_REG, OPER_IMM, OPER_MEM, OPER_LABEL, OPER_SYM
 } OperandType;
 
 typedef struct {
@@ -120,47 +93,46 @@ typedef struct {
     int64_t imm;
     struct {
         X64Reg base;
-        X64Reg index;      /* -1 if no index */
-        int scale;         /* 1, 2, 4, 8 */
-        int64_t disp;      /* displacement */
+        X64Reg index;
+        int scale;
+        int64_t disp;
     } mem;
     char *label;
     char *sym;
 } Operand;
 
 /* ══════════════════════════════════════════════════════════════
- * Register Allocator
- * ══════════════════════════════════════════════════════════════ */
-
-typedef struct {
-    int used;           /* Is this register currently allocated? */
-    int spilled;        /* Is this register spilled to stack? */
-    int stack_slot;     /* Stack slot if spilled */
-    int last_use;       /* Last use position (for liveness) */
-    int dirty;          /* Needs to be saved back to memory? */
-    char *var_name;     /* Variable name (for debugging) */
-} RegAllocEntry;
-
-/* ══════════════════════════════════════════════════════════════
- * Variable Location Tracker
+ * Variable Location
  * ══════════════════════════════════════════════════════════════ */
 
 typedef enum {
-    LOC_STACK,          /* On stack */
-    LOC_REGISTER,       /* In register */
-    LOC_IMMEDIATE,      /* Constant value */
-    LOC_GLOBAL          /* Global memory */
+    LOC_STACK, LOC_REGISTER, LOC_IMMEDIATE, LOC_GLOBAL
 } VarLocation;
 
 typedef struct {
     char *name;
     VarLocation loc;
-    int64_t offset;     /* Stack offset from rbp, or immediate value */
-    X64Reg reg;         /* Register if LOC_REGISTER */
-    int type_size;      /* Size of the type (1, 2, 4, 8) */
-    int is_array;       /* Is this an array? */
-    int array_size;     /* Array size if array */
+    int64_t offset;
+    X64Reg reg;
+    int type_size;
+    int is_array;
+    int array_size;
+    int is_constant;
+    int64_t const_value;
 } VarInfo;
+
+/* ══════════════════════════════════════════════════════════════
+ * Register Allocation Entry
+ * ══════════════════════════════════════════════════════════════ */
+
+typedef struct {
+    int used;
+    int spilled;
+    int stack_slot;
+    int last_use;
+    int dirty;
+    char *var_name;
+} RegAllocEntry;
 
 /* ══════════════════════════════════════════════════════════════
  * Label Generator
@@ -177,24 +149,16 @@ typedef struct {
 
 typedef struct FuncContext {
     char *name;
-    int stack_size;             /* Total stack allocation */
-    int param_count;            /* Number of parameters */
-    int local_count;            /* Number of local variables */
-    int has_varargs;            /* Variadic function? */
-
-    /* Register allocation state */
-    RegAllocEntry regs[REG_COUNT];
-    int free_regs;              /* Bitmap of free registers */
-
-    /* Variable table */
+    int stack_size;
+    int param_count;
+    int local_count;
+    int has_varargs;
+    RegAllocEntry regs[16];
+    int free_regs;
     VarInfo *vars;
     int var_count;
     int var_capacity;
-
-    /* Stack layout */
-    int next_stack_slot;        /* Next available stack slot */
-
-    /* Current location for expression evaluation */
+    int next_stack_slot;
     struct FuncContext *parent;
 } FuncContext;
 
@@ -203,37 +167,23 @@ typedef struct FuncContext {
  * ══════════════════════════════════════════════════════════════ */
 
 typedef struct {
-    /* Output buffer */
     char *code;
     size_t code_len;
     size_t code_cap;
-
-    /* Data section for strings and globals */
     char *data;
     size_t data_len;
     size_t data_cap;
-
-    /* Current function context */
     FuncContext *func;
-
-    /* Target platform */
     AsmTarget target;
-
-    /* Optimization level */
-    int opt_level;          /* 0=none, 1=basic, 2=aggressive */
-
-    /* Label generator */
+    int opt_level;
+    int constants_folded;
+    int dead_code_removed;
+    int loops_unrolled;
     LabelGen labels;
-
-    /* Error handling */
     int had_error;
     char error_msg[256];
-
-    /* Statistics */
     int func_count;
     int instr_count;
-
-    /* Runtime dependency flags */
     int uses_printf;
     int uses_malloc;
     int uses_memcpy;
@@ -245,33 +195,17 @@ typedef struct {
  * Public API
  * ══════════════════════════════════════════════════════════════ */
 
-/* Initialize/destroy */
 void asm_codegen_init(AsmCodeGen *gen, AsmTarget target, int opt_level);
 void asm_codegen_free(AsmCodeGen *gen);
-
-/* Generate assembly from AST */
 int asm_generate(AsmCodeGen *gen, AstNode *program);
-
-/* Get output */
 char *asm_get_code(AsmCodeGen *gen);
 char *asm_get_full_output(AsmCodeGen *gen);
-
-/* Write to file */
 int asm_write_to_file(AsmCodeGen *gen, const char *filename);
 
-/* ══════════════════════════════════════════════════════════════
- * Low-level Instruction Emission
- * ══════════════════════════════════════════════════════════════ */
-
-/* Emit raw string */
+/* Instruction emission */
 void asm_emit(AsmCodeGen *gen, const char *fmt, ...);
 void asm_emit_raw(AsmCodeGen *gen, const char *str);
-
-/* Emit instruction with operands */
-void asm_emit_instr(AsmCodeGen *gen, Instruction instr, OperandSize size,
-                    Operand *dst, Operand *src);
-
-/* Emit common patterns */
+void asm_emit_instr(AsmCodeGen *gen, Instruction instr, OperandSize size, Operand *dst, Operand *src);
 void asm_emit_mov(AsmCodeGen *gen, OperandSize size, Operand *dst, Operand *src);
 void asm_emit_add(AsmCodeGen *gen, OperandSize size, Operand *dst, Operand *src);
 void asm_emit_sub(AsmCodeGen *gen, OperandSize size, Operand *dst, Operand *src);
@@ -281,42 +215,27 @@ void asm_emit_jcc(AsmCodeGen *gen, Instruction cond, const char *label);
 void asm_emit_call(AsmCodeGen *gen, const char *target);
 void asm_emit_ret(AsmCodeGen *gen);
 
-/* ══════════════════════════════════════════════════════════════
- * Function Codegen
- * ══════════════════════════════════════════════════════════════ */
-
+/* Function codegen */
 void asm_func_prologue(AsmCodeGen *gen, const char *name, int stack_size);
 void asm_func_epilogue(AsmCodeGen *gen);
 void asm_func_alloc_stack(AsmCodeGen *gen, int size);
 
-/* ══════════════════════════════════════════════════════════════
- * Register Allocation
- * ══════════════════════════════════════════════════════════════ */
-
+/* Register allocation */
 X64Reg asm_alloc_reg(AsmCodeGen *gen);
 void asm_free_reg(AsmCodeGen *gen, X64Reg reg);
 void asm_spill_reg(AsmCodeGen *gen, X64Reg reg);
 X64Reg asm_ensure_in_reg(AsmCodeGen *gen, const char *var_name);
 
-/* ══════════════════════════════════════════════════════════════
- * Variable Management
- * ══════════════════════════════════════════════════════════════ */
-
+/* Variable management */
 int asm_add_local_var(AsmCodeGen *gen, const char *name, int type_size);
 VarInfo *asm_lookup_var(AsmCodeGen *gen, const char *name);
 int asm_get_var_offset(AsmCodeGen *gen, const char *name);
 
-/* ══════════════════════════════════════════════════════════════
- * Label Management
- * ══════════════════════════════════════════════════════════════ */
-
+/* Label management */
 char *asm_new_label(AsmCodeGen *gen, char *buf, size_t buf_size);
 void asm_emit_label(AsmCodeGen *gen, const char *label);
 
-/* ══════════════════════════════════════════════════════════════
- * Operand Constructors
- * ══════════════════════════════════════════════════════════════ */
-
+/* Operand constructors */
 Operand oper_reg(X64Reg reg, OperandSize size);
 Operand oper_imm(int64_t value);
 Operand oper_mem(X64Reg base, X64Reg index, int scale, int64_t disp, OperandSize size);
@@ -324,16 +243,19 @@ Operand oper_mem_base_disp(X64Reg base, int64_t disp, OperandSize size);
 Operand oper_label(const char *label);
 Operand oper_sym(const char *sym);
 
-/* ══════════════════════════════════════════════════════════════
- * Register Name Helpers
- * ══════════════════════════════════════════════════════════════ */
-
+/* Register name helper */
 const char *reg_name(X64Reg reg, OperandSize size);
 
+/* Compile to executable */
+int asm_compile_to_exe(AsmCodeGen *gen, const char *asm_file, const char *exe_file);
+
 /* ══════════════════════════════════════════════════════════════
- * Compile to executable
+ * Optimization Functions (in asm_optimize.c)
  * ══════════════════════════════════════════════════════════════ */
 
-int asm_compile_to_exe(AsmCodeGen *gen, const char *asm_file, const char *exe_file);
+int asm_is_constant_expr(AstNode *node);
+int64_t asm_get_constant_value(AstNode *node);
+int asm_opt_unroll_loop(AstNode *node, int max_iterations);
+int asm_optimize_ast(AsmCodeGen *gen, AstNode *node);
 
 #endif /* LP_CODEGEN_ASM_H */
