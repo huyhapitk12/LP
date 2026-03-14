@@ -114,13 +114,13 @@ For a comprehensive feature status table, see **[FEATURES.md](FEATURES.md)**.
 | OOP (classes, inheritance, access control) | ✅ Full |
 | Lambda functions | ✅ Full |
 | `parallel for` | ✅ Full (needs OpenMP) |
+| Dictionary comprehensions | ✅ Full |
+| `yield` / Generators | ✅ Full |
+| `http.post` | ✅ Full |
+| `json.parse` | ✅ Full |
 | List comprehensions | ⚠️ Partial (numeric-focused) |
 | `thread.spawn` | ⚠️ Partial (worker restrictions) |
 | `numpy` module | ⚠️ Partial (basic functions) |
-| `http.post` | ❌ Not yet |
-| `json.parse` | ❌ Not yet |
-| Dictionary comprehensions | ❌ Not yet |
-| `yield` / Generators | ❌ Not yet |
 | Async/await | ❌ Not yet |
 | Decorators | ❌ Not yet |
 | F-strings | ❌ Not yet |

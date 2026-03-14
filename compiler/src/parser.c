@@ -147,12 +147,31 @@ static AstNode *parse_primary(Parser *p) {
         }
         AstNode *first = parse_expression(p);
         if (match(p, TOK_COLON)) {
-            /* It's a Dict */
+            /* Could be dict literal OR dict comprehension */
+            AstNode *key = first;
+            AstNode *value = parse_expression(p);
+            if (match(p, TOK_FOR)) {
+                /* Dict comprehension: {key: val for var in iter if cond} */
+                AstNode *n = ast_new(NODE_DICT_COMP, line);
+                n->dict_comp.key = key;
+                n->dict_comp.value = value;
+                expect(p, TOK_IDENTIFIER, "expected loop variable in dict comprehension");
+                n->dict_comp.var = tok_to_str(p->previous);
+                expect(p, TOK_IN, "expected 'in' in dict comprehension");
+                n->dict_comp.iter = parse_expression(p);
+                n->dict_comp.cond = NULL;
+                if (match(p, TOK_IF)) {
+                    n->dict_comp.cond = parse_expression(p);
+                }
+                expect(p, TOK_RBRACE, "expected '}'");
+                return n;
+            }
+            /* Regular dict literal */
             AstNode *n = ast_new(NODE_DICT_EXPR, line);
             node_list_init(&n->dict_expr.keys);
             node_list_init(&n->dict_expr.values);
-            node_list_push(&n->dict_expr.keys, first);
-            node_list_push(&n->dict_expr.values, parse_expression(p));
+            node_list_push(&n->dict_expr.keys, key);
+            node_list_push(&n->dict_expr.values, value);
             while (match(p, TOK_COMMA) && !check(p, TOK_RBRACE)) {
                 node_list_push(&n->dict_expr.keys, parse_expression(p));
                 expect(p, TOK_COLON, "expected ':' in dict literal");
@@ -198,6 +217,18 @@ static AstNode *parse_primary(Parser *p) {
             parse_block(p, &n->lambda_expr.body_stmts);
         } else {
             n->lambda_expr.body = parse_expression(p);
+        }
+        return n;
+    }
+    /* Yield expression */
+    if (match(p, TOK_YIELD)) {
+        AstNode *n = ast_new(NODE_YIELD, line);
+        n->yield_expr.value = NULL;
+        if (!check(p, TOK_NEWLINE) && !check(p, TOK_DEDENT) && 
+            !check(p, TOK_EOF) && !check(p, TOK_RPAREN) && 
+            !check(p, TOK_RBRACKET) && !check(p, TOK_RBRACE) &&
+            !check(p, TOK_COMMA)) {
+            n->yield_expr.value = parse_expression(p);
         }
         return n;
     }
