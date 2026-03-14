@@ -33,7 +33,119 @@
 #define LP_ACCESS_ADMIN 2
 #define LP_ACCESS_SUPER 3
 
-/* Security context structure */
+/* ============================================
+ * GLOBAL SECURITY STATE
+ * These persist across function calls
+ * ============================================ */
+
+/* Rate limiting state - array for different functions */
+#define LP_MAX_RATE_LIMIT_SLOTS 64
+
+typedef struct {
+    char name[64];          /* Function name */
+    int limit;              /* Max requests per minute */
+    time_t window_start;    /* Start of current window */
+    int count;              /* Requests in current window */
+} LpRateLimitSlot;
+
+static LpRateLimitSlot _lp_rate_limits[LP_MAX_RATE_LIMIT_SLOTS];
+static int _lp_rate_limit_count = 0;
+
+/* Global security context for current request */
+typedef struct {
+    int authenticated;          /* Is user authenticated? */
+    int access_level;           /* Current user's access level */
+    char *user_id;              /* Current user ID */
+    char *auth_token;           /* Auth token */
+} LpGlobalSecurityContext;
+
+static LpGlobalSecurityContext _lp_global_sec = {0, LP_ACCESS_GUEST, NULL, NULL};
+
+/* ============================================
+ * GLOBAL CONTEXT MANAGEMENT
+ * ============================================ */
+
+/* Set current user as authenticated */
+static inline void lp_set_authenticated(int access_level, const char *user_id) {
+    _lp_global_sec.authenticated = 1;
+    _lp_global_sec.access_level = access_level;
+    if (user_id) {
+        free(_lp_global_sec.user_id);
+        _lp_global_sec.user_id = strdup(user_id);
+    }
+}
+
+/* Set user as guest (logout) */
+static inline void lp_set_guest(void) {
+    _lp_global_sec.authenticated = 0;
+    _lp_global_sec.access_level = LP_ACCESS_GUEST;
+    free(_lp_global_sec.user_id);
+    _lp_global_sec.user_id = NULL;
+}
+
+/* Get current access level */
+static inline int lp_get_access_level(void) {
+    return _lp_global_sec.access_level;
+}
+
+/* Check if authenticated */
+static inline int lp_is_authenticated(void) {
+    return _lp_global_sec.authenticated;
+}
+
+/* ============================================
+ * RATE LIMITING
+ * ============================================ */
+
+/* Find or create rate limit slot */
+static inline LpRateLimitSlot* _lp_find_rate_slot(const char *func_name) {
+    /* Find existing */
+    for (int i = 0; i < _lp_rate_limit_count; i++) {
+        if (strcmp(_lp_rate_limits[i].name, func_name) == 0) {
+            return &_lp_rate_limits[i];
+        }
+    }
+    /* Create new */
+    if (_lp_rate_limit_count < LP_MAX_RATE_LIMIT_SLOTS) {
+        LpRateLimitSlot *slot = &_lp_rate_limits[_lp_rate_limit_count++];
+        strncpy(slot->name, func_name, 63);
+        slot->name[63] = '\0';
+        return slot;
+    }
+    return NULL;
+}
+
+/* Check rate limit - returns 1 if allowed, 0 if exceeded */
+static inline int lp_check_func_rate_limit(const char *func_name, int limit) {
+    LpRateLimitSlot *slot = _lp_find_rate_slot(func_name);
+    if (!slot) return 1;  /* No slot available, allow */
+    
+    time_t now = time(NULL);
+    
+    /* Reset window if more than a minute passed */
+    if (now - slot->window_start >= 60) {
+        slot->window_start = now;
+        slot->count = 0;
+        slot->limit = limit;
+    }
+    
+    slot->count++;
+    
+    return slot->count <= limit;
+}
+
+/* Get remaining requests for function */
+static inline int lp_rate_limit_remaining(const char *func_name) {
+    LpRateLimitSlot *slot = _lp_find_rate_slot(func_name);
+    if (!slot) return -1;
+    return slot->limit - slot->count;
+}
+
+/* ============================================
+ * SECURITY CONTEXT FOR @security DECORATOR
+ * ============================================ */
+
+/* Security context structure for function-level security */
 typedef struct {
     int enabled;
     int level;
@@ -52,7 +164,6 @@ typedef struct {
     char *hash_algorithm;
     int access_level;
     int readonly;
-    /* Rate limiting state */
     time_t last_request_time;
     int request_count;
 } LpSecurityContext;
