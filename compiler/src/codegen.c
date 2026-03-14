@@ -1246,6 +1246,70 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         buf_write(buf, ")");
                         break;
                     }
+                    /* ---- TIER 1: security ---- */
+                    if (imp->tier == MOD_TIER1_SECURITY) {
+                        /* Validation functions */
+                        if (strcmp(func_name, "is_safe_string") == 0) {
+                            buf_write(buf, "lp_is_safe_string(");
+                        } else if (strcmp(func_name, "validate_email") == 0) {
+                            buf_write(buf, "lp_validate_email(");
+                        } else if (strcmp(func_name, "validate_numeric") == 0) {
+                            buf_write(buf, "lp_validate_numeric(");
+                        } else if (strcmp(func_name, "validate_alphanumeric") == 0) {
+                            buf_write(buf, "lp_validate_alphanumeric(");
+                        } else if (strcmp(func_name, "validate_url") == 0) {
+                            buf_write(buf, "lp_validate_url(");
+                        } else if (strcmp(func_name, "validate_identifier") == 0) {
+                            buf_write(buf, "lp_validate_identifier(");
+                        }
+                        /* Detection functions */
+                        else if (strcmp(func_name, "detect_sql_injection") == 0) {
+                            buf_write(buf, "lp_detect_sql_injection(");
+                        } else if (strcmp(func_name, "detect_xss") == 0) {
+                            buf_write(buf, "lp_detect_xss(");
+                        }
+                        /* Escape functions */
+                        else if (strcmp(func_name, "sql_escape") == 0) {
+                            buf_write(buf, "lp_sql_escape(");
+                        } else if (strcmp(func_name, "html_escape") == 0) {
+                            buf_write(buf, "lp_html_escape(");
+                        } else if (strcmp(func_name, "strip_html") == 0) {
+                            buf_write(buf, "lp_strip_html(");
+                        }
+                        /* Hash functions */
+                        else if (strcmp(func_name, "hash_md5") == 0) {
+                            buf_write(buf, "lp_hash_md5(");
+                        } else if (strcmp(func_name, "hash_sha256") == 0) {
+                            buf_write(buf, "lp_hash_sha256(");
+                        }
+                        /* Rate limiting */
+                        else if (strcmp(func_name, "check_rate_limit") == 0) {
+                            buf_write(buf, "lp_check_func_rate_limit(");
+                        } else if (strcmp(func_name, "rate_limit_remaining") == 0) {
+                            buf_write(buf, "lp_rate_limit_remaining(");
+                        }
+                        /* Authentication context */
+                        else if (strcmp(func_name, "set_authenticated") == 0) {
+                            buf_write(buf, "lp_set_authenticated(");
+                        } else if (strcmp(func_name, "set_guest") == 0) {
+                            buf_write(buf, "lp_set_guest(");
+                        } else if (strcmp(func_name, "is_authenticated") == 0) {
+                            buf_write(buf, "lp_is_authenticated(");
+                        } else if (strcmp(func_name, "get_access_level") == 0) {
+                            buf_write(buf, "lp_get_access_level(");
+                        }
+                        /* Default fallback */
+                        else {
+                            buf_printf(buf, "lp_security_%s(", func_name);
+                        }
+                        
+                        for (int i = 0; i < node->call.args.count; i++) {
+                            if (i > 0) buf_write(buf, ", ");
+                            gen_expr(cg, buf, node->call.args.items[i]);
+                        }
+                        buf_write(buf, ")");
+                        break;
+                    }
                     /* ---- TIER 2: numpy ??? optimized C arrays ---- */
                     if (imp->tier == MOD_TIER2_NUMPY) {
                         /* np.array([1,2,3]) ??? from_doubles */
