@@ -11,7 +11,7 @@ typedef enum {
     NODE_IMPORT, NODE_WITH,
     /* Expressions */
     NODE_BIN_OP, NODE_UNARY_OP, NODE_CALL, NODE_NAME, NODE_KWARG,
-    NODE_INT_LIT, NODE_FLOAT_LIT, NODE_STRING_LIT,
+    NODE_INT_LIT, NODE_FLOAT_LIT, NODE_STRING_LIT, NODE_FSTRING,
     NODE_BOOL_LIT, NODE_NONE_LIT, NODE_LIST_EXPR,
     NODE_DICT_EXPR, NODE_SET_EXPR, NODE_TUPLE_EXPR,
     NODE_SUBSCRIPT, NODE_ATTRIBUTE,
@@ -20,6 +20,14 @@ typedef enum {
     NODE_PARALLEL_FOR,
     /* Settings/Pragma */
     NODE_SETTINGS, NODE_PARALLEL_SETTINGS,
+    /* Pattern Matching */
+    NODE_MATCH, NODE_MATCH_CASE,
+    /* Async/Await */
+    NODE_ASYNC_DEF, NODE_AWAIT_EXPR,
+    /* Type Annotations */
+    NODE_TYPE_UNION,
+    /* Generic Types */
+    NODE_GENERIC_INST,  /* Generic instantiation: Box[int] */
 } NodeType;
 
 typedef struct AstNode AstNode;
@@ -37,6 +45,17 @@ typedef struct {
     int is_kwarg;    /* Evaluates to true if **kwargs */
 } Param;
 
+/* Type parameter for generics (e.g., T in class Box[T]) */
+typedef struct {
+    char *name;      /* Type parameter name (e.g., "T") */
+} TypeParam;
+
+typedef struct {
+    TypeParam *items;
+    int count;
+    int capacity;
+} TypeParamList;
+
 typedef struct {
     Param *items;
     int count;
@@ -52,8 +71,8 @@ struct AstNode {
 #endif
     union {
         struct { NodeList stmts; } program;
-        struct { char *name; ParamList params; char *ret_type; NodeList body; TokenType access; } func_def;
-        struct { char *name; char *base_class; NodeList body; } class_def;
+        struct { char *name; TypeParamList type_params; ParamList params; char *ret_type; NodeList body; TokenType access; NodeList decorators; } func_def;
+        struct { char *name; TypeParamList type_params; char *base_class; NodeList body; } class_def;
         struct { AstNode *cond; NodeList then_body; AstNode *else_branch; } if_stmt;
         struct { char *var; AstNode *iter; NodeList body; } for_stmt;
         struct { AstNode *cond; NodeList body; } while_stmt;
@@ -76,6 +95,7 @@ struct AstNode {
         struct { int64_t value; } int_lit;
         struct { double value; } float_lit;
         struct { char *value; } str_lit;
+        struct { NodeList parts; } fstring_expr;  /* F-string: alternating string parts and expressions */
         struct { int value; } bool_lit;
         struct { NodeList elems; } list_expr;
         struct { NodeList keys; NodeList values; } dict_expr;
@@ -118,6 +138,41 @@ struct AstNode {
             int unified_memory;       /* Use unified memory for GPU */
             int async_transfer;       /* Enable async memory transfer */
         } settings;
+        /* Pattern Matching: match value: case pattern: body */
+        struct {
+            AstNode *value;           /* The value being matched */
+            NodeList cases;           /* List of NODE_MATCH_CASE nodes */
+        } match_stmt;
+        /* Match case: case pattern [if guard]: body */
+        struct {
+            AstNode *pattern;         /* Pattern to match (literal, name, or _ for wildcard) */
+            AstNode *guard;           /* Optional guard expression (NULL if none) */
+            NodeList body;            /* Body statements */
+            int is_wildcard;          /* 1 if pattern is _ (matches anything) */
+        } match_case;
+        /* Async function definition: async def name(params): body */
+        struct {
+            char *name;               /* Function name */
+            ParamList params;         /* Parameters */
+            char *ret_type;           /* Return type annotation (NULL if none) */
+            NodeList body;            /* Function body */
+            TokenType access;         /* Access modifier (0, TOK_PRIVATE, TOK_PROTECTED) */
+            NodeList decorators;      /* Decorator list */
+        } async_def;
+        /* Await expression: await expr */
+        struct {
+            AstNode *expr;            /* Expression to await */
+        } await_expr;
+        /* Type union: int | str | float */
+        struct {
+            char **types;             /* Array of type name strings */
+            int count;                /* Number of types in the union */
+        } type_union;
+        /* Generic type instantiation: Box[int] or Box[T, int] */
+        struct {
+            char *base_name;          /* Base type name (e.g., "Box") */
+            NodeList type_args;       /* Type arguments (list of NODE_NAME nodes) */
+        } generic_inst;
     };
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
@@ -127,6 +182,10 @@ struct AstNode {
 /* NodeList helpers */
 void node_list_init(NodeList *list);
 void node_list_push(NodeList *list, AstNode *node);
+
+/* TypeParamList helpers */
+void type_param_list_init(TypeParamList *list);
+void type_param_list_push(TypeParamList *list, TypeParam p);
 
 /* ParamList helpers */
 void param_list_init(ParamList *list);

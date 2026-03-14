@@ -472,4 +472,107 @@ static inline void lp_val_set_item(LpVal obj, LpVal key, LpVal val) {
     }
 }
 
+/* === Runtime Type Checking Helpers for Union Types === */
+/* These functions are used for 'is' and 'isinstance' checks with union types */
+
+/* Check if LpVal is int */
+static inline int lp_val_is_int(LpVal v) {
+    return v.type == LP_VAL_INT;
+}
+
+/* Check if LpVal is float */
+static inline int lp_val_is_float(LpVal v) {
+    return v.type == LP_VAL_FLOAT;
+}
+
+/* Check if LpVal is string */
+static inline int lp_val_is_str(LpVal v) {
+    return v.type == LP_VAL_STRING;
+}
+
+/* Check if LpVal is bool */
+static inline int lp_val_is_bool(LpVal v) {
+    return v.type == LP_VAL_BOOL;
+}
+
+/* Check if LpVal is None/null */
+static inline int lp_val_is_none(LpVal v) {
+    return v.type == LP_VAL_NULL;
+}
+
+/* Check if LpVal is list */
+static inline int lp_val_is_list(LpVal v) {
+    return v.type == LP_VAL_LIST;
+}
+
+/* Check if LpVal is dict */
+static inline int lp_val_is_dict(LpVal v) {
+    return v.type == LP_VAL_DICT;
+}
+
+/* Check if LpVal is numeric (int or float) */
+static inline int lp_val_is_numeric(LpVal v) {
+    return v.type == LP_VAL_INT || v.type == LP_VAL_FLOAT;
+}
+
+/* Generic isinstance for LpVal - compares against type name string */
+static inline int lp_val_isinstance(LpVal v, const char *type_name) {
+    if (!type_name) return 0;
+    
+    if (strcmp(type_name, "int") == 0) return v.type == LP_VAL_INT;
+    if (strcmp(type_name, "float") == 0) return v.type == LP_VAL_FLOAT;
+    if (strcmp(type_name, "str") == 0) return v.type == LP_VAL_STRING;
+    if (strcmp(type_name, "bool") == 0) return v.type == LP_VAL_BOOL;
+    if (strcmp(type_name, "None") == 0 || strcmp(type_name, "none") == 0) return v.type == LP_VAL_NULL;
+    if (strcmp(type_name, "list") == 0) return v.type == LP_VAL_LIST;
+    if (strcmp(type_name, "dict") == 0) return v.type == LP_VAL_DICT;
+    if (strcmp(type_name, "numeric") == 0) return lp_val_is_numeric(v);
+    
+    return 0;
+}
+
+/* Check if value matches any type in a union type string (e.g., "int|str|float") */
+static inline int lp_val_matches_union(LpVal v, const char *union_types) {
+    if (!union_types) return 0;
+    
+    /* Make a copy to tokenize */
+    char *copy = strdup(union_types);
+    if (!copy) return 0;
+    
+    char *saveptr;
+    char *token = strtok_r(copy, "|", &saveptr);
+    int found = 0;
+    
+    while (token != NULL) {
+        /* Skip leading/trailing whitespace */
+        while (*token == ' ') token++;
+        char *end = token + strlen(token) - 1;
+        while (end > token && *end == ' ') end--;
+        *(end + 1) = '\0';
+        
+        if (lp_val_isinstance(v, token)) {
+            found = 1;
+            break;
+        }
+        token = strtok_r(NULL, "|", &saveptr);
+    }
+    
+    free(copy);
+    return found;
+}
+
+/* Type name string for LpVal */
+static inline const char* lp_val_type_name(LpVal v) {
+    switch (v.type) {
+        case LP_VAL_INT:    return "int";
+        case LP_VAL_FLOAT:  return "float";
+        case LP_VAL_STRING: return "str";
+        case LP_VAL_BOOL:   return "bool";
+        case LP_VAL_NULL:   return "None";
+        case LP_VAL_DICT:   return "dict";
+        case LP_VAL_LIST:   return "list";
+        default:            return "unknown";
+    }
+}
+
 #endif
