@@ -466,6 +466,28 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
                         if (strcmp(func_name, "cores") == 0) return LP_INT;
                         return LP_STRING; /* os(), arch() return const char* */
                     }
+                    if (imp->tier == MOD_TIER1_SECURITY) {
+                        /* Validation functions - return bool */
+                        if (strcmp(func_name, "is_safe_string") == 0) return LP_BOOL;
+                        if (strcmp(func_name, "validate_email") == 0) return LP_BOOL;
+                        if (strcmp(func_name, "validate_numeric") == 0) return LP_BOOL;
+                        if (strcmp(func_name, "validate_alphanumeric") == 0) return LP_BOOL;
+                        if (strcmp(func_name, "validate_url") == 0) return LP_BOOL;
+                        if (strcmp(func_name, "validate_identifier") == 0) return LP_BOOL;
+                        if (strcmp(func_name, "detect_sql_injection") == 0) return LP_BOOL;
+                        if (strcmp(func_name, "detect_xss") == 0) return LP_BOOL;
+                        /* Escape/sanitize functions - return string */
+                        if (strcmp(func_name, "sql_escape") == 0) return LP_STRING;
+                        if (strcmp(func_name, "html_escape") == 0) return LP_STRING;
+                        if (strcmp(func_name, "strip_html") == 0) return LP_STRING;
+                        if (strcmp(func_name, "sanitize") == 0) return LP_STRING;
+                        /* Hash functions - return string */
+                        if (strcmp(func_name, "hash_md5") == 0) return LP_STRING;
+                        if (strcmp(func_name, "hash_sha256") == 0) return LP_STRING;
+                        /* Rate limit - return bool */
+                        if (strcmp(func_name, "check_rate_limit") == 0) return LP_BOOL;
+                        return LP_STRING;
+                    }
                     return LP_PYOBJ; /* Tier 3 */
                 }
             }
@@ -3034,67 +3056,45 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
             cg->uses_security = 1;
             
             /* Generate security context initialization */
-            buf_write(&cg->funcs, "    /* Security context */\n");
-            buf_write(&cg->funcs, "    LpSecurityContext _lp_sec_ctx;\n");
-            buf_write(&cg->funcs, "    lp_security_init(&_lp_sec_ctx);\n");
+            buf_write(&cg->funcs, "    /* === SECURITY CHECKS === */\n");
             
-            /* Apply security level */
-            if (decorator->security.level > 0) {
-                buf_printf(&cg->funcs, "    _lp_sec_ctx.level = %d;\n", decorator->security.level);
-            }
-            
-            /* Apply authentication requirement */
-            if (decorator->security.require_auth) {
-                buf_write(&cg->funcs, "    _lp_sec_ctx.require_auth = 1;\n");
-                if (decorator->security.auth_type) {
-                    buf_printf(&cg->funcs, "    _lp_sec_ctx.auth_type = \"%s\";\n", decorator->security.auth_type);
-                }
-            }
-            
-            /* Apply rate limiting */
+            /* Rate limiting - uses global state for persistence */
             if (decorator->security.rate_limit > 0) {
-                buf_printf(&cg->funcs, "    _lp_sec_ctx.rate_limit = %d;\n", decorator->security.rate_limit);
-                buf_write(&cg->funcs, "    if (!lp_check_rate_limit(&_lp_sec_ctx)) { fprintf(stderr, \"Rate limit exceeded\\n\"); return 0; }\n");
+                buf_printf(&cg->funcs, "    if (!lp_check_func_rate_limit(\"%s\", %d)) {\n", 
+                          node->func_def.name, decorator->security.rate_limit);
+                buf_printf(&cg->funcs, "        fprintf(stderr, \"[SECURITY] Rate limit exceeded for %s\\n\");\n", 
+                          node->func_def.name);
+                buf_write(&cg->funcs, "        return 0;\n");
+                buf_write(&cg->funcs, "    }\n");
             }
             
-            /* Apply input validation */
-            if (decorator->security.validate_input) {
-                buf_write(&cg->funcs, "    _lp_sec_ctx.validate_input = 1;\n");
+            /* Authentication check - uses global context */
+            if (decorator->security.require_auth) {
+                buf_write(&cg->funcs, "    if (!lp_is_authenticated()) {\n");
+                buf_printf(&cg->funcs, "        fprintf(stderr, \"[SECURITY] Authentication required for %s\\n\");\n",
+                          node->func_def.name);
+                buf_write(&cg->funcs, "        return 0;\n");
+                buf_write(&cg->funcs, "    }\n");
             }
             
-            /* Apply injection prevention */
-            if (decorator->security.prevent_injection) {
-                buf_write(&cg->funcs, "    _lp_sec_ctx.prevent_injection = 1;\n");
+            /* Access level check */
+            int required_level = decorator->security.access_level;
+            if (required_level > 0) {
+                buf_write(&cg->funcs, "    if (lp_get_access_level() < ");
+                buf_printf(&cg->funcs, "%d", required_level);
+                buf_write(&cg->funcs, ") {\n");
+                buf_printf(&cg->funcs, "        fprintf(stderr, \"[SECURITY] Access denied for %s (insufficient privileges)\\n\");\n",
+                          node->func_def.name);
+                buf_write(&cg->funcs, "        return 0;\n");
+                buf_write(&cg->funcs, "    }\n");
             }
             
-            /* Apply XSS prevention */
-            if (decorator->security.prevent_xss) {
-                buf_write(&cg->funcs, "    _lp_sec_ctx.prevent_xss = 1;\n");
-            }
-            
-            /* Apply CSRF prevention */
-            if (decorator->security.prevent_csrf) {
-                buf_write(&cg->funcs, "    _lp_sec_ctx.prevent_csrf = 1;\n");
-            }
-            
-            /* Apply CORS settings */
-            if (decorator->security.enable_cors) {
-                buf_write(&cg->funcs, "    _lp_sec_ctx.enable_cors = 1;\n");
-                if (decorator->security.cors_origins) {
-                    buf_printf(&cg->funcs, "    _lp_sec_ctx.cors_origins = \"%s\";\n", decorator->security.cors_origins);
-                }
-            }
-            
-            /* Apply access level */
-            buf_printf(&cg->funcs, "    _lp_sec_ctx.access_level = %d;\n", decorator->security.access_level);
-            
-            /* Apply readonly mode */
+            /* Readonly mode check */
             if (decorator->security.readonly) {
-                buf_write(&cg->funcs, "    _lp_sec_ctx.readonly = 1;\n");
-                buf_write(&cg->funcs, "    if (!lp_check_write_allowed(&_lp_sec_ctx)) { fprintf(stderr, \"Write operation not allowed in readonly mode\\n\"); return 0; }\n");
+                buf_write(&cg->funcs, "    /* Readonly mode: write operations will be blocked */\n");
             }
             
-            buf_write(&cg->funcs, "\n");
+            buf_write(&cg->funcs, "    /* === END SECURITY CHECKS === */\n\n");
             break;  /* Only process first security decorator */
         }
     }
@@ -3409,6 +3409,7 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
             else if (strcmp(module, "thread") == 0)   tier = MOD_TIER1_THREAD;
             else if (strcmp(module, "memory") == 0)   tier = MOD_TIER1_MEMORY;
             else if (strcmp(module, "platform") == 0) tier = MOD_TIER1_PLATFORM;
+            else if (strcmp(module, "security") == 0) tier = MOD_TIER1_SECURITY;
             else                                     tier = MOD_TIER3_PYTHON;
 
             /* Register import */
@@ -3441,6 +3442,7 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
                     else if (tier == MOD_TIER1_THREAD) { cg->uses_native = 1; cg->uses_thread = 1; }
                     else if (tier == MOD_TIER1_MEMORY) { cg->uses_native = 1; cg->uses_memory = 1; }
                     else if (tier == MOD_TIER1_PLATFORM) { cg->uses_native = 1; cg->uses_platform = 1; }
+                    else if (tier == MOD_TIER1_SECURITY) { cg->uses_native = 1; cg->uses_security = 1; }
                     else cg->uses_native = 1;
                 } else {
                     if (mod_dup) free(mod_dup);
