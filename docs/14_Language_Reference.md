@@ -304,13 +304,13 @@ Representative API:
 ### `http`
 
 - `get(url)` - HTTP GET request (returns response body)
-- `post(url, data)` - HTTP POST request (NOT SUPPORTED YET)
+- `post(url, data)` - HTTP POST request (NOW SUPPORTED)
 
 ### `json`
 
 - `loads(s)` - Parse JSON string to val
 - `dumps(v)` - Serialize val to JSON string
-- `parse(s)` - Alternative parser (NOT SUPPORTED YET)
+- `parse(s)` - Alias for `loads` (NOW SUPPORTED)
 
 ### `sqlite`
 
@@ -387,6 +387,10 @@ Representative API:
 | Bitwise operators | ✅ | All 6 operators |
 | Compound assignment | ✅ | `+=`, `-=`, etc. |
 | `parallel for` | ✅ | Requires OpenMP toolchain |
+| **Dictionary comprehensions** | ✅ | `{k: v for x in iter}` |
+| **`yield` / Generators** | ✅ | Basic generator pattern |
+| **`http.post`** | ✅ | HTTP POST requests |
+| **`json.parse`** | ✅ | Alias for `json.loads` |
 
 ### Partially Supported ⚠️
 
@@ -401,10 +405,6 @@ Representative API:
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| `http.post` | ❌ | Planned |
-| `json.parse` | ❌ | Use `loads` instead |
-| Dictionary comprehensions | ❌ | Planned |
-| `yield` / Generators | ❌ | Keyword reserved |
 | Decorators | ❌ | Not implemented |
 | Async/await | ❌ | Not implemented |
 | Pattern matching | ❌ | Not implemented |

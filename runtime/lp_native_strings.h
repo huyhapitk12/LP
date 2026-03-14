@@ -286,4 +286,197 @@ static inline const char *lp_str_join(const char *sep, LpStrArray arr) {
     return r;
 }
 
+/* Additional string methods */
+
+/* str.center(width, fillchar) - Center string in width */
+static inline const char *lp_str_center(const char *s, int width, char fill) {
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    if (width <= (int)len) {
+        return strdup(s);
+    }
+    int pad = width - len;
+    int left = pad / 2;
+    int right = pad - left;
+    char *r = (char *)malloc(width + 1);
+    if (!r) return NULL;
+    memset(r, fill, left);
+    memcpy(r + left, s, len);
+    memset(r + left + len, fill, right);
+    r[width] = '\0';
+    return r;
+}
+
+/* str.ljust(width, fillchar) - Left justify */
+static inline const char *lp_str_ljust(const char *s, int width, char fill) {
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    if (width <= (int)len) {
+        return strdup(s);
+    }
+    char *r = (char *)malloc(width + 1);
+    if (!r) return NULL;
+    memcpy(r, s, len);
+    memset(r + len, fill, width - len);
+    r[width] = '\0';
+    return r;
+}
+
+/* str.rjust(width, fillchar) - Right justify */
+static inline const char *lp_str_rjust(const char *s, int width, char fill) {
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    if (width <= (int)len) {
+        return strdup(s);
+    }
+    char *r = (char *)malloc(width + 1);
+    if (!r) return NULL;
+    memset(r, fill, width - len);
+    memcpy(r + width - len, s, len);
+    r[width] = '\0';
+    return r;
+}
+
+/* str.zfill(width) - Zero fill */
+static inline const char *lp_str_zfill(const char *s, int width) {
+    return lp_str_rjust(s, width, '0');
+}
+
+/* str.title() - Title case */
+static inline const char *lp_str_title(const char *s) {
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    char *r = (char *)malloc(len + 1);
+    if (!r) return NULL;
+    int cap_next = 1;
+    for (size_t i = 0; i < len; i++) {
+        if (isspace((unsigned char)s[i]) || s[i] == '-' || s[i] == '_') {
+            r[i] = s[i];
+            cap_next = 1;
+        } else if (cap_next) {
+            r[i] = (char)toupper((unsigned char)s[i]);
+            cap_next = 0;
+        } else {
+            r[i] = (char)tolower((unsigned char)s[i]);
+        }
+    }
+    r[len] = '\0';
+    return r;
+}
+
+/* str.capitalize() - Capitalize first char */
+static inline const char *lp_str_capitalize(const char *s) {
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    char *r = (char *)malloc(len + 1);
+    if (!r) return NULL;
+    if (len > 0) {
+        r[0] = (char)toupper((unsigned char)s[0]);
+        for (size_t i = 1; i < len; i++) {
+            r[i] = (char)tolower((unsigned char)s[i]);
+        }
+    }
+    r[len] = '\0';
+    return r;
+}
+
+/* str.swapcase() - Swap case */
+static inline const char *lp_str_swapcase(const char *s) {
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    char *r = (char *)malloc(len + 1);
+    if (!r) return NULL;
+    for (size_t i = 0; i < len; i++) {
+        if (isupper((unsigned char)s[i])) r[i] = (char)tolower((unsigned char)s[i]);
+        else if (islower((unsigned char)s[i])) r[i] = (char)toupper((unsigned char)s[i]);
+        else r[i] = s[i];
+    }
+    r[len] = '\0';
+    return r;
+}
+
+/* str.islower() - Check if all lowercase */
+static inline int lp_str_islower(const char *s) {
+    if (!s || !*s) return 0;
+    int has_lower = 0;
+    while (*s) {
+        if (isupper((unsigned char)*s)) return 0;
+        if (islower((unsigned char)*s)) has_lower = 1;
+        s++;
+    }
+    return has_lower;
+}
+
+/* str.isupper() - Check if all uppercase */
+static inline int lp_str_isupper(const char *s) {
+    if (!s || !*s) return 0;
+    int has_upper = 0;
+    while (*s) {
+        if (islower((unsigned char)*s)) return 0;
+        if (isupper((unsigned char)*s)) has_upper = 1;
+        s++;
+    }
+    return has_upper;
+}
+
+/* str.isspace() - Check if all whitespace */
+static inline int lp_str_isspace(const char *s) {
+    if (!s || !*s) return 0;
+    while (*s) {
+        if (!isspace((unsigned char)*s)) return 0;
+        s++;
+    }
+    return 1;
+}
+
+/* str.rfind(sub) - Find from right */
+static inline int64_t lp_str_rfind(const char *s, const char *sub) {
+    if (!s || !sub) return -1;
+    const char *last = NULL;
+    const char *p = s;
+    while ((p = strstr(p, sub)) != NULL) {
+        last = p;
+        p++;
+    }
+    return last ? (int64_t)(last - s) : -1;
+}
+
+/* str.rindex(sub) - Same as rfind but raises on error (returns -1 here) */
+static inline int64_t lp_str_rindex(const char *s, const char *sub) {
+    int64_t idx = lp_str_rfind(s, sub);
+    return idx;
+}
+
+/* str.partition(sep) - Partition into 3 parts */
+typedef struct {
+    const char *part1;
+    const char *part2;
+    const char *part3;
+} LpStrPartition;
+
+static inline LpStrPartition lp_str_partition(const char *s, const char *sep) {
+    LpStrPartition result = {NULL, NULL, NULL};
+    if (!s) return result;
+    if (!sep || !*sep) {
+        result.part1 = strdup(s);
+        result.part2 = strdup("");
+        result.part3 = strdup("");
+        return result;
+    }
+    const char *found = strstr(s, sep);
+    if (found) {
+        size_t len1 = found - s;
+        char *p1 = (char *)malloc(len1 + 1);
+        memcpy(p1, s, len1); p1[len1] = '\0';
+        result.part1 = p1;
+        result.part2 = strdup(sep);
+        result.part3 = strdup(found + strlen(sep));
+    } else {
+        result.part1 = strdup(s);
+        result.part2 = strdup("");
+        result.part3 = strdup("");
+    }
+    return result;
+}
+
 #endif /* LP_NATIVE_STRINGS_H */
