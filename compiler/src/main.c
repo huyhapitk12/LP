@@ -33,6 +33,7 @@ __declspec(dllimport) void __stdcall Sleep(unsigned long dwMilliseconds);
 #endif
 #include "parser.h"
 #include "codegen.h"
+#include "codegen_asm.h"
 #include "repl.h"
 #include "process_utils.h"
 
@@ -839,6 +840,7 @@ int main(int argc, char **argv) {
     int emit_c_only = 0;
     int compile_only = 0;
     int emit_asm = 0;
+    int use_asm_backend = 0;         /* --asm-backend: use direct assembly, no C */
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
@@ -850,20 +852,25 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "-asm") == 0 && i + 1 < argc) {
             output_asm = argv[++i];
             emit_asm = 1;
+        } else if (strcmp(argv[i], "--asm-backend") == 0) {
+            use_asm_backend = 1;  /* Direct assembly, no C intermediate */
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
-            printf("LP Language v0.2\n");
+            printf("LP Language v0.3 - Lightweight Native Compiler\n");
             printf("Accepts .lp and .py files\n\n");
             printf("Usage:\n");
-            printf("  lp <file.lp|.py>            Run directly\n");
-            printf("  lp <file.lp|.py> -o out.c   Generate C code\n");
-            printf("  lp <file.lp|.py> -c out.exe Compile to executable\n");
-            printf("  lp <file.lp|.py> -asm out.s Generate assembly\n");
-            printf("  lp build <file.lp> [--target windows-x64|linux-x64|macos-arm64|linux-arm64]  Build standalone executable\n");
-            printf("  lp package <file.lp> [--format zip|tar.gz]           Package executable\n");
-            printf("  lp test [dir]               Run tests\n");
-            printf("  lp profile <file>            Profile execution\n");
-            printf("  lp watch <file>              Hot reload mode\n");
-            printf("  lp                          Interactive REPL\n");
+            printf("  lp <file.lp|.py>               Run directly (via GCC)\n");
+            printf("  lp <file.lp|.py> --asm-backend Run directly (native ASM, no GCC needed!)\n");
+            printf("  lp <file.lp|.py> -o out.c      Generate C code\n");
+            printf("  lp <file.lp|.py> -c out.exe    Compile to executable\n");
+            printf("  lp <file.lp|.py> -asm out.s    Generate assembly\n");
+            printf("  lp build <file.lp> [options]   Build standalone executable\n");
+            printf("  lp package <file.lp>           Package executable\n");
+            printf("  lp test [dir]                  Run tests\n");
+            printf("  lp profile <file>              Profile execution\n");
+            printf("  lp watch <file>                Hot reload mode\n");
+            printf("  lp                             Interactive REPL\n");
+            printf("\nNative ASM backend (no GCC required):\n");
+            printf("  lp file.lp --asm-backend       Compile and run using only as+ld\n");
             return 0;
         } else {
             input_file = argv[i];
@@ -889,6 +896,104 @@ int main(int argc, char **argv) {
         ast_free(program);
         free(source);
         return 1;
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+     * NATIVE ASSEMBLY BACKEND - No GCC required!
+     * ══════════════════════════════════════════════════════════════ */
+    if (use_asm_backend) {
+        printf("[LP ASM] Using native assembly backend (no GCC)\n");
+
+        AsmCodeGen acg;
+        asm_codegen_init(&acg, TARGET_LINUX_X64, 2);  /* O2 optimization */
+
+        if (!asm_generate(&acg, program)) {
+            fprintf(stderr, "[LP ASM] Code generation failed: %s\n", acg.error_msg);
+            asm_codegen_free(&acg);
+            ast_free(program);
+            free(source);
+            return 1;
+        }
+
+        /* Get basename for temp files */
+        char basename[256];
+        get_basename(basename, sizeof(basename), input_file);
+
+        char asm_file[512], exe_file[512];
+        snprintf(asm_file, sizeof(asm_file), "__lp_%s.s", basename);
+        snprintf(exe_file, sizeof(exe_file), "__lp_%s", basename);
+
+        /* Write assembly file */
+        if (!asm_write_to_file(&acg, asm_file)) {
+            fprintf(stderr, "[LP ASM] Failed to write assembly file\n");
+            asm_codegen_free(&acg);
+            ast_free(program);
+            free(source);
+            return 1;
+        }
+
+        printf("[LP ASM] Generated: %s\n", asm_file);
+        printf("[LP ASM] Instructions: %d\n", acg.instr_count);
+
+        /* Compile using as + ld (no GCC!) */
+        char cmd[1024];
+
+        /* Assemble: as -o file.o file.s */
+        snprintf(cmd, sizeof(cmd), "as -o %s.o %s 2>&1", exe_file, asm_file);
+        int ret = system(cmd);
+        if (ret != 0) {
+            fprintf(stderr, "[LP ASM] Assembly failed\n");
+            asm_codegen_free(&acg);
+            ast_free(program);
+            free(source);
+            return 1;
+        }
+
+        /* Link: ld -o file file.o -lc --dynamic-linker /lib64/ld-linux-x86-64.so.2 */
+        snprintf(cmd, sizeof(cmd), "ld -o %s %s.o -lc --dynamic-linker /lib64/ld-linux-x86-64.so.2 2>&1", exe_file, exe_file);
+        ret = system(cmd);
+        if (ret != 0) {
+            fprintf(stderr, "[LP ASM] Linking failed\n");
+            char obj_file[512];
+            snprintf(obj_file, sizeof(obj_file), "%s.o", exe_file);
+            remove(obj_file);
+            asm_codegen_free(&acg);
+            ast_free(program);
+            free(source);
+            return 1;
+        }
+
+        /* Cleanup object file */
+        char obj_file[512];
+        snprintf(obj_file, sizeof(obj_file), "%s.o", exe_file);
+        remove(obj_file);
+
+        printf("[LP ASM] Created executable: %s\n", exe_file);
+
+        /* Run the executable */
+        fflush(stdout);
+        char full_exe_path[1024];
+        if (exe_file[0] != '/') {
+            /* Make path absolute */
+            if (!getcwd(full_exe_path, sizeof(full_exe_path))) {
+                strcpy(full_exe_path, exe_file);
+            } else {
+                strcat(full_exe_path, "/");
+                strcat(full_exe_path, exe_file);
+            }
+        } else {
+            strcpy(full_exe_path, exe_file);
+        }
+        ret = system(full_exe_path);
+
+        /* Cleanup - but keep asm for debugging */
+        /* remove(asm_file); */
+        remove(exe_file);
+
+        asm_codegen_free(&acg);
+        ast_free(program);
+        free(source);
+        return ret;
     }
 
     /* Generate C code */
