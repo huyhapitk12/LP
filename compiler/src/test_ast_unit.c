@@ -60,12 +60,14 @@ void test_node_list_push() {
     NodeList list;
     node_list_init(&list);
 
+    LpArena *arena = lp_memory_arena_new(1024);
+
     assert(list.items == NULL);
     assert(list.count == 0);
     assert(list.cap == 0);
 
     for (int i = 0; i < 10; i++) {
-        AstNode *node = ast_new(NODE_INT_LIT, i);
+        AstNode *node = ast_new(arena, NODE_INT_LIT, i);
         node->int_lit.value = i;
         node_list_push(&list, node);
     }
@@ -79,6 +81,7 @@ void test_node_list_push() {
         ast_free(list.items[i]);
     }
     free(list.items);
+    lp_memory_arena_free(arena);
     printf("node_list_push passed!\n");
 }
 

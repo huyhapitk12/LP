@@ -734,12 +734,13 @@ int main(int argc, char **argv) {
         char *source = read_file(input_file);
         if (!source) return 1;
         
+        LpArena *arena = lp_memory_arena_new(1024 * 1024 * 10);
         Parser parser;
-        parser_init(&parser, source);
+        parser_init(&parser, source, arena);
         AstNode *program = parser_parse(&parser);
         if (parser.had_error) {
             show_error_context(source, parser.error_msg);
-            ast_free(program); free(source); return 1;
+            ast_free(program); lp_memory_arena_free(arena); free(source); return 1;
         }
         
         CodeGen cg;
@@ -748,7 +749,7 @@ int main(int argc, char **argv) {
         
         if (cg.had_error) {
             fprintf(stderr, "\n  \xe2\x9d\x8c Codegen Error: %s\n\n", cg.error_msg);
-            codegen_free(&cg); ast_free(program); free(source); return 1;
+            codegen_free(&cg); ast_free(program); lp_memory_arena_free(arena); free(source); return 1;
         }
         
         printf("[LP Export] Generating C API header: %s\n", header_path);
@@ -756,7 +757,7 @@ int main(int argc, char **argv) {
         
         if (!make_library) {
             printf("[LP Export] Success! (Only header generated)\n");
-            codegen_free(&cg); ast_free(program); free(source);
+            codegen_free(&cg); ast_free(program); lp_memory_arena_free(arena); free(source);
             return 0;
         }
         
@@ -810,7 +811,7 @@ int main(int argc, char **argv) {
                 remove(tmp_c);
                 free(c_code);
                 codegen_free(&cg);
-                ast_free(program);
+                ast_free(program); lp_memory_arena_free(arena);
                 free(source);
                 return 1;
             }
@@ -823,7 +824,7 @@ int main(int argc, char **argv) {
         remove(tmp_c);
         
         free(c_code);
-        codegen_free(&cg); ast_free(program); free(source);
+        codegen_free(&cg); ast_free(program); lp_memory_arena_free(arena); free(source);
         
         if (r2 == 0) {
             printf("[LP Export] Success!\n");
@@ -888,13 +889,14 @@ int main(int argc, char **argv) {
     if (!source) return 1;
 
     /* Parse */
+    LpArena *arena = lp_memory_arena_new(1024 * 1024 * 10);
     Parser parser;
-    parser_init(&parser, source);
+    parser_init(&parser, source, arena);
     AstNode *program = parser_parse(&parser);
 
     if (parser.had_error) {
         show_error_context(source, parser.error_msg);
-        ast_free(program);
+        ast_free(program); lp_memory_arena_free(arena);
         free(source);
         return 1;
     }
@@ -1027,7 +1029,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "\n\033[1;31m  \xe2\x9d\x8c Codegen Error: %s\033[0m\n\n", cg.error_msg);
         free(c_code);
         codegen_free(&cg);
-        ast_free(program);
+        ast_free(program); lp_memory_arena_free(arena);
         free(source);
         return 1;
     }
@@ -1041,7 +1043,7 @@ int main(int argc, char **argv) {
         printf("[LP] Generated: %s\n", output_c);
         free(c_code);
         codegen_free(&cg);
-        ast_free(program);
+        ast_free(program); lp_memory_arena_free(arena);
         free(source);
         return 0;
     }
@@ -1052,7 +1054,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Error: GCC not found. Install MSYS2 or MinGW.\n");
         free(c_code);
         codegen_free(&cg);
-        ast_free(program);
+        ast_free(program); lp_memory_arena_free(arena);
         free(source);
         return 1;
     }
@@ -1067,7 +1069,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Error: cannot find lp_runtime.h\n");
         free(c_code);
         codegen_free(&cg);
-        ast_free(program);
+        ast_free(program); lp_memory_arena_free(arena);
         free(source);
         return 1;
     }
@@ -1086,7 +1088,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Error: temp path is too long\n");
             free(c_code);
             codegen_free(&cg);
-            ast_free(program);
+            ast_free(program); lp_memory_arena_free(arena);
             free(source);
             return 1;
         }
@@ -1098,7 +1100,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Error: temp filename is too long\n");
             free(c_code);
             codegen_free(&cg);
-            ast_free(program);
+            ast_free(program); lp_memory_arena_free(arena);
             free(source);
             return 1;
         }
@@ -1116,7 +1118,7 @@ int main(int argc, char **argv) {
             remove(tmp_c);
             free(c_code);
             codegen_free(&cg);
-            ast_free(program);
+            ast_free(program); lp_memory_arena_free(arena);
             free(source);
             return 1;
         }
@@ -1126,7 +1128,7 @@ int main(int argc, char **argv) {
             remove(tmp_c);
             free(c_code);
             codegen_free(&cg);
-            ast_free(program);
+            ast_free(program); lp_memory_arena_free(arena);
             free(source);
             return 1;
         }
@@ -1140,7 +1142,7 @@ int main(int argc, char **argv) {
             remove(tmp_c);
             free(c_code);
             codegen_free(&cg);
-            ast_free(program);
+            ast_free(program); lp_memory_arena_free(arena);
             free(source);
             return 1;
         }
@@ -1153,7 +1155,7 @@ int main(int argc, char **argv) {
         remove(tmp_c);
         free(c_code);
         codegen_free(&cg);
-        ast_free(program);
+        ast_free(program); lp_memory_arena_free(arena);
         free(source);
         return 1;
     }
@@ -1215,7 +1217,7 @@ int main(int argc, char **argv) {
             remove(tmp_c);
             free(c_code);
             codegen_free(&cg);
-            ast_free(program);
+            ast_free(program); lp_memory_arena_free(arena);
             free(source);
             return 1;
         }
@@ -1256,14 +1258,14 @@ int main(int argc, char **argv) {
     if (ret != 0) {
         fprintf(stderr, "[LP] Compilation failed (gcc exit %d)\n", ret);
         remove(tmp_c);
-        free(c_code); codegen_free(&cg); ast_free(program); free(source);
+        free(c_code); codegen_free(&cg); ast_free(program); lp_memory_arena_free(arena); free(source);
         return 1;
     }
 
     if (emit_asm) {
         printf("[LP] Generated Assembly: %s\n", exe_path);
         remove(tmp_c);
-        free(c_code); codegen_free(&cg); ast_free(program); free(source);
+        free(c_code); codegen_free(&cg); ast_free(program); lp_memory_arena_free(arena); free(source);
         return 0;
     }
 
@@ -1271,7 +1273,7 @@ int main(int argc, char **argv) {
     if (compile_only) {
         printf("[LP] Compiled: %s\n", exe_path);
         remove(tmp_c);
-        free(c_code); codegen_free(&cg); ast_free(program); free(source);
+        free(c_code); codegen_free(&cg); ast_free(program); lp_memory_arena_free(arena); free(source);
         return 0;
     }
 
@@ -1281,7 +1283,7 @@ int main(int argc, char **argv) {
     ret = (int)_spawnl(_P_WAIT, exe_path, exe_path, NULL);
     remove(exe_path);
 
-    free(c_code); codegen_free(&cg); ast_free(program); free(source);
+    free(c_code); codegen_free(&cg); ast_free(program); lp_memory_arena_free(arena); free(source);
     return ret;
 }
 
@@ -1404,13 +1406,14 @@ int run_tests(const char *argv0, const char *test_dir) {
         fclose(f);
 
         /* Parse to find test functions */
+        LpArena *arena = lp_memory_arena_new(1024 * 1024 * 10);
         Parser parser;
-        parser_init(&parser, source);
+        parser_init(&parser, source, arena);
         AstNode *program = parser_parse(&parser);
 
         if (parser.had_error) {
             printf("    \033[31m\xE2\x9D\x8C Parse error: %s\033[0m\n", parser.error_msg);
-            ast_free(program);
+            ast_free(program); lp_memory_arena_free(arena);
             free(source);
             total_failed++;
             continue;
@@ -1421,7 +1424,7 @@ int run_tests(const char *argv0, const char *test_dir) {
 
         if (test_count == 0) {
             printf("    \033[33mNo test_* functions found\033[0m\n");
-            ast_free(program);
+            ast_free(program); lp_memory_arena_free(arena);
             free(source);
             continue;
         }
@@ -1555,7 +1558,7 @@ int run_tests(const char *argv0, const char *test_dir) {
             codegen_free(&cg);
         }
 
-        ast_free(program);
+        ast_free(program); lp_memory_arena_free(arena);
         free(source);
         printf("\n");
 
@@ -1599,12 +1602,13 @@ int run_profile(const char *argv0, const char *input_file) {
     }
 
     /* Parse */
+    LpArena *arena = lp_memory_arena_new(1024 * 1024 * 10);
     Parser parser;
-    parser_init(&parser, source);
+    parser_init(&parser, source, arena);
     AstNode *program = parser_parse(&parser);
     if (parser.had_error) {
         fprintf(stderr, "\033[31mParse error: %s\033[0m\n", parser.error_msg);
-        ast_free(program); free(source);
+        ast_free(program); lp_memory_arena_free(arena); free(source);
         return 1;
     }
 
@@ -1627,7 +1631,7 @@ int run_profile(const char *argv0, const char *input_file) {
     char *c_code = codegen_get_output(&cg);
     if (cg.had_error) {
         fprintf(stderr, "\033[31mCodegen error: %s\033[0m\n", cg.error_msg);
-        free(c_code); codegen_free(&cg); ast_free(program); free(source);
+        free(c_code); codegen_free(&cg); ast_free(program); lp_memory_arena_free(arena); free(source);
         return 1;
     }
 
@@ -1637,7 +1641,7 @@ int run_profile(const char *argv0, const char *input_file) {
     FILE *tmp = fopen(tmp_c, "w");
     if (!tmp) {
         fprintf(stderr, "\033[31mError: cannot write temp file\033[0m\n");
-        free(c_code); codegen_free(&cg); ast_free(program); free(source);
+        free(c_code); codegen_free(&cg); ast_free(program); lp_memory_arena_free(arena); free(source);
         return 1;
     }
 
@@ -1684,7 +1688,7 @@ int run_profile(const char *argv0, const char *input_file) {
     const char *gcc = find_gcc();
     if (!gcc) {
         fprintf(stderr, "\033[31mError: GCC not found\033[0m\n");
-        remove(tmp_c); free(c_code); codegen_free(&cg); ast_free(program); free(source);
+        remove(tmp_c); free(c_code); codegen_free(&cg); ast_free(program); lp_memory_arena_free(arena); free(source);
         return 1;
     }
 
@@ -1696,7 +1700,7 @@ int run_profile(const char *argv0, const char *input_file) {
         remove(tmp_c);
         free(c_code);
         codegen_free(&cg);
-        ast_free(program);
+        ast_free(program); lp_memory_arena_free(arena);
         free(source);
         return 1;
     }
@@ -1708,7 +1712,7 @@ int run_profile(const char *argv0, const char *input_file) {
         remove(tmp_c);
         free(c_code);
         codegen_free(&cg);
-        ast_free(program);
+        ast_free(program); lp_memory_arena_free(arena);
         free(source);
         return 1;
     }
@@ -1718,7 +1722,7 @@ int run_profile(const char *argv0, const char *input_file) {
         remove(tmp_c);
         free(c_code);
         codegen_free(&cg);
-        ast_free(program);
+        ast_free(program); lp_memory_arena_free(arena);
         free(source);
         return 1;
     }
@@ -1744,7 +1748,7 @@ int run_profile(const char *argv0, const char *input_file) {
 
     if (ret != 0) {
         fprintf(stderr, "\033[31m  Compilation failed\033[0m\n");
-        remove(tmp_c); free(c_code); codegen_free(&cg); ast_free(program); free(source);
+        remove(tmp_c); free(c_code); codegen_free(&cg); ast_free(program); lp_memory_arena_free(arena); free(source);
         return 1;
     }
 
@@ -1759,7 +1763,7 @@ int run_profile(const char *argv0, const char *input_file) {
     remove(exe_path);
     free(c_code);
     codegen_free(&cg);
-    ast_free(program);
+    ast_free(program); lp_memory_arena_free(arena);
     free(source);
 
     return ret;
@@ -1854,8 +1858,9 @@ int run_watch(const char *argv0, const char *input_file) {
             clock_t t_start = clock();
 
             /* Parse */
+            LpArena *arena = lp_memory_arena_new(1024 * 1024 * 10);
             Parser parser;
-            parser_init(&parser, source);
+            parser_init(&parser, source, arena);
             AstNode *program = parser_parse(&parser);
 
             if (!program || parser.had_error) {
@@ -1879,7 +1884,7 @@ int run_watch(const char *argv0, const char *input_file) {
                 printf(" \033[1;31mOutput path too long\033[0m\n");
                 free(c_code);
                 codegen_free(&cg);
-                ast_free(program);
+                ast_free(program); lp_memory_arena_free(arena);
                 free(source);
                 Sleep(500);
                 continue;
@@ -1906,7 +1911,7 @@ int run_watch(const char *argv0, const char *input_file) {
                     printf(" \033[1;31mInclude path too long\033[0m\n");
                     free(c_code);
                     codegen_free(&cg);
-                    ast_free(program);
+                    ast_free(program); lp_memory_arena_free(arena);
                     free(source);
                     Sleep(500);
                     continue;
@@ -1926,7 +1931,7 @@ int run_watch(const char *argv0, const char *input_file) {
                     printf(" \033[1;31mSQLite path too long\033[0m\n");
                     free(c_code);
                     codegen_free(&cg);
-                    ast_free(program);
+                    ast_free(program); lp_memory_arena_free(arena);
                     free(source);
                     Sleep(500);
                     continue;
@@ -1943,7 +1948,7 @@ int run_watch(const char *argv0, const char *input_file) {
                 printf(" \033[1;31mCompile Error! (%.2fs)\033[0m\n", compile_time);
                 free(c_code);
                 codegen_free(&cg);
-                ast_free(program);
+                ast_free(program); lp_memory_arena_free(arena);
                 free(source);
                 Sleep(500);
                 continue;
@@ -1962,7 +1967,7 @@ int run_watch(const char *argv0, const char *input_file) {
             remove(tmp_exe);
             free(c_code);
             codegen_free(&cg);
-            ast_free(program);
+            ast_free(program); lp_memory_arena_free(arena);
             free(source);
         }
 

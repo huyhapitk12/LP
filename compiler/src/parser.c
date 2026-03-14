@@ -203,17 +203,17 @@ static AstNode *parse_primary(Parser *p) {
     int line = p->current.line;
 
     if (match(p, TOK_INT_LIT)) {
-        AstNode *n = ast_new(NODE_INT_LIT, line);
+        AstNode *n = ast_new(p->arena, NODE_INT_LIT, line);
         n->int_lit.value = p->previous.int_val;
         return n;
     }
     if (match(p, TOK_FLOAT_LIT)) {
-        AstNode *n = ast_new(NODE_FLOAT_LIT, line);
+        AstNode *n = ast_new(p->arena, NODE_FLOAT_LIT, line);
         n->float_lit.value = p->previous.float_val;
         return n;
     }
     if (match(p, TOK_STRING_LIT)) {
-        AstNode *n = ast_new(NODE_STRING_LIT, line);
+        AstNode *n = ast_new(p->arena, NODE_STRING_LIT, line);
         n->str_lit.value = tok_to_str(p->previous);
         return n;
     }
@@ -320,29 +320,29 @@ static AstNode *parse_primary(Parser *p) {
         return n;
     }
     if (match(p, TOK_TRUE) || match(p, TOK_FALSE)) {
-        AstNode *n = ast_new(NODE_BOOL_LIT, line);
+        AstNode *n = ast_new(p->arena, NODE_BOOL_LIT, line);
         n->bool_lit.value = (p->previous.type == TOK_TRUE) ? 1 : 0;
         return n;
     }
     if (match(p, TOK_NONE)) {
-        return ast_new(NODE_NONE_LIT, line);
+        return ast_new(p->arena, NODE_NONE_LIT, line);
     }
     if (match(p, TOK_IDENTIFIER)) {
-        AstNode *n = ast_new(NODE_NAME, line);
+        AstNode *n = ast_new(p->arena, NODE_NAME, line);
         n->name_expr.name = tok_to_str(p->previous);
         return n;
     }
     if (match(p, TOK_LPAREN)) {
         int tuple_line = p->previous.line;
         if (match(p, TOK_RPAREN)) {
-            AstNode *n = ast_new(NODE_TUPLE_EXPR, tuple_line);
+            AstNode *n = ast_new(p->arena, NODE_TUPLE_EXPR, tuple_line);
             node_list_init(&n->tuple_expr.elems);
             return n;
         }
         AstNode *expr = parse_expression(p);
         if (match(p, TOK_COMMA)) {
             /* It's a tuple */
-            AstNode *n = ast_new(NODE_TUPLE_EXPR, tuple_line);
+            AstNode *n = ast_new(p->arena, NODE_TUPLE_EXPR, tuple_line);
             node_list_init(&n->tuple_expr.elems);
             node_list_push(&n->tuple_expr.elems, expr);
             if (!check(p, TOK_RPAREN)) {
@@ -360,14 +360,14 @@ static AstNode *parse_primary(Parser *p) {
         /* Could be a list literal OR a list comprehension */
         if (check(p, TOK_RBRACKET)) {
             advance(p);
-            AstNode *n = ast_new(NODE_LIST_EXPR, line);
+            AstNode *n = ast_new(p->arena, NODE_LIST_EXPR, line);
             node_list_init(&n->list_expr.elems);
             return n;
         }
         AstNode *first = parse_expression(p);
         if (match(p, TOK_FOR)) {
             /* List comprehension: [expr for var in iter if cond] */
-            AstNode *n = ast_new(NODE_LIST_COMP, line);
+            AstNode *n = ast_new(p->arena, NODE_LIST_COMP, line);
             n->list_comp.expr = first;
             expect(p, TOK_IDENTIFIER, "expected loop variable in comprehension");
             n->list_comp.var = tok_to_str(p->previous);
@@ -381,7 +381,7 @@ static AstNode *parse_primary(Parser *p) {
             return n;
         }
         /* Regular list literal */
-        AstNode *n = ast_new(NODE_LIST_EXPR, line);
+        AstNode *n = ast_new(p->arena, NODE_LIST_EXPR, line);
         node_list_init(&n->list_expr.elems);
         node_list_push(&n->list_expr.elems, first);
         while (match(p, TOK_COMMA) && !check(p, TOK_RBRACKET))
@@ -392,7 +392,7 @@ static AstNode *parse_primary(Parser *p) {
     if (match(p, TOK_LBRACE)) {
         if (match(p, TOK_RBRACE)) {
             /* Empty {} is a dict by default in Python */
-            AstNode *n = ast_new(NODE_DICT_EXPR, line);
+            AstNode *n = ast_new(p->arena, NODE_DICT_EXPR, line);
             node_list_init(&n->dict_expr.keys);
             node_list_init(&n->dict_expr.values);
             return n;
@@ -404,7 +404,7 @@ static AstNode *parse_primary(Parser *p) {
             AstNode *value = parse_expression(p);
             if (match(p, TOK_FOR)) {
                 /* Dict comprehension: {key: val for var in iter if cond} */
-                AstNode *n = ast_new(NODE_DICT_COMP, line);
+                AstNode *n = ast_new(p->arena, NODE_DICT_COMP, line);
                 n->dict_comp.key = key;
                 n->dict_comp.value = value;
                 expect(p, TOK_IDENTIFIER, "expected loop variable in dict comprehension");
@@ -419,7 +419,7 @@ static AstNode *parse_primary(Parser *p) {
                 return n;
             }
             /* Regular dict literal */
-            AstNode *n = ast_new(NODE_DICT_EXPR, line);
+            AstNode *n = ast_new(p->arena, NODE_DICT_EXPR, line);
             node_list_init(&n->dict_expr.keys);
             node_list_init(&n->dict_expr.values);
             node_list_push(&n->dict_expr.keys, key);
@@ -433,7 +433,7 @@ static AstNode *parse_primary(Parser *p) {
             return n;
         } else {
             /* It's a Set */
-            AstNode *n = ast_new(NODE_SET_EXPR, line);
+            AstNode *n = ast_new(p->arena, NODE_SET_EXPR, line);
             node_list_init(&n->set_expr.elems);
             node_list_push(&n->set_expr.elems, first);
             while (match(p, TOK_COMMA) && !check(p, TOK_RBRACE)) {
@@ -445,7 +445,7 @@ static AstNode *parse_primary(Parser *p) {
     }
     /* Lambda expression */
     if (match(p, TOK_LAMBDA)) {
-        AstNode *n = ast_new(NODE_LAMBDA, line);
+        AstNode *n = ast_new(p->arena, NODE_LAMBDA, line);
         param_list_init(&n->lambda_expr.params);
         n->lambda_expr.is_multiline = 0;
         n->lambda_expr.body = NULL;
@@ -491,7 +491,7 @@ static AstNode *parse_primary(Parser *p) {
         return n;
     }
     error(p, "expected expression");
-    return ast_new(NODE_NONE_LIT, line);
+    return ast_new(p->arena, NODE_NONE_LIT, line);
 }
 
 /* Parse postfix: calls, subscripts, attributes, and generic instantiation */
@@ -500,7 +500,7 @@ static AstNode *parse_postfix(Parser *p) {
     while (!p->had_error) {
         int line = p->current.line;
         if (match(p, TOK_LPAREN)) {
-            AstNode *call = ast_new(NODE_CALL, line);
+            AstNode *call = ast_new(p->arena, NODE_CALL, line);
             call->call.func = expr;
             node_list_init(&call->call.args);
             int cap = 4;
@@ -529,7 +529,7 @@ static AstNode *parse_postfix(Parser *p) {
                     AstNode *arg_expr = parse_expression(p);
                     /* Check for keyword argument: parsed NAME followed by = */
                     if (arg_expr->type == NODE_NAME && match(p, TOK_ASSIGN)) {
-                        AstNode *kw = ast_new(NODE_KWARG, arg_expr->line);
+                        AstNode *kw = ast_new(p->arena, NODE_KWARG, arg_expr->line);
                         kw->kwarg.name = arg_expr->name_expr.name;
                         kw->kwarg.value = parse_expression(p);
                         arg_expr = kw;
@@ -568,7 +568,7 @@ static AstNode *parse_postfix(Parser *p) {
                     
                     if (check(p, TOK_LPAREN)) {
                         /* This IS a generic instantiation followed by a call! */
-                        AstNode *gen_inst = ast_new(NODE_GENERIC_INST, line);
+                        AstNode *gen_inst = ast_new(p->arena, NODE_GENERIC_INST, line);
                         gen_inst->generic_inst.base_name = expr->name_expr.name;
                         node_list_init(&gen_inst->generic_inst.type_args);
                         
@@ -580,7 +580,7 @@ static AstNode *parse_postfix(Parser *p) {
                         
                         do {
                             expect(p, TOK_IDENTIFIER, "expected type argument");
-                            AstNode *type_arg = ast_new(NODE_NAME, p->previous.line);
+                            AstNode *type_arg = ast_new(p->arena, NODE_NAME, p->previous.line);
                             type_arg->name_expr.name = tok_to_str(p->previous);
                             node_list_push(&gen_inst->generic_inst.type_args, type_arg);
                         } while (match(p, TOK_COMMA));
@@ -590,7 +590,7 @@ static AstNode *parse_postfix(Parser *p) {
                         /* Now parse the call */
                         expect(p, TOK_LPAREN, "expected '(' after generic instantiation");
                         
-                        AstNode *call = ast_new(NODE_CALL, line);
+                        AstNode *call = ast_new(p->arena, NODE_CALL, line);
                         call->call.func = gen_inst;
                         node_list_init(&call->call.args);
                         int cap = 4;
@@ -617,7 +617,7 @@ static AstNode *parse_postfix(Parser *p) {
                                 call->call.is_unpacked_dict[call->call.args.count] = is_dict;
                                 AstNode *arg_expr = parse_expression(p);
                                 if (arg_expr->type == NODE_NAME && match(p, TOK_ASSIGN)) {
-                                    AstNode *kw = ast_new(NODE_KWARG, arg_expr->line);
+                                    AstNode *kw = ast_new(p->arena, NODE_KWARG, arg_expr->line);
                                     kw->kwarg.name = arg_expr->name_expr.name;
                                     kw->kwarg.value = parse_expression(p);
                                     arg_expr = kw;
@@ -634,7 +634,7 @@ static AstNode *parse_postfix(Parser *p) {
                     } else {
                         /* Just a generic type reference (like in a type annotation context) */
                         /* Create a NODE_GENERIC_INST but don't call it */
-                        AstNode *gen_inst = ast_new(NODE_GENERIC_INST, line);
+                        AstNode *gen_inst = ast_new(p->arena, NODE_GENERIC_INST, line);
                         gen_inst->generic_inst.base_name = expr->name_expr.name;
                         node_list_init(&gen_inst->generic_inst.type_args);
                         
@@ -645,7 +645,7 @@ static AstNode *parse_postfix(Parser *p) {
                         
                         do {
                             expect(p, TOK_IDENTIFIER, "expected type argument");
-                            AstNode *type_arg = ast_new(NODE_NAME, p->previous.line);
+                            AstNode *type_arg = ast_new(p->arena, NODE_NAME, p->previous.line);
                             type_arg->name_expr.name = tok_to_str(p->previous);
                             node_list_push(&gen_inst->generic_inst.type_args, type_arg);
                         } while (match(p, TOK_COMMA));
@@ -664,14 +664,14 @@ static AstNode *parse_postfix(Parser *p) {
             }
             
             /* Parse as regular subscript */
-            AstNode *sub = ast_new(NODE_SUBSCRIPT, line);
+            AstNode *sub = ast_new(p->arena, NODE_SUBSCRIPT, line);
             sub->subscript.obj = expr;
             sub->subscript.index = parse_expression(p);
             expect(p, TOK_RBRACKET, "expected ']'");
             expr = sub;
         } else if (match(p, TOK_DOT)) {
             expect(p, TOK_IDENTIFIER, "expected attribute name");
-            AstNode *attr = ast_new(NODE_ATTRIBUTE, line);
+            AstNode *attr = ast_new(p->arena, NODE_ATTRIBUTE, line);
             attr->attribute.obj = expr;
             attr->attribute.attr = tok_to_str(p->previous);
             expr = attr;
@@ -687,7 +687,7 @@ static AstNode *parse_unary(Parser *p) {
     int line = p->current.line;
     if (match(p, TOK_MINUS) || match(p, TOK_PLUS) || match(p, TOK_NOT) || match(p, TOK_BIT_NOT)) {
         TokenType op = p->previous.type;
-        AstNode *n = ast_new(NODE_UNARY_OP, line);
+        AstNode *n = ast_new(p->arena, NODE_UNARY_OP, line);
         n->unary_op.op = op;
         n->unary_op.operand = parse_unary(p);
         return n;
@@ -700,7 +700,7 @@ static AstNode *parse_power(Parser *p) {
     AstNode *left = parse_unary(p);
     if (match(p, TOK_DSTAR)) {
         int line = p->previous.line;
-        AstNode *n = ast_new(NODE_BIN_OP, line);
+        AstNode *n = ast_new(p->arena, NODE_BIN_OP, line);
         n->bin_op.left = left;
         n->bin_op.op = TOK_DSTAR;
         n->bin_op.right = parse_unary(p);
@@ -716,7 +716,7 @@ static AstNode *parse_mul(Parser *p) {
         int line = p->current.line;
         TokenType op = p->current.type;
         advance(p);
-        AstNode *n = ast_new(NODE_BIN_OP, line);
+        AstNode *n = ast_new(p->arena, NODE_BIN_OP, line);
         n->bin_op.left = left;
         n->bin_op.op = op;
         n->bin_op.right = parse_power(p);
@@ -732,7 +732,7 @@ static AstNode *parse_add(Parser *p) {
         int line = p->current.line;
         TokenType op = p->current.type;
         advance(p);
-        AstNode *n = ast_new(NODE_BIN_OP, line);
+        AstNode *n = ast_new(p->arena, NODE_BIN_OP, line);
         n->bin_op.left = left;
         n->bin_op.op = op;
         n->bin_op.right = parse_mul(p);
@@ -748,7 +748,7 @@ static AstNode *parse_shift(Parser *p) {
         int line = p->current.line;
         TokenType op = p->current.type;
         advance(p);
-        AstNode *n = ast_new(NODE_BIN_OP, line);
+        AstNode *n = ast_new(p->arena, NODE_BIN_OP, line);
         n->bin_op.left = left;
         n->bin_op.op = op;
         n->bin_op.right = parse_add(p);
@@ -764,7 +764,7 @@ static AstNode *parse_bit_and(Parser *p) {
         int line = p->current.line;
         TokenType op = p->current.type;
         advance(p);
-        AstNode *n = ast_new(NODE_BIN_OP, line);
+        AstNode *n = ast_new(p->arena, NODE_BIN_OP, line);
         n->bin_op.left = left;
         n->bin_op.op = op;
         n->bin_op.right = parse_shift(p);
@@ -780,7 +780,7 @@ static AstNode *parse_bit_xor(Parser *p) {
         int line = p->current.line;
         TokenType op = p->current.type;
         advance(p);
-        AstNode *n = ast_new(NODE_BIN_OP, line);
+        AstNode *n = ast_new(p->arena, NODE_BIN_OP, line);
         n->bin_op.left = left;
         n->bin_op.op = op;
         n->bin_op.right = parse_bit_and(p);
@@ -796,7 +796,7 @@ static AstNode *parse_bit_or(Parser *p) {
         int line = p->current.line;
         TokenType op = p->current.type;
         advance(p);
-        AstNode *n = ast_new(NODE_BIN_OP, line);
+        AstNode *n = ast_new(p->arena, NODE_BIN_OP, line);
         n->bin_op.left = left;
         n->bin_op.op = op;
         n->bin_op.right = parse_bit_xor(p);
@@ -814,7 +814,7 @@ static AstNode *parse_comparison(Parser *p) {
         int line = p->current.line;
         TokenType op = p->current.type;
         advance(p);
-        AstNode *n = ast_new(NODE_BIN_OP, line);
+        AstNode *n = ast_new(p->arena, NODE_BIN_OP, line);
         n->bin_op.left = left;
         n->bin_op.op = op;
         /* For 'is' operator, parse the type name (identifier) */
@@ -841,7 +841,7 @@ static AstNode *parse_comparison(Parser *p) {
 static AstNode *parse_not(Parser *p) {
     if (match(p, TOK_NOT)) {
         int line = p->previous.line;
-        AstNode *n = ast_new(NODE_UNARY_OP, line);
+        AstNode *n = ast_new(p->arena, NODE_UNARY_OP, line);
         n->unary_op.op = TOK_NOT;
         n->unary_op.operand = parse_not(p);
         return n;
@@ -854,7 +854,7 @@ static AstNode *parse_and(Parser *p) {
     AstNode *left = parse_not(p);
     while (match(p, TOK_AND)) {
         int line = p->previous.line;
-        AstNode *n = ast_new(NODE_BIN_OP, line);
+        AstNode *n = ast_new(p->arena, NODE_BIN_OP, line);
         n->bin_op.left = left;
         n->bin_op.op = TOK_AND;
         n->bin_op.right = parse_not(p);
@@ -868,7 +868,7 @@ static AstNode *parse_expression(Parser *p) {
     AstNode *left = parse_and(p);
     while (match(p, TOK_OR)) {
         int line = p->previous.line;
-        AstNode *n = ast_new(NODE_BIN_OP, line);
+        AstNode *n = ast_new(p->arena, NODE_BIN_OP, line);
         n->bin_op.left = left;
         n->bin_op.op = TOK_OR;
         n->bin_op.right = parse_and(p);
@@ -898,7 +898,7 @@ static AstNode *parse_func_def(Parser *p) {
     expect(p, TOK_DEF, "expected 'def'");
     expect(p, TOK_IDENTIFIER, "expected function name");
 
-    AstNode *n = ast_new(NODE_FUNC_DEF, line);
+    AstNode *n = ast_new(p->arena, NODE_FUNC_DEF, line);
     n->func_def.name = tok_to_str(p->previous);
     param_list_init(&n->func_def.params);
     node_list_init(&n->func_def.body);
@@ -947,7 +947,7 @@ static AstNode *parse_class_def(Parser *p) {
     expect(p, TOK_CLASS, "expected 'class'");
     expect(p, TOK_IDENTIFIER, "expected class name");
 
-    AstNode *n = ast_new(NODE_CLASS_DEF, line);
+    AstNode *n = ast_new(p->arena, NODE_CLASS_DEF, line);
     n->class_def.name = tok_to_str(p->previous);
     n->class_def.base_class = NULL;
     type_param_list_init(&n->class_def.type_params);
@@ -979,7 +979,7 @@ static AstNode *parse_if_stmt(Parser *p) {
     int line = p->current.line;
     advance(p); /* consume if/elif */
 
-    AstNode *n = ast_new(NODE_IF, line);
+    AstNode *n = ast_new(p->arena, NODE_IF, line);
     n->if_stmt.cond = parse_expression(p);
     node_list_init(&n->if_stmt.then_body);
     n->if_stmt.else_branch = NULL;
@@ -992,7 +992,7 @@ static AstNode *parse_if_stmt(Parser *p) {
         n->if_stmt.else_branch = parse_if_stmt(p);
     } else if (match(p, TOK_ELSE)) {
         expect(p, TOK_COLON, "expected ':'");
-        AstNode *else_node = ast_new(NODE_PROGRAM, p->current.line);
+        AstNode *else_node = ast_new(p->arena, NODE_PROGRAM, p->current.line);
         node_list_init(&else_node->program.stmts);
         parse_block(p, &else_node->program.stmts);
         n->if_stmt.else_branch = else_node;
@@ -1005,7 +1005,7 @@ static AstNode *parse_for_stmt(Parser *p) {
     advance(p); /* consume 'for' */
     expect(p, TOK_IDENTIFIER, "expected loop variable");
 
-    AstNode *n = ast_new(NODE_FOR, line);
+    AstNode *n = ast_new(p->arena, NODE_FOR, line);
     n->for_stmt.var = tok_to_str(p->previous);
     node_list_init(&n->for_stmt.body);
 
@@ -1022,7 +1022,7 @@ static AstNode *parse_parallel_for_stmt(Parser *p) {
     expect(p, TOK_FOR, "expected 'for' after 'parallel'");
     expect(p, TOK_IDENTIFIER, "expected loop variable");
 
-    AstNode *n = ast_new(NODE_PARALLEL_FOR, line);
+    AstNode *n = ast_new(p->arena, NODE_PARALLEL_FOR, line);
     
     /* Use parallel_for struct for settings */
     n->parallel_for.var = tok_to_str(p->previous);
@@ -1391,7 +1391,7 @@ static AstNode *parse_while_stmt(Parser *p) {
     int line = p->current.line;
     advance(p); /* consume 'while' */
 
-    AstNode *n = ast_new(NODE_WHILE, line);
+    AstNode *n = ast_new(p->arena, NODE_WHILE, line);
     n->while_stmt.cond = parse_expression(p);
     node_list_init(&n->while_stmt.body);
 
@@ -1403,7 +1403,7 @@ static AstNode *parse_while_stmt(Parser *p) {
 static AstNode *parse_return_stmt(Parser *p) {
     int line = p->current.line;
     advance(p); /* consume 'return' */
-    AstNode *n = ast_new(NODE_RETURN, line);
+    AstNode *n = ast_new(p->arena, NODE_RETURN, line);
     n->return_stmt.value = NULL;
     if (!check(p, TOK_NEWLINE) && !check(p, TOK_DEDENT) && !check(p, TOK_EOF))
         n->return_stmt.value = parse_expression(p);
@@ -1414,7 +1414,7 @@ static AstNode *parse_const_stmt(Parser *p) {
     int line = p->current.line;
     advance(p); /* consume 'const' */
     expect(p, TOK_IDENTIFIER, "expected constant name");
-    AstNode *n = ast_new(NODE_CONST_DECL, line);
+    AstNode *n = ast_new(p->arena, NODE_CONST_DECL, line);
     n->const_decl.name = tok_to_str(p->previous);
     expect(p, TOK_ASSIGN, "expected '='");
     n->const_decl.value = parse_expression(p);
@@ -1425,7 +1425,7 @@ static AstNode *parse_with_stmt(Parser *p) {
     int line = p->current.line;
     advance(p); /* consume 'with' */
 
-    AstNode *n = ast_new(NODE_WITH, line);
+    AstNode *n = ast_new(p->arena, NODE_WITH, line);
     n->with_stmt.alias = NULL;
     n->with_stmt.expr = parse_expression(p);
 
@@ -1446,7 +1446,7 @@ static AstNode *parse_import_stmt(Parser *p) {
     advance(p); /* consume 'import' */
     expect(p, TOK_IDENTIFIER, "expected module name");
 
-    AstNode *n = ast_new(NODE_IMPORT, line);
+    AstNode *n = ast_new(p->arena, NODE_IMPORT, line);
     
     /* Accumulate dotted names */
     char *first_sub = tok_to_str(p->previous);
@@ -1507,7 +1507,7 @@ static AstNode *parse_try_stmt(Parser *p) {
     advance(p); /* consume 'try' */
     expect(p, TOK_COLON, "expected ':' after try");
 
-    AstNode *n = ast_new(NODE_TRY, line);
+    AstNode *n = ast_new(p->arena, NODE_TRY, line);
     node_list_init(&n->try_stmt.body);
     node_list_init(&n->try_stmt.except_body);
     node_list_init(&n->try_stmt.finally_body);
@@ -1542,7 +1542,7 @@ static AstNode *parse_try_stmt(Parser *p) {
 static AstNode *parse_raise_stmt(Parser *p) {
     int line = p->current.line;
     advance(p); /* consume 'raise' */
-    AstNode *n = ast_new(NODE_RAISE, line);
+    AstNode *n = ast_new(p->arena, NODE_RAISE, line);
     n->raise_stmt.exc = NULL;
     if (!check(p, TOK_NEWLINE) && !check(p, TOK_DEDENT) && !check(p, TOK_EOF))
         n->raise_stmt.exc = parse_expression(p);
@@ -1625,7 +1625,7 @@ static AstNode *parse_assign_or_expr(Parser *p) {
         advance(p);
         
         if (expr->type == NODE_SUBSCRIPT) {
-            AstNode *n = ast_new(NODE_SUBSCRIPT_ASSIGN, line);
+            AstNode *n = ast_new(p->arena, NODE_SUBSCRIPT_ASSIGN, line);
             n->subscript_assign.obj = expr->subscript.obj;
             n->subscript_assign.index = expr->subscript.index;
             n->subscript_assign.value = parse_expression(p);
@@ -1634,11 +1634,11 @@ static AstNode *parse_assign_or_expr(Parser *p) {
             /* Nullify to prevent double free */
             expr->subscript.obj = NULL;
             expr->subscript.index = NULL;
-            free(expr);
+
             return n;
         }
 
-        AstNode *n = ast_new(NODE_ASSIGN, line);
+        AstNode *n = ast_new(p->arena, NODE_ASSIGN, line);
         
         if (expr->type == NODE_NAME) {
             n->assign.name = expr->name_expr.name;
@@ -1660,7 +1660,7 @@ static AstNode *parse_assign_or_expr(Parser *p) {
         n->assign.type_ann = NULL;
         n->assign.value = parse_expression(p);
         n->assign.access = 0;
-        free(expr);
+
         return n;
     }
 
@@ -1675,7 +1675,7 @@ static AstNode *parse_assign_or_expr(Parser *p) {
         advance(p);
         
         if (expr->type == NODE_SUBSCRIPT) {
-            AstNode *n = ast_new(NODE_SUBSCRIPT_ASSIGN, line);
+            AstNode *n = ast_new(p->arena, NODE_SUBSCRIPT_ASSIGN, line);
             n->subscript_assign.obj = expr->subscript.obj;
             n->subscript_assign.index = expr->subscript.index;
             n->subscript_assign.value = parse_expression(p);
@@ -1684,11 +1684,11 @@ static AstNode *parse_assign_or_expr(Parser *p) {
             /* Nullify to prevent double free */
             expr->subscript.obj = NULL;
             expr->subscript.index = NULL;
-            free(expr);
+
             return n;
         }
 
-        AstNode *n = ast_new(NODE_AUG_ASSIGN, line);
+        AstNode *n = ast_new(p->arena, NODE_AUG_ASSIGN, line);
         
         if (expr->type == NODE_NAME) {
             n->aug_assign.name = expr->name_expr.name;
@@ -1705,7 +1705,7 @@ static AstNode *parse_assign_or_expr(Parser *p) {
         
         n->aug_assign.op = op;
         n->aug_assign.value = parse_expression(p);
-        free(expr);
+
         return n;
     }
 
@@ -1713,7 +1713,7 @@ static AstNode *parse_assign_or_expr(Parser *p) {
     if (check(p, TOK_COLON) && expr->type == NODE_NAME) {
         advance(p); /* consume ':' */
         char *type_ann = parse_type_annotation(p);
-        AstNode *n = ast_new(NODE_ASSIGN, line);
+        AstNode *n = ast_new(p->arena, NODE_ASSIGN, line);
         n->assign.name = expr->name_expr.name;
         expr->name_expr.name = NULL;
         n->assign.type_ann = type_ann;
@@ -1721,12 +1721,12 @@ static AstNode *parse_assign_or_expr(Parser *p) {
         n->assign.access = 0;
         if (match(p, TOK_ASSIGN))
             n->assign.value = parse_expression(p);
-        free(expr);
+
         return n;
     }
 
     /* Expression statement */
-    AstNode *n = ast_new(NODE_EXPR_STMT, line);
+    AstNode *n = ast_new(p->arena, NODE_EXPR_STMT, line);
     n->expr_stmt.expr = expr;
     return n;
 }
@@ -1787,9 +1787,9 @@ static AstNode *parse_statement(Parser *p) {
         case TOK_RAISE:     stmt = parse_raise_stmt(p); break;
         case TOK_PARALLEL:  stmt = parse_parallel_for_stmt(p); break;
         case TOK_MATCH:     stmt = parse_match_stmt(p); break;
-        case TOK_PASS:      advance(p); stmt = ast_new(NODE_PASS, p->previous.line); break;
-        case TOK_BREAK:     advance(p); stmt = ast_new(NODE_BREAK, p->previous.line); break;
-        case TOK_CONTINUE:  advance(p); stmt = ast_new(NODE_CONTINUE, p->previous.line); break;
+        case TOK_PASS:      advance(p); stmt = ast_new(p->arena, NODE_PASS, p->previous.line); break;
+        case TOK_BREAK:     advance(p); stmt = ast_new(p->arena, NODE_BREAK, p->previous.line); break;
+        case TOK_CONTINUE:  advance(p); stmt = ast_new(p->arena, NODE_CONTINUE, p->previous.line); break;
         case TOK_ASYNC: {
             /* async def name(params): body */
             advance(p); /* consume 'async' */
@@ -1801,7 +1801,7 @@ static AstNode *parse_statement(Parser *p) {
                 int async_line = p->previous.line;
                 expect(p, TOK_IDENTIFIER, "expected function name");
                 
-                AstNode *n = ast_new(NODE_ASYNC_DEF, async_line);
+                AstNode *n = ast_new(p->arena, NODE_ASYNC_DEF, async_line);
                 n->async_def.name = tok_to_str(p->previous);
                 param_list_init(&n->async_def.params);
                 node_list_init(&n->async_def.body);
@@ -1886,15 +1886,16 @@ static AstNode *parse_statement(Parser *p) {
 }
 
 /* --- Public API --- */
-void parser_init(Parser *p, const char *source) {
+void parser_init(Parser *p, const char *source, LpArena *arena) {
     lexer_init(&p->lexer, source);
     p->had_error = 0;
     p->error_msg[0] = '\0';
+    p->arena = arena;
     advance(p); /* load first token */
 }
 
 AstNode *parser_parse(Parser *p) {
-    AstNode *prog = ast_new(NODE_PROGRAM, 1);
+    AstNode *prog = ast_new(p->arena, NODE_PROGRAM, 1);
     node_list_init(&prog->program.stmts);
     skip_newlines(p);
     while (!check(p, TOK_EOF) && !p->had_error) {
