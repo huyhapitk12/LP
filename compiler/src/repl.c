@@ -212,13 +212,14 @@ static int is_blank(const char *line) {
 /* ─── Try to compile and run accumulated source ─── */
 static int repl_eval(const char *source, const char *gcc, const char *runtime_inc) {
     /* Parse */
+    LpArena *arena = lp_memory_arena_new(1024 * 1024);
     Parser parser;
-    parser_init(&parser, source);
+    parser_init(&parser, source, arena);
     AstNode *program = parser_parse(&parser);
 
     if (parser.had_error) {
         if (!repl_suppress_output) fprintf(stderr, C_RED "  Parse error: %s" C_RESET "\n", parser.error_msg);
-        ast_free(program);
+        ast_free(program); lp_memory_arena_free(arena);
         return -1;
     }
 
@@ -232,7 +233,7 @@ static int repl_eval(const char *source, const char *gcc, const char *runtime_in
         fprintf(stderr, C_RED "  Codegen error: %s" C_RESET "\n", cg.error_msg);
         free(c_code);
         codegen_free(&cg);
-        ast_free(program);
+        ast_free(program); lp_memory_arena_free(arena);
         return -1;
     }
 
@@ -243,7 +244,7 @@ static int repl_eval(const char *source, const char *gcc, const char *runtime_in
         fprintf(stderr, C_RED "  Error: cannot write temp file" C_RESET "\n");
         free(c_code);
         codegen_free(&cg);
-        ast_free(program);
+        ast_free(program); lp_memory_arena_free(arena);
         return -1;
     }
     fputs(c_code, tmp);
@@ -256,7 +257,7 @@ static int repl_eval(const char *source, const char *gcc, const char *runtime_in
         remove(tmp_c);
         free(c_code);
         codegen_free(&cg);
-        ast_free(program);
+        ast_free(program); lp_memory_arena_free(arena);
         return -1;
     }
 
@@ -266,7 +267,7 @@ static int repl_eval(const char *source, const char *gcc, const char *runtime_in
         remove(tmp_c);
         free(c_code);
         codegen_free(&cg);
-        ast_free(program);
+        ast_free(program); lp_memory_arena_free(arena);
         return -1;
     }
     int ret = (int)_spawnl(_P_WAIT, gcc, "gcc",
@@ -277,7 +278,7 @@ static int repl_eval(const char *source, const char *gcc, const char *runtime_in
         remove(tmp_c);
         free(c_code);
         codegen_free(&cg);
-        ast_free(program);
+        ast_free(program); lp_memory_arena_free(arena);
         return -1;
     }
 
@@ -290,7 +291,7 @@ static int repl_eval(const char *source, const char *gcc, const char *runtime_in
     remove(exe_path);
     free(c_code);
     codegen_free(&cg);
-    ast_free(program);
+    ast_free(program); lp_memory_arena_free(arena);
     return ret;
 }
 
@@ -466,8 +467,9 @@ int repl_run(const char *argv0) {
             rbuf_append(&full, input.data);
 
             /* Quick parse check */
+            LpArena *arena = lp_memory_arena_new(1024 * 1024);
             Parser parser;
-            parser_init(&parser, full.data);
+            parser_init(&parser, full.data, arena);
             AstNode *program = parser_parse(&parser);
 
             if (parser.had_error) {
@@ -475,7 +477,7 @@ int repl_run(const char *argv0) {
             } else {
                 rbuf_append(&accumulated, input.data);
             }
-            ast_free(program);
+            ast_free(program); lp_memory_arena_free(arena);
             rbuf_free(&full);
             rbuf_free(&input);
             continue;
