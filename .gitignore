@@ -3,6 +3,8 @@ build/
 *.exe
 *.o
 *.obj
+*.s
+*.out
 
 # Tests
 tests/test_codegen
