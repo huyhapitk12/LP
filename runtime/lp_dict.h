@@ -114,8 +114,12 @@ static inline void lp_list_free(LpList *l) {
 
 static inline void lp_list_append(LpList *l, LpVal value) {
     if (l->len >= l->cap) {
-        l->cap *= 2;
-        l->items = (LpVal*)realloc(l->items, sizeof(LpVal) * l->cap);
+        int64_t new_cap = l->cap * 2;
+        if (new_cap == 0) new_cap = 8;  /* Initial capacity */
+        LpVal* new_items = (LpVal*)realloc(l->items, sizeof(LpVal) * new_cap);
+        if (!new_items) return;  /* Failed to allocate, don't add item */
+        l->items = new_items;
+        l->cap = new_cap;
     }
     if (value.type == LP_VAL_STRING) {
         LpVal vcopy = value;
