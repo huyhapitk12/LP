@@ -8,6 +8,7 @@
 #define _GNU_SOURCE
 #include "codegen_asm.h"
 #include "asm_optimize.h"
+#include "process_utils.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
@@ -1187,28 +1188,45 @@ int asm_write_to_file(AsmCodeGen *gen, const char *filename) {
  * ══════════════════════════════════════════════════════════════ */
 
 int asm_compile_to_exe(AsmCodeGen *gen, const char *asm_file, const char *exe_file) {
-    char cmd[1024];
+    char obj_file[1024];
 
     (void)gen;
 
-    /* Use as (assembler) and ld (linker) directly */
-    snprintf(cmd, sizeof(cmd), "as -o %s.o %s", exe_file, asm_file);
-    int ret = system(cmd);
-    if (ret != 0) {
-        fprintf(stderr, "[LP ASM] Assembly failed\n");
+    /* SECURITY FIX: Validate file paths to prevent command injection */
+    if (!lp_path_is_safe(asm_file) || !lp_path_is_safe(exe_file)) {
+        fprintf(stderr, "[LP ASM] Error: Invalid characters in filename\n");
         return 0;
     }
 
-    snprintf(cmd, sizeof(cmd), "ld -o %s %s.o", exe_file, exe_file);
-    ret = system(cmd);
-    if (ret != 0) {
-        fprintf(stderr, "[LP ASM] Linking failed\n");
-        return 0;
+    /* Build object file path */
+    snprintf(obj_file, sizeof(obj_file), "%s.o", exe_file);
+
+    /* SECURITY FIX: Use spawn instead of system() to prevent command injection */
+    /* Assemble: as -o file.o file.s */
+    {
+        const char *as_argv[] = {"as", "-o", obj_file, asm_file, NULL};
+        int ret = _spawnvp(_P_WAIT, "as", as_argv);
+        if (ret != 0) {
+            fprintf(stderr, "[LP ASM] Assembly failed\n");
+            return 0;
+        }
+    }
+
+    /* SECURITY FIX: Use spawn for linking too */
+    /* Link: ld -o file file.o -lc --dynamic-linker /lib64/ld-linux-x86-64.so.2 */
+    {
+        const char *ld_argv[] = {"ld", "-o", exe_file, obj_file, "-lc", 
+            "--dynamic-linker", "/lib64/ld-linux-x86-64.so.2", NULL};
+        int ret = _spawnvp(_P_WAIT, "ld", ld_argv);
+        if (ret != 0) {
+            fprintf(stderr, "[LP ASM] Linking failed\n");
+            remove(obj_file);
+            return 0;
+        }
     }
 
     /* Cleanup object file */
-    snprintf(cmd, sizeof(cmd), "%s.o", exe_file);
-    remove(cmd);
+    remove(obj_file);
 
     printf("[LP ASM] Created executable: %s\n", exe_file);
     return 1;
