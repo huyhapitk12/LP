@@ -222,7 +222,7 @@ static AstNode *parse_primary(Parser *p) {
          * The lexer returns the content without f and quotes.
          * We need to parse {expr} inside and create alternating string/expr parts.
          */
-        AstNode *n = ast_new(NODE_FSTRING, line);
+        AstNode *n = ast_new(p->arena, NODE_FSTRING, line);
         node_list_init(&n->fstring_expr.parts);
         
         /* Get the raw f-string content */
@@ -234,7 +234,7 @@ static AstNode *parse_primary(Parser *p) {
             if (*ptr == '{') {
                 /* Save string part before { */
                 if (ptr > start) {
-                    AstNode *str_part = ast_new(NODE_STRING_LIT, line);
+                    AstNode *str_part = ast_new(p->arena, NODE_STRING_LIT, line);
                     size_t len = ptr - start;
                     str_part->str_lit.value = (char *)malloc(len + 1);
                     memcpy(str_part->str_lit.value, start, len);
@@ -270,7 +270,7 @@ static AstNode *parse_primary(Parser *p) {
                     
                     /* Parse the expression */
                     Parser sub_parser;
-                    parser_init(&sub_parser, expr_str);
+                    parser_init(&sub_parser, expr_str, p->arena);
                     AstNode *expr = parse_expression(&sub_parser);
                     free(expr_str);
                     
@@ -278,7 +278,7 @@ static AstNode *parse_primary(Parser *p) {
                         node_list_push(&n->fstring_expr.parts, expr);
                     } else {
                         /* Add None if parsing failed */
-                        node_list_push(&n->fstring_expr.parts, ast_new(NODE_NONE_LIT, line));
+                        node_list_push(&n->fstring_expr.parts, ast_new(p->arena, NODE_NONE_LIT, line));
                     }
                     
                     ptr++;
@@ -289,7 +289,7 @@ static AstNode *parse_primary(Parser *p) {
                 if (*(ptr + 1) == '}') {
                     /* Save string part before }} */
                     if (ptr > start) {
-                        AstNode *str_part = ast_new(NODE_STRING_LIT, line);
+                        AstNode *str_part = ast_new(p->arena, NODE_STRING_LIT, line);
                         size_t len = ptr - start;
                         str_part->str_lit.value = (char *)malloc(len + 1);
                         memcpy(str_part->str_lit.value, start, len);
@@ -308,7 +308,7 @@ static AstNode *parse_primary(Parser *p) {
         
         /* Save remaining string part */
         if (ptr > start) {
-            AstNode *str_part = ast_new(NODE_STRING_LIT, line);
+            AstNode *str_part = ast_new(p->arena, NODE_STRING_LIT, line);
             size_t len = ptr - start;
             str_part->str_lit.value = (char *)malloc(len + 1);
             memcpy(str_part->str_lit.value, start, len);
@@ -474,7 +474,7 @@ static AstNode *parse_primary(Parser *p) {
     }
     /* Yield expression */
     if (match(p, TOK_YIELD)) {
-        AstNode *n = ast_new(NODE_YIELD, line);
+        AstNode *n = ast_new(p->arena, NODE_YIELD, line);
         n->yield_expr.value = NULL;
         if (!check(p, TOK_NEWLINE) && !check(p, TOK_DEDENT) && 
             !check(p, TOK_EOF) && !check(p, TOK_RPAREN) && 
@@ -486,7 +486,7 @@ static AstNode *parse_primary(Parser *p) {
     }
     /* Await expression */
     if (match(p, TOK_AWAIT)) {
-        AstNode *n = ast_new(NODE_AWAIT_EXPR, line);
+        AstNode *n = ast_new(p->arena, NODE_AWAIT_EXPR, line);
         n->await_expr.expr = parse_expression(p);
         return n;
     }
@@ -821,13 +821,13 @@ static AstNode *parse_comparison(Parser *p) {
         if (op == TOK_IS) {
             /* Expect a type name (identifier) after 'is' */
             if (check(p, TOK_IDENTIFIER)) {
-                AstNode *type_name = ast_new(NODE_NAME, line);
+                AstNode *type_name = ast_new(p->arena, NODE_NAME, line);
                 type_name->name_expr.name = tok_to_str(p->current);
                 advance(p);
                 n->bin_op.right = type_name;
             } else {
                 error(p, "expected type name after 'is'");
-                n->bin_op.right = ast_new(NODE_NONE_LIT, line);
+                n->bin_op.right = ast_new(p->arena, NODE_NONE_LIT, line);
             }
         } else {
             n->bin_op.right = parse_add(p);
@@ -1047,7 +1047,7 @@ static AstNode *parse_settings_pragma(Parser *p) {
     int line = p->current.line;
     expect(p, TOK_SETTINGS, "expected 'settings' after '@'");
     
-    AstNode *n = ast_new(NODE_SETTINGS, line);
+    AstNode *n = ast_new(p->arena, NODE_SETTINGS, line);
     
     /* Initialize with defaults */
     n->settings.enabled = 1;
@@ -1170,7 +1170,7 @@ static AstNode *parse_security_pragma(Parser *p) {
     int line = p->current.line;
     expect(p, TOK_SECURITY, "expected 'security' after '@'");
     
-    AstNode *n = ast_new(NODE_SECURITY, line);
+    AstNode *n = ast_new(p->arena, NODE_SECURITY, line);
     
     /* Initialize with defaults */
     n->security.enabled = 1;
@@ -1554,7 +1554,7 @@ static AstNode *parse_match_stmt(Parser *p) {
     int line = p->current.line;
     advance(p); /* consume 'match' */
     
-    AstNode *n = ast_new(NODE_MATCH, line);
+    AstNode *n = ast_new(p->arena, NODE_MATCH, line);
     n->match_stmt.value = parse_expression(p);
     node_list_init(&n->match_stmt.cases);
     
@@ -1573,7 +1573,7 @@ static AstNode *parse_match_stmt(Parser *p) {
             break;
         }
         
-        AstNode *case_node = ast_new(NODE_MATCH_CASE, p->previous.line);
+        AstNode *case_node = ast_new(p->arena, NODE_MATCH_CASE, p->previous.line);
         node_list_init(&case_node->match_case.body);
         case_node->match_case.guard = NULL;
         case_node->match_case.is_wildcard = 0;
@@ -1586,7 +1586,7 @@ static AstNode *parse_match_stmt(Parser *p) {
                 case_node->match_case.pattern = NULL;
             } else {
                 /* It's a capture variable - we'll treat it as a name expression */
-                case_node->match_case.pattern = ast_new(NODE_NAME, p->previous.line);
+                case_node->match_case.pattern = ast_new(p->arena, NODE_NAME, p->previous.line);
                 case_node->match_case.pattern->name_expr.name = pattern_name;
             }
         } else if (check(p, TOK_INT_LIT) || check(p, TOK_FLOAT_LIT) || 
@@ -1596,7 +1596,7 @@ static AstNode *parse_match_stmt(Parser *p) {
             case_node->match_case.pattern = parse_primary(p);
         } else {
             error(p, "expected pattern in case clause");
-            case_node->match_case.pattern = ast_new(NODE_NONE_LIT, line);
+            case_node->match_case.pattern = ast_new(p->arena, NODE_NONE_LIT, line);
         }
         
         /* Optional guard: if condition */
