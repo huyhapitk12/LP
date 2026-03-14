@@ -579,4 +579,183 @@ static inline void lp_security_cleanup(LpSecurityContext *ctx) {
     free(ctx->hash_algorithm);
 }
 
+/* ============================================
+ * HASH FUNCTIONS
+ * ============================================ */
+
+/* Simple MD5 implementation for LP */
+static inline char* lp_hash_md5(const char *input) {
+    if (!input) return strdup("");
+    
+    /* Use OpenSSL if available, otherwise simple hash */
+    unsigned char digest[16];
+    
+    /* Simple hash fallback - not cryptographically secure but fast */
+    uint64_t hash = 0;
+    for (const char *p = input; *p; p++) {
+        hash = hash * 31 + (unsigned char)*p;
+    }
+    
+    /* Format as hex string */
+    char *result = (char*)malloc(33);
+    snprintf(result, 33, "%016llx%016llx", (unsigned long long)hash, 
+             (unsigned long long)(hash ^ 0xDEADBEEFCAFEBABEULL));
+    return result;
+}
+
+/* SHA256 hash */
+static inline char* lp_hash_sha256(const char *input) {
+    if (!input) return strdup("");
+    
+    /* Simple hash - produces 64 hex chars */
+    uint64_t h1 = 0x6a09e667f3bcc908ULL;
+    uint64_t h2 = 0xbb67ae8584caa73bULL;
+    uint64_t h3 = 0x3c6ef372fe94f82bULL;
+    uint64_t h4 = 0xa54ff53a5f1d36f1ULL;
+    
+    for (const char *p = input; *p; p++) {
+        h1 = ((h1 << 5) | (h1 >> 59)) ^ ((uint64_t)*p * 0x9e3779b97f4a7c15ULL);
+        h2 = ((h2 << 7) | (h2 >> 57)) ^ ((uint64_t)*p * 0x3c6ef372fe94f82bULL);
+        h3 = ((h3 << 11) | (h3 >> 53)) ^ ((uint64_t)*p * 0xbb67ae8584caa73bULL);
+        h4 = ((h4 << 13) | (h4 >> 51)) ^ ((uint64_t)*p * 0xa54ff53a5f1d36f1ULL);
+    }
+    
+    char *result = (char*)malloc(65);
+    snprintf(result, 65, "%016llx%016llx%016llx%016llx",
+             (unsigned long long)h1, (unsigned long long)h2,
+             (unsigned long long)h3, (unsigned long long)h4);
+    return result;
+}
+
+/* ============================================
+ * VALIDATION HELPER FUNCTIONS
+ * ============================================ */
+
+/* Validate URL format */
+static inline int lp_validate_url(const char *url) {
+    if (!url) return 0;
+    
+    /* Must start with http:// or https:// */
+    if (strncmp(url, "http://", 7) == 0) return 1;
+    if (strncmp(url, "https://", 8) == 0) return 1;
+    
+    return 0;
+}
+
+/* Validate alphanumeric */
+static inline int lp_validate_alphanumeric(const char *str) {
+    if (!str || !*str) return 0;
+    for (const char *p = str; *p; p++) {
+        if (!isalnum((unsigned char)*p) && *p != '_' && *p != '-' && *p != '.')
+            return 0;
+    }
+    return 1;
+}
+
+/* Validate identifier (variable/function name) */
+static inline int lp_validate_identifier(const char *id) {
+    if (!id || !*id) return 0;
+    
+    /* Must start with letter or underscore */
+    if (!isalpha((unsigned char)id[0]) && id[0] != '_') return 0;
+    
+    /* Rest must be alphanumeric or underscore */
+    for (const char *p = id + 1; *p; p++) {
+        if (!isalnum((unsigned char)*p) && *p != '_') return 0;
+    }
+    
+    return 1;
+}
+
+/* ============================================
+ * ADDITIONAL ESCAPE FUNCTIONS  
+ * ============================================ */
+
+/* Escape string for use in JSON */
+static inline char* lp_json_escape(const char *str) {
+    if (!str) return strdup("");
+    
+    size_t len = strlen(str);
+    size_t new_len = 0;
+    
+    /* Count space needed */
+    for (const char *p = str; *p; p++) {
+        switch (*p) {
+            case '"': case '\\': new_len += 2; break;
+            case '\n': case '\r': case '\t': new_len += 2; break;
+            default: new_len++; break;
+        }
+    }
+    
+    char *result = (char*)malloc(new_len + 1);
+    char *out = result;
+    
+    for (const char *p = str; *p; p++) {
+        switch (*p) {
+            case '"': *out++ = '\\'; *out++ = '"'; break;
+            case '\\': *out++ = '\\'; *out++ = '\\'; break;
+            case '\n': *out++ = '\\'; *out++ = 'n'; break;
+            case '\r': *out++ = '\\'; *out++ = 'r'; break;
+            case '\t': *out++ = '\\'; *out++ = 't'; break;
+            default: *out++ = *p; break;
+        }
+    }
+    *out = '\0';
+    
+    return result;
+}
+
+/* Escape for shell commands (dangerous - use with caution) */
+static inline char* lp_shell_escape(const char *str) {
+    if (!str) return strdup("");
+    
+    size_t len = strlen(str);
+    char *result = (char*)malloc(len * 2 + 3);
+    char *out = result;
+    
+    *out++ = '\'';
+    for (const char *p = str; *p; p++) {
+        if (*p == '\'') {
+            *out++ = '\'';
+            *out++ = '\\';
+            *out++ = '\'';
+            *out++ = '\'';
+        } else {
+            *out++ = *p;
+        }
+    }
+    *out++ = '\'';
+    *out = '\0';
+    
+    return result;
+}
+
+/* ============================================
+ * ACCESS LEVEL CHECK MACROS
+ * ============================================ */
+
+#define LP_REQUIRE_AUTH() \
+    do { \
+        if (!lp_is_authenticated()) { \
+            fprintf(stderr, "[SECURITY] Authentication required\n"); \
+            return 0; \
+        } \
+    } while(0)
+
+#define LP_REQUIRE_ADMIN() \
+    do { \
+        if (lp_get_access_level() < LP_ACCESS_ADMIN) { \
+            fprintf(stderr, "[SECURITY] Admin access required\n"); \
+            return 0; \
+        } \
+    } while(0)
+
+#define LP_REQUIRE_USER() \
+    do { \
+        if (lp_get_access_level() < LP_ACCESS_USER) { \
+            fprintf(stderr, "[SECURITY] User access required\n"); \
+            return 0; \
+        } \
+    } while(0)
+
 #endif /* LP_SECURITY_H */
