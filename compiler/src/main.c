@@ -799,7 +799,7 @@ int main(int argc, char **argv) {
         if (lp_target_needs_pthread(cg.uses_thread, NULL)) {
             al_add(&al, "-pthread");
         }
-        if (cg.uses_parallel) al_add(&al, "-fopenmp");
+        al_add(&al, "-fopenmp");  /* Always enable OpenMP - harmless if not used */
         al_add(&al, "-lm");
         al_add(&al, LP_LWINHTTP);
         if (cg.uses_sqlite) {
@@ -1084,7 +1084,7 @@ int main(int argc, char **argv) {
         if (!emit_asm) {
             if (cg.uses_python) al_add(&al, py_lib_arg);
             if (lp_target_needs_pthread(cg.uses_thread, NULL)) al_add(&al, "-pthread");
-            if (cg.uses_parallel) al_add(&al, "-fopenmp");  /* OpenMP support */
+            al_add(&al, "-fopenmp");  /* Always enable OpenMP - harmless if not used */
             al_add(&al, "-lm");
             al_add(&al, LP_LWINHTTP);
             al_add(&al, sqlite_obj);
