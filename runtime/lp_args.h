@@ -19,14 +19,30 @@ static inline LpVarArgs lp_args_new(int capacity) {
     args.capacity = capacity > 0 ? capacity : 4;
     args.types = (int*)malloc(args.capacity * sizeof(int));
     args.values = (void**)malloc(args.capacity * sizeof(void*));
+    if (!args.types || !args.values) {
+        free(args.types);
+        free(args.values);
+        args.types = NULL;
+        args.values = NULL;
+        args.capacity = 0;
+    }
     return args;
 }
 
 static inline void lp_args_push(LpVarArgs *args, int type, void *value) {
+    if (!args || !args->types || !args->values) return;
     if (args->count >= args->capacity) {
-        args->capacity *= 2;
-        args->types = (int*)realloc(args->types, args->capacity * sizeof(int));
-        args->values = (void**)realloc(args->values, args->capacity * sizeof(void*));
+        int new_cap = args->capacity * 2;
+        int *new_types = (int*)realloc(args->types, new_cap * sizeof(int));
+        void **new_values = (void**)realloc(args->values, new_cap * sizeof(void*));
+        if (!new_types || !new_values) {
+            free(new_types);
+            free(new_values);
+            return; /* Failed to allocate, don't add item */
+        }
+        args->types = new_types;
+        args->values = new_values;
+        args->capacity = new_cap;
     }
     args->types[args->count] = type;
     args->values[args->count] = value;

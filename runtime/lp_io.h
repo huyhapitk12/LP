@@ -29,9 +29,22 @@ static inline LpFile* lp_io_open(const char *filename, const char *mode) {
         exit(1);
     }
     LpFile *f = (LpFile*)malloc(sizeof(LpFile));
+    if (!f) {
+        fclose(fp);
+        fprintf(stderr, "IOError: Memory allocation failed\n");
+        exit(1);
+    }
     f->fp = fp;
     f->filename = strdup(filename);
     f->mode = strdup(mode);
+    if (!f->filename || !f->mode) {
+        free(f->filename);
+        free(f->mode);
+        free(f);
+        fclose(fp);
+        fprintf(stderr, "IOError: Memory allocation failed\n");
+        exit(1);
+    }
     return f;
 }
 
@@ -48,12 +61,19 @@ static inline const char* lp_io_read(LpFile *f) {
     long length = ftell(f->fp);
     fseek(f->fp, 0, SEEK_SET);
 
-    char *buffer = (char*)malloc(length + 1);
-    if (buffer) {
-        fread(buffer, 1, length, f->fp);
-        buffer[length] = '\0';
+    /* Handle ftell error or empty file */
+    if (length <= 0) {
+        char *buffer = (char*)malloc(1);
+        if (buffer) buffer[0] = '\0';
+        return buffer ? buffer : "";
     }
-    return buffer;
+
+    char *buffer = (char*)malloc((size_t)length + 1);
+    if (buffer) {
+        size_t bytes_read = fread(buffer, 1, (size_t)length, f->fp);
+        buffer[bytes_read] = '\0';
+    }
+    return buffer ? buffer : "";
 }
 
 static inline void lp_io_write(LpFile *f, const char *data) {
