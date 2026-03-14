@@ -1,0 +1,37 @@
+# CODEOWNERS - Code Review Requirements
+#
+# These owners will be automatically requested for review
+# when a pull request modifies files in their areas.
+#
+# For more information, see:
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything in the repo
+* @huyhapitk12
+
+# Compiler source code
+/compiler/src/ @huyhapitk12
+
+# Runtime library
+/runtime/ @huyhapitk12
+
+# Documentation
+/docs/ @huyhapitk12
+/README.md @huyhapitk12
+/CONTRIBUTING.md @huyhapitk12
+/CODE_OF_CONDUCT.md @huyhapitk12
+/SECURITY.md @huyhapitk12
+
+# Examples
+/examples/ @huyhapitk12
+
+# Build configuration
+/Makefile @huyhapitk12
+/compile.sh @huyhapitk12
+/build.bat @huyhapitk12
+
+# GitHub workflows
+/.github/ @huyhapitk12
+
+# VSCode extension
+/vscode-lp/ @huyhapitk12
