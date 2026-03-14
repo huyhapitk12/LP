@@ -4,7 +4,19 @@ LP provides built-in support for parallel computing using OpenMP and GPU acceler
 
 ## Overview
 
-LP integrates OpenMP directly into the language through the `parallel` keyword, allowing you to easily parallelize loops for multi-core CPU execution. The compiler automatically adds `-fopenmp` flag when compiling, so you don't need to worry about compiler flags.
+LP integrates OpenMP directly into the language through the `parallel` keyword, allowing you to easily parallelize loops for multi-core CPU execution. OpenMP is enabled by default when compiling.
+
+## Compilation Backends
+
+LP supports two compilation backends:
+
+1. **Native ASM Backend (Default)**: Direct LP → Assembly → Machine Code
+2. **GCC Backend (Optional)**: LP → C → GCC → Machine Code
+
+```bash
+lp file.lp              # Native compilation (default)
+lp file.lp --gcc        # GCC backend with OpenMP support
+```
 
 ## Quick Start
 
