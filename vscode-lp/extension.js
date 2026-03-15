@@ -102,8 +102,14 @@ function runInTerminal(command, name, args = []) {
     
     // SECURITY: Build command safely with proper escaping
     // Using sendText is safer than exec as it doesn't execute through shell
+    // IMPORTANT: Escape backslashes BEFORE quotes to prevent injection
+    // Example: foo\" becomes "foo\\\"" which is safe
     if (args.length > 0) {
-        const escapedArgs = args.map(a => `"${a.replace(/"/g, '\\"')}"`).join(' ');
+        const escapedArgs = args.map(a => {
+            // First escape backslashes, then escape quotes
+            const escaped = a.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+            return `"${escaped}"`;
+        }).join(' ');
         terminal.sendText(`& "${command}" ${escapedArgs}`);
     } else {
         terminal.sendText(`& "${command}"`);
