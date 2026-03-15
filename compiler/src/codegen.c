@@ -1376,8 +1376,19 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             strcmp(func_name, "median") == 0 || strcmp(func_name, "argmax") == 0 ||
                             strcmp(func_name, "argmin") == 0 || strcmp(func_name, "len") == 0 ||
                             strcmp(func_name, "flatten") == 0 || strcmp(func_name, "transpose") == 0 ||
-                            strcmp(func_name, "cumsum") == 0 || strcmp(func_name, "reverse") == 0) {
+                            strcmp(func_name, "cumsum") == 0 || strcmp(func_name, "reverse") == 0 ||
+                            strcmp(func_name, "matmul") == 0 || strcmp(func_name, "diag") == 0) {
                             buf_printf(buf, "lp_np_%s(", func_name);
+                            for (int i = 0; i < node->call.args.count; i++) {
+                                if (i > 0) buf_write(buf, ", ");
+                                gen_expr(cg, buf, node->call.args.items[i]);
+                            }
+                            buf_write(buf, ")");
+                            break;
+                        }
+                        /* np.eye(n) - identity matrix */
+                        if (strcmp(func_name, "eye") == 0 || strcmp(func_name, "identity") == 0) {
+                            buf_write(buf, "lp_np_eye(");
                             for (int i = 0; i < node->call.args.count; i++) {
                                 if (i > 0) buf_write(buf, ", ");
                                 gen_expr(cg, buf, node->call.args.items[i]);

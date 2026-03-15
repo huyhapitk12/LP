@@ -638,6 +638,136 @@ static inline int64_t lp_np_count_equal(LpArray a, double val) {
     return count;
 }
 
+/* Matrix multiplication (2D arrays)
+ * Performs C = A @ B where A is (m x k) and B is (k x n), result is (m x n)
+ * Arrays must be reshaped to 2D first using reshape2d()
+ */
+__attribute__((hot, optimize("O3,unroll-loops")))
+static inline LpArray lp_np_matmul(LpArray a, LpArray b) {
+    /* Get dimensions from shape or infer from length */
+    int64_t m = a.shape[0] > 0 ? a.shape[0] : 1;
+    int64_t k_a = a.shape[1] > 0 ? a.shape[1] : a.len;
+    int64_t k_b = b.shape[0] > 0 ? b.shape[0] : 1;
+    int64_t n = b.shape[1] > 0 ? b.shape[1] : b.len;
+    
+    /* Handle 1D x 1D case (dot product) */
+    if (a.shape[0] <= 0 && a.shape[1] <= 0 && 
+        b.shape[0] <= 0 && b.shape[1] <= 0) {
+        LpArray result;
+        result.data = (double*)malloc(sizeof(double));
+        result.data[0] = lp_np_dot(a, b);
+        result.len = 1;
+        result.cap = 1;
+        result.shape[0] = 1;
+        result.shape[1] = 0;
+        result.shape[2] = 0;
+        result.shape[3] = 0;
+        return result;
+    }
+    
+    /* For 1D vector x 2D matrix: treat vector as (1 x len) row */
+    if (a.shape[0] <= 0 && a.shape[1] <= 0) {
+        m = 1;
+        k_a = a.len;
+    }
+    /* For 2D matrix x 1D vector: treat vector as (len x 1) column */
+    if (b.shape[0] <= 0 && b.shape[1] <= 0) {
+        k_b = b.len;
+        n = 1;
+    }
+    
+    /* Verify dimensions match */
+    int64_t k = k_a;
+    if (k_a != k_b) {
+        /* Fallback: use minimum */
+        k = k_a < k_b ? k_a : k_b;
+    }
+    
+    int64_t result_len = m * n;
+    LpArray result;
+    result.data = (double*)calloc(result_len, sizeof(double));
+    result.len = result_len;
+    result.cap = result_len;
+    result.shape[0] = m;
+    result.shape[1] = n;
+    result.shape[2] = 0;
+    result.shape[3] = 0;
+    
+    if (result.data && a.data && b.data) {
+        for (int64_t i = 0; i < m; i++) {
+            for (int64_t j = 0; j < n; j++) {
+                double sum = 0.0;
+                for (int64_t l = 0; l < k; l++) {
+                    int64_t a_idx = i * k + l;
+                    int64_t b_idx = l * n + j;
+                    if (a_idx < a.len && b_idx < b.len) {
+                        sum += a.data[a_idx] * b.data[b_idx];
+                    }
+                }
+                result.data[i * n + j] = sum;
+            }
+        }
+    }
+    
+    return result;
+}
+
+/* Eye/Identity matrix */
+static inline LpArray lp_np_eye(int64_t n) {
+    LpArray result = lp_np_zeros(n * n);
+    result.len = n * n;
+    result.cap = n * n;
+    result.shape[0] = n;
+    result.shape[1] = n;
+    result.shape[2] = 0;
+    result.shape[3] = 0;
+    
+    if (result.data) {
+        for (int64_t i = 0; i < n; i++) {
+            result.data[i * n + i] = 1.0;
+        }
+    }
+    return result;
+}
+
+/* Diagonal extraction/creation */
+static inline LpArray lp_np_diag(LpArray a) {
+    /* If 1D, create diagonal matrix; if 2D, extract diagonal */
+    int64_t n;
+    LpArray result;
+    
+    if (a.shape[1] <= 0) {
+        /* 1D input: create diagonal matrix */
+        n = a.len;
+        result = lp_np_zeros(n * n);
+        result.len = n * n;
+        result.cap = n * n;
+        result.shape[0] = n;
+        result.shape[1] = n;
+        if (result.data && a.data) {
+            for (int64_t i = 0; i < n; i++) {
+                result.data[i * n + i] = a.data[i];
+            }
+        }
+    } else {
+        /* 2D input: extract diagonal */
+        n = a.shape[0] < a.shape[1] ? a.shape[0] : a.shape[1];
+        result.data = (double*)malloc(n * sizeof(double));
+        result.len = n;
+        result.cap = n;
+        result.shape[0] = n;
+        result.shape[1] = 0;
+        result.shape[2] = 0;
+        result.shape[3] = 0;
+        if (result.data && a.data) {
+            for (int64_t i = 0; i < n; i++) {
+                result.data[i] = a.data[i * a.shape[1] + i];
+            }
+        }
+    }
+    return result;
+}
+
 /* ================================================================
  * Module registry — maps module names to tiers
  * Used by codegen to determine which strategy to use
