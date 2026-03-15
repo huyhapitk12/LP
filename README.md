@@ -46,7 +46,8 @@
 - 🪶 **Ultra-lightweight** - Only requires binutils (`as` + `ld`, ~5MB)
 - 🐍 **Python-like Syntax** - Familiar `def`, `class`, `if`, `for`, `while`, `import`
 - ⚡ **Modern Features** - F-Strings, Pattern Matching, Decorators, Async/Await, Generics, Type Unions
-- 🧵 **Built-in Modules** - `math`, `random`, `time`, `os`, `sys`, `http`, `json`, `sqlite`, `thread`, `memory`
+- 🧵 **Built-in Modules** - `math`, `random`, `time`, `os`, `sys`, `http`, `json`, `sqlite`, `thread`, `memory`, `dsa`
+- 📚 **DSA Module** - Data Structures & Algorithms for competitive programming (Stack, Queue, DSU, Heap, Segment Tree, Graph algorithms, Geometry)
 - 🚀 **Native OpenMP** - Automatic parallel execution with `parallel for`
 - ⚙️ **@settings Decorator** - Fine-grained control over parallel threads, GPU, scheduling
 - 🔒 **@security Decorator** - Built-in rate limiting, authentication, input validation
