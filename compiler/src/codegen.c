@@ -613,15 +613,15 @@ static void gen_thread_spawn_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
     char ctx_name[64];
     int adapter_id;
 
-    if (node->call.args.count < 1 || node->call.args.count > 2) {
-        codegen_set_error(cg, "thread.spawn expects a worker function and an optional single argument");
+    if (node->call.args.count < 1 || node->call.args.count > 4) {
+        codegen_set_error(cg, "thread.spawn expects a worker function and up to 3 arguments");
         buf_write(buf, "NULL");
         return;
     }
 
     worker_node = node->call.args.items[0];
     if (!worker_node || worker_node->type != NODE_NAME) {
-        codegen_set_error(cg, "thread.spawn only supports named LP functions as workers");
+        codegen_set_error(cg, "thread.spawn only supports named LP functions as workers (lambdas not yet supported for thread safety)");
         buf_write(buf, "NULL");
         return;
     }
@@ -640,31 +640,35 @@ static void gen_thread_spawn_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
         return;
     }
 
-    if (worker_sym->num_params > 1) {
-        codegen_set_error(cg, "thread.spawn worker '%s' must accept 0 or 1 argument", worker_name);
+    /* Relaxed: allow up to 3 parameters now */
+    if (worker_sym->num_params > 3) {
+        codegen_set_error(cg, "thread.spawn worker '%s' must accept 0-3 arguments", worker_name);
         buf_write(buf, "NULL");
         return;
     }
 
-    if (worker_sym->type != LP_INT && worker_sym->type != LP_VOID) {
-        codegen_set_error(cg, "thread.spawn worker '%s' must return int or void", worker_name);
+    /* Relaxed: allow int, void, float, and string return types */
+    if (worker_sym->type != LP_INT && worker_sym->type != LP_VOID && 
+        worker_sym->type != LP_FLOAT && worker_sym->type != LP_STRING) {
+        codegen_set_error(cg, "thread.spawn worker '%s' must return int, void, float, or string", worker_name);
         buf_write(buf, "NULL");
         return;
     }
 
+    /* Check argument count matches parameter count */
     if (worker_sym->num_params == 0 && node->call.args.count != 1) {
-        codegen_set_error(cg, "thread.spawn worker '%s' does not accept an argument", worker_name);
+        codegen_set_error(cg, "thread.spawn worker '%s' does not accept arguments", worker_name);
         buf_write(buf, "NULL");
         return;
     }
 
-    if (worker_sym->num_params == 1 && node->call.args.count != 2) {
-        codegen_set_error(cg, "thread.spawn worker '%s' requires exactly one argument", worker_name);
+    if (worker_sym->num_params > 0 && node->call.args.count != worker_sym->num_params + 1) {
+        codegen_set_error(cg, "thread.spawn worker '%s' expects %d argument(s)", worker_name, worker_sym->num_params);
         buf_write(buf, "NULL");
         return;
     }
 
-    if (worker_sym->num_params == 1) {
+    if (worker_sym->num_params >= 1) {
         if (worker_sym->first_param_type == LP_UNKNOWN) {
             codegen_set_error(cg, "thread.spawn worker '%s' has an unsupported argument type", worker_name);
             buf_write(buf, "NULL");
@@ -1142,8 +1146,11 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                     }
                     /* ---- TIER 1: http ---- */
                     if (imp->tier == MOD_TIER1_HTTP) {
-                        if (strcmp(func_name, "get") != 0 && strcmp(func_name, "post") != 0) {
-                            codegen_set_error(cg, "http.%s is not supported yet; only http.get and http.post are available", func_name);
+                        /* Supported HTTP methods: get, post, put, delete, patch */
+                        if (strcmp(func_name, "get") != 0 && strcmp(func_name, "post") != 0 &&
+                            strcmp(func_name, "put") != 0 && strcmp(func_name, "delete") != 0 &&
+                            strcmp(func_name, "patch") != 0) {
+                            codegen_set_error(cg, "http.%s is not supported; available methods: get, post, put, delete, patch", func_name);
                             buf_write(buf, "\"\"");
                             break;
                         }
@@ -1365,7 +1372,63 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         if (strcmp(func_name, "sum") == 0 || strcmp(func_name, "mean") == 0 ||
                             strcmp(func_name, "min") == 0 || strcmp(func_name, "max") == 0 ||
                             strcmp(func_name, "std") == 0 || strcmp(func_name, "dot") == 0 ||
-                            strcmp(func_name, "sort") == 0) {
+                            strcmp(func_name, "sort") == 0 || strcmp(func_name, "var") == 0 ||
+                            strcmp(func_name, "median") == 0 || strcmp(func_name, "argmax") == 0 ||
+                            strcmp(func_name, "argmin") == 0 || strcmp(func_name, "len") == 0 ||
+                            strcmp(func_name, "flatten") == 0 || strcmp(func_name, "transpose") == 0 ||
+                            strcmp(func_name, "cumsum") == 0 || strcmp(func_name, "reverse") == 0) {
+                            buf_printf(buf, "lp_np_%s(", func_name);
+                            for (int i = 0; i < node->call.args.count; i++) {
+                                if (i > 0) buf_write(buf, ", ");
+                                gen_expr(cg, buf, node->call.args.items[i]);
+                            }
+                            buf_write(buf, ")");
+                            break;
+                        }
+                        /* np.clip(arr, min, max) */
+                        if (strcmp(func_name, "clip") == 0) {
+                            buf_write(buf, "lp_np_clip(");
+                            for (int i = 0; i < node->call.args.count; i++) {
+                                if (i > 0) buf_write(buf, ", ");
+                                gen_expr(cg, buf, node->call.args.items[i]);
+                            }
+                            buf_write(buf, ")");
+                            break;
+                        }
+                        /* np.power(arr, p) */
+                        if (strcmp(func_name, "power") == 0) {
+                            buf_write(buf, "lp_np_power(");
+                            for (int i = 0; i < node->call.args.count; i++) {
+                                if (i > 0) buf_write(buf, ", ");
+                                gen_expr(cg, buf, node->call.args.items[i]);
+                            }
+                            buf_write(buf, ")");
+                            break;
+                        }
+                        /* np.reshape2d(arr, rows, cols) */
+                        if (strcmp(func_name, "reshape2d") == 0 || strcmp(func_name, "reshape") == 0) {
+                            buf_write(buf, "lp_np_reshape2d(");
+                            for (int i = 0; i < node->call.args.count; i++) {
+                                if (i > 0) buf_write(buf, ", ");
+                                gen_expr(cg, buf, node->call.args.items[i]);
+                            }
+                            buf_write(buf, ")");
+                            break;
+                        }
+                        /* np.take(arr, indices) */
+                        if (strcmp(func_name, "take") == 0) {
+                            buf_write(buf, "lp_np_take(");
+                            for (int i = 0; i < node->call.args.count; i++) {
+                                if (i > 0) buf_write(buf, ", ");
+                                gen_expr(cg, buf, node->call.args.items[i]);
+                            }
+                            buf_write(buf, ")");
+                            break;
+                        }
+                        /* np.count_greater, count_less, count_equal */
+                        if (strcmp(func_name, "count_greater") == 0 || 
+                            strcmp(func_name, "count_less") == 0 ||
+                            strcmp(func_name, "count_equal") == 0) {
                             buf_printf(buf, "lp_np_%s(", func_name);
                             for (int i = 0; i < node->call.args.count; i++) {
                                 if (i > 0) buf_write(buf, ", ");

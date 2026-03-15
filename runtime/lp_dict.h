@@ -322,4 +322,39 @@ static inline void lp_dict_merge(LpDict *dst, LpDict *src) {
 #define LP_DICT_GET_STR(d, key) (lp_dict_get(d, key).as.s)
 #define LP_DICT_GET_BOOL(d, key) (lp_dict_get(d, key).as.b)
 
+/* ========================================
+ * TYPE NARROWING FOR UNION TYPES
+ * Additional helper functions beyond what's in lp_runtime.h
+ * ======================================== */
+
+/* Type narrowing - extract int with default */
+static inline int64_t lp_val_as_int_or(LpVal v, int64_t default_val) {
+    if (v.type == LP_VAL_INT) return v.as.i;
+    if (v.type == LP_VAL_FLOAT) return (int64_t)v.as.f;
+    return default_val;
+}
+
+/* Type narrowing - extract float with default */
+static inline double lp_val_as_float_or(LpVal v, double default_val) {
+    if (v.type == LP_VAL_FLOAT) return v.as.f;
+    if (v.type == LP_VAL_INT) return (double)v.as.i;
+    return default_val;
+}
+
+/* Type narrowing - extract string with default */
+static inline const char* lp_val_as_str_or(LpVal v, const char* default_val) {
+    if (v.type == LP_VAL_STRING) return v.as.s;
+    return default_val;
+}
+
+/* Type assertion - raises error message if type doesn't match */
+static inline int lp_val_assert_type(LpVal v, LpValType expected, const char* context) {
+    if (v.type != expected) {
+        fprintf(stderr, "TypeError: expected type %d but got %d in %s\n",
+                expected, v.type, context);
+        return 0;
+    }
+    return 1;
+}
+
 #endif /* LP_DICT_H */

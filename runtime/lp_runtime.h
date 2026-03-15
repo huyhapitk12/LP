@@ -544,30 +544,17 @@ static inline int lp_val_isinstance(LpVal v, const char *type_name) {
 static inline int lp_val_matches_union(LpVal v, const char *union_types) {
     if (!union_types) return 0;
     
-    /* Make a copy to tokenize */
-    char *copy = strdup(union_types);
-    if (!copy) return 0;
+    /* Simple check using strstr - more portable than strtok_r */
+    if (strstr(union_types, "int") && v.type == LP_VAL_INT) return 1;
+    if (strstr(union_types, "float") && v.type == LP_VAL_FLOAT) return 1;
+    if (strstr(union_types, "str") && v.type == LP_VAL_STRING) return 1;
+    if (strstr(union_types, "bool") && v.type == LP_VAL_BOOL) return 1;
+    if (strstr(union_types, "None") && v.type == LP_VAL_NULL) return 1;
+    if (strstr(union_types, "dict") && v.type == LP_VAL_DICT) return 1;
+    if (strstr(union_types, "list") && v.type == LP_VAL_LIST) return 1;
+    if (strstr(union_types, "numeric") && (v.type == LP_VAL_INT || v.type == LP_VAL_FLOAT)) return 1;
     
-    char *saveptr;
-    char *token = strtok_r(copy, "|", &saveptr);
-    int found = 0;
-    
-    while (token != NULL) {
-        /* Skip leading/trailing whitespace */
-        while (*token == ' ') token++;
-        char *end = token + strlen(token) - 1;
-        while (end > token && *end == ' ') end--;
-        *(end + 1) = '\0';
-        
-        if (lp_val_isinstance(v, token)) {
-            found = 1;
-            break;
-        }
-        token = strtok_r(NULL, "|", &saveptr);
-    }
-    
-    free(copy);
-    return found;
+    return 0;
 }
 
 /* Type name string for LpVal */
