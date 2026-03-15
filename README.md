@@ -240,6 +240,56 @@ arena = memory.arena_new(1024)
 ptr = memory.arena_alloc(arena, 64)
 ```
 
+### 📚 DSA Module (Data Structures & Algorithms)
+
+LP provides a comprehensive DSA module optimized for competitive programming:
+
+```lp
+import dsa
+
+# Fast I/O (critical for competitive programming)
+n = dsa.read_int()
+dsa.write_int_ln(n)
+
+# Number Theory
+primes = dsa.sieve(1000000)
+is_prime = dsa.is_prime(17)
+result = dsa.mod_pow(2, 100, 1000000007)
+
+# Data Structures
+stack = dsa.stack_new(100)
+dsa.stack_push(stack, 10)
+dsa.stack_pop(stack)
+
+queue = dsa.queue_new(100)
+dsa.queue_push(queue, 1)
+dsa.queue_pop(queue)
+
+# DSU (Union-Find)
+dsu = dsa.dsu_new(n)
+dsa.dsu_union(dsu, 0, 1)
+same = dsa.dsu_same(dsu, 0, 1)
+
+# Heap / Priority Queue
+heap = dsa.heap_new(100)
+dsa.heap_push(heap, value, priority)
+
+# Graph Algorithms
+g = dsa.graph_new(n, True)
+dsa.graph_add_edge(g, 0, 1, 10)
+dist = dsa.graph_dijkstra(g, 0)
+
+# Segment Tree with Lazy Propagation
+seg = dsa.segtree_new(arr, n, "sum")
+dsa.segtree_build(seg)
+dsa.segtree_update(seg, 1, 4, 10)
+result = dsa.segtree_query(seg, 0, 5)
+
+# Geometry
+hull = dsa.convex_hull(points, n)
+area = dsa.polygon_area(hull.points, hull.count)
+```
+
 ---
 
 ## 🛠️ CLI Commands
@@ -278,17 +328,15 @@ LP/
 
 ## 📚 Documentation
 
+See the [LP Language Wiki](https://github.com/huyhapitk12/LP/wiki) for comprehensive documentation:
+
 | Document | Description |
 |----------|-------------|
-| [FEATURES.md](docs/FEATURES.md) | Comprehensive feature status |
-| [Installation and Setup](docs/01_Installation_and_Setup.md) | Getting started |
-| [First Programs](docs/02_First_Programs.md) | Tutorial |
-| [Language Basics](docs/03_Language_Basics.md) | Core concepts |
-| [Runtime Modules](docs/08_Runtime_Modules.md) | Built-in modules |
-| [CLI and Tooling](docs/09_CLI_and_Tooling.md) | Command-line tools |
-| [Language Reference](docs/14_Language_Reference.md) | Complete reference |
-| [Parallel Computing](docs/15_Parallel_Computing.md) | OpenMP integration |
-| [Huong dan tieng Viet](docs/guide_vi.md) | Vietnamese guide |
+| [Feature Status](https://github.com/huyhapitk12/LP/wiki/Feature-Status) | Comprehensive feature status |
+| [Language Reference](https://github.com/huyhapitk12/LP/wiki/Language-Reference) | Complete language reference |
+| [Runtime Modules](https://github.com/huyhapitk12/LP/wiki/Runtime-Modules) | Built-in modules (math, http, json, dsa, etc.) |
+| [Parallel Computing](https://github.com/huyhapitk12/LP/wiki/Parallel-Computing) | OpenMP integration |
+| [Vietnamese Guide](https://github.com/huyhapitk12/LP/wiki/Vietnamese-Guide) | Hướng dẫn tiếng Việt |
 
 ---
 
