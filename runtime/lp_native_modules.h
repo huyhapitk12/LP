@@ -387,6 +387,258 @@ static inline int64_t lp_np_len(LpArray a) {
 }
 
 /* ================================================================
+ * Additional NumPy Functions
+ * ================================================================ */
+
+/* Flatten array to 1D */
+static inline LpArray lp_np_flatten(LpArray a) {
+    LpArray result;
+    result.data = (double*)malloc(a.len * sizeof(double));
+    result.len = a.len;
+    result.cap = a.len;
+    result.shape[0] = a.len;
+    result.shape[1] = 0;
+    result.shape[2] = 0;
+    result.shape[3] = 0;
+    if (result.data && a.data) {
+        memcpy(result.data, a.data, a.len * sizeof(double));
+    }
+    return result;
+}
+
+/* Reshape array (basic 2D reshape) */
+static inline LpArray lp_np_reshape2d(LpArray a, int64_t rows, int64_t cols) {
+    LpArray result = a; /* Share data pointer for zero-copy */
+    result.shape[0] = rows;
+    result.shape[1] = cols;
+    result.shape[2] = 0;
+    result.shape[3] = 0;
+    return result;
+}
+
+/* Transpose 2D array */
+static inline LpArray lp_np_transpose(LpArray a) {
+    int64_t rows = a.shape[0] > 0 ? a.shape[0] : 1;
+    int64_t cols = a.shape[1] > 0 ? a.shape[1] : a.len;
+    
+    LpArray result;
+    result.len = a.len;
+    result.cap = a.len;
+    result.shape[0] = cols;
+    result.shape[1] = rows;
+    result.shape[2] = 0;
+    result.shape[3] = 0;
+    result.data = (double*)malloc(result.len * sizeof(double));
+    
+    if (result.data && a.data) {
+        for (int64_t i = 0; i < rows; i++) {
+            for (int64_t j = 0; j < cols; j++) {
+                result.data[j * rows + i] = a.data[i * cols + j];
+            }
+        }
+    }
+    return result;
+}
+
+/* Cumulative sum */
+static inline LpArray lp_np_cumsum(LpArray a) {
+    LpArray result;
+    result.data = (double*)malloc(a.len * sizeof(double));
+    result.len = a.len;
+    result.cap = a.len;
+    result.shape[0] = a.len;
+    result.shape[1] = 0;
+    result.shape[2] = 0;
+    result.shape[3] = 0;
+    
+    if (result.data && a.data) {
+        double cumsum = 0;
+        for (int64_t i = 0; i < a.len; i++) {
+            cumsum += a.data[i];
+            result.data[i] = cumsum;
+        }
+    }
+    return result;
+}
+
+/* Element-wise power */
+static inline LpArray lp_np_power(LpArray a, double p) {
+    LpArray result;
+    result.data = (double*)malloc(a.len * sizeof(double));
+    result.len = a.len;
+    result.cap = a.len;
+    result.shape[0] = a.shape[0];
+    result.shape[1] = a.shape[1];
+    result.shape[2] = a.shape[2];
+    result.shape[3] = a.shape[3];
+    
+    if (result.data && a.data) {
+        for (int64_t i = 0; i < a.len; i++) {
+            result.data[i] = pow(a.data[i], p);
+        }
+    }
+    return result;
+}
+
+/* Variance */
+static inline double lp_np_var(LpArray a) {
+    double mean = lp_np_mean(a);
+    double sum_sq = 0;
+    if (a.data) {
+        for (int64_t i = 0; i < a.len; i++) {
+            double diff = a.data[i] - mean;
+            sum_sq += diff * diff;
+        }
+    }
+    return sum_sq / a.len;
+}
+
+/* Median */
+static inline double lp_np_median(LpArray a) {
+    if (!a.data || a.len == 0) return 0;
+    
+    /* Sort a copy */
+    LpArray sorted = lp_np_sort(a);
+    double median;
+    
+    if (a.len % 2 == 0) {
+        median = (sorted.data[a.len/2 - 1] + sorted.data[a.len/2]) / 2.0;
+    } else {
+        median = sorted.data[a.len/2];
+    }
+    
+    free(sorted.data);
+    return median;
+}
+
+/* Argmax - returns index of maximum value */
+static inline int64_t lp_np_argmax(LpArray a) {
+    if (!a.data || a.len == 0) return -1;
+    
+    int64_t max_idx = 0;
+    double max_val = a.data[0];
+    
+    for (int64_t i = 1; i < a.len; i++) {
+        if (a.data[i] > max_val) {
+            max_val = a.data[i];
+            max_idx = i;
+        }
+    }
+    return max_idx;
+}
+
+/* Argmin - returns index of minimum value */
+static inline int64_t lp_np_argmin(LpArray a) {
+    if (!a.data || a.len == 0) return -1;
+    
+    int64_t min_idx = 0;
+    double min_val = a.data[0];
+    
+    for (int64_t i = 1; i < a.len; i++) {
+        if (a.data[i] < min_val) {
+            min_val = a.data[i];
+            min_idx = i;
+        }
+    }
+    return min_idx;
+}
+
+/* Clip values to range [min_val, max_val] */
+static inline LpArray lp_np_clip(LpArray a, double min_val, double max_val) {
+    LpArray result;
+    result.data = (double*)malloc(a.len * sizeof(double));
+    result.len = a.len;
+    result.cap = a.len;
+    result.shape[0] = a.shape[0];
+    result.shape[1] = a.shape[1];
+    result.shape[2] = a.shape[2];
+    result.shape[3] = a.shape[3];
+    
+    if (result.data && a.data) {
+        for (int64_t i = 0; i < a.len; i++) {
+            if (a.data[i] < min_val) result.data[i] = min_val;
+            else if (a.data[i] > max_val) result.data[i] = max_val;
+            else result.data[i] = a.data[i];
+        }
+    }
+    return result;
+}
+
+/* Reverse array */
+static inline LpArray lp_np_reverse(LpArray a) {
+    LpArray result;
+    result.data = (double*)malloc(a.len * sizeof(double));
+    result.len = a.len;
+    result.cap = a.len;
+    result.shape[0] = a.shape[0];
+    result.shape[1] = a.shape[1];
+    result.shape[2] = a.shape[2];
+    result.shape[3] = a.shape[3];
+    
+    if (result.data && a.data) {
+        for (int64_t i = 0; i < a.len; i++) {
+            result.data[i] = a.data[a.len - 1 - i];
+        }
+    }
+    return result;
+}
+
+/* Take elements at indices */
+static inline LpArray lp_np_take(LpArray a, LpArray indices) {
+    LpArray result;
+    result.data = (double*)malloc(indices.len * sizeof(double));
+    result.len = indices.len;
+    result.cap = indices.len;
+    result.shape[0] = indices.len;
+    result.shape[1] = 0;
+    result.shape[2] = 0;
+    result.shape[3] = 0;
+    
+    if (result.data && a.data && indices.data) {
+        for (int64_t i = 0; i < indices.len; i++) {
+            int64_t idx = (int64_t)indices.data[i];
+            if (idx >= 0 && idx < a.len) {
+                result.data[i] = a.data[idx];
+            } else {
+                result.data[i] = 0; /* Out of bounds */
+            }
+        }
+    }
+    return result;
+}
+
+/* Element-wise comparison: returns count of elements satisfying condition */
+static inline int64_t lp_np_count_greater(LpArray a, double val) {
+    int64_t count = 0;
+    if (a.data) {
+        for (int64_t i = 0; i < a.len; i++) {
+            if (a.data[i] > val) count++;
+        }
+    }
+    return count;
+}
+
+static inline int64_t lp_np_count_less(LpArray a, double val) {
+    int64_t count = 0;
+    if (a.data) {
+        for (int64_t i = 0; i < a.len; i++) {
+            if (a.data[i] < val) count++;
+        }
+    }
+    return count;
+}
+
+static inline int64_t lp_np_count_equal(LpArray a, double val) {
+    int64_t count = 0;
+    if (a.data) {
+        for (int64_t i = 0; i < a.len; i++) {
+            if (a.data[i] == val) count++;
+        }
+    }
+    return count;
+}
+
+/* ================================================================
  * Module registry — maps module names to tiers
  * Used by codegen to determine which strategy to use
  * ================================================================ */
