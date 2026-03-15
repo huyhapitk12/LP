@@ -488,7 +488,7 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
                         if (strcmp(func_name, "check_rate_limit") == 0) return LP_BOOL;
                         return LP_STRING;
                     }
-                    if (imp->tier == MOD_TIER1_CP) {
+                    if (imp->tier == MOD_TIER1_DSA) {
                         /* Fast I/O - read functions */
                         if (strcmp(func_name, "read_int") == 0) return LP_INT;
                         if (strcmp(func_name, "read_float") == 0) return LP_FLOAT;
@@ -1356,7 +1356,7 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         break;
                     }
                     /* ---- TIER 1: cp (Competitive Programming) ---- */
-                    if (imp->tier == MOD_TIER1_CP) {
+                    if (imp->tier == MOD_TIER1_DSA) {
                         /* Fast I/O functions */
                         if (strcmp(func_name, "read_int") == 0) {
                             buf_write(buf, "lp_io_read_int(");
@@ -1437,7 +1437,7 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         }
                         /* Default fallback */
                         else {
-                            buf_printf(buf, "lp_cp_%s(", func_name);
+                            buf_printf(buf, "lp_dsa_%s(", func_name);
                         }
                         
                         for (int i = 0; i < node->call.args.count; i++) {
@@ -3743,7 +3743,7 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
             else if (strcmp(module, "memory") == 0)   tier = MOD_TIER1_MEMORY;
             else if (strcmp(module, "platform") == 0) tier = MOD_TIER1_PLATFORM;
             else if (strcmp(module, "security") == 0) tier = MOD_TIER1_SECURITY;
-            else if (strcmp(module, "cp") == 0)       tier = MOD_TIER1_CP;
+            else if (strcmp(module, "dsa") == 0)       tier = MOD_TIER1_DSA;
             else                                     tier = MOD_TIER3_PYTHON;
 
             /* Register import */
@@ -3777,7 +3777,7 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
                     else if (tier == MOD_TIER1_MEMORY) { cg->uses_native = 1; cg->uses_memory = 1; }
                     else if (tier == MOD_TIER1_PLATFORM) { cg->uses_native = 1; cg->uses_platform = 1; }
                     else if (tier == MOD_TIER1_SECURITY) { cg->uses_native = 1; cg->uses_security = 1; }
-                    else if (tier == MOD_TIER1_CP) { cg->uses_native = 1; cg->uses_cp = 1; }
+                    else if (tier == MOD_TIER1_DSA) { cg->uses_native = 1; cg->uses_dsa = 1; }
                     else cg->uses_native = 1;
                 } else {
                     if (mod_dup) free(mod_dup);
@@ -3821,8 +3821,8 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
     if (cg->uses_platform) {
         buf_write(&cg->header, "#include \"lp_platform.h\"\n");
     }
-    if (cg->uses_cp) {
-        buf_write(&cg->header, "#include \"lp_cp.h\"\n");
+    if (cg->uses_dsa) {
+        buf_write(&cg->header, "#include \"lp_dsa.h\"\n");
     }
     if (cg->uses_python) {
         buf_write(&cg->header, "#include \"lp_python.h\"\n");
