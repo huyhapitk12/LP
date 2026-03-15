@@ -24,7 +24,7 @@
   <a href="#quick-start">Quick Start</a> •
   <a href="#documentation">Documentation</a> •
   <a href="#comparison">Comparison</a> •
-  <a href="CONTRIBUTING.md">Contributing</a>
+  <a href="#contributing">Contributing</a>
 </p>
 
 ---
@@ -63,6 +63,7 @@
 
 ---
 
+<a name="quick-start"></a>
 ## 🚀 Quick Start
 
 ### Build The Compiler
@@ -98,6 +99,7 @@ Run it with native compilation:
 
 ---
 
+<a name="features"></a>
 ## 📖 Features
 
 ### 🎨 Modern Syntax
@@ -326,6 +328,7 @@ LP/
 
 ---
 
+<a name="documentation"></a>
 ## 📚 Documentation
 
 See the [LP Language Wiki](https://github.com/huyhapitk12/LP/wiki) for comprehensive documentation:
@@ -340,6 +343,7 @@ See the [LP Language Wiki](https://github.com/huyhapitk12/LP/wiki) for comprehen
 
 ---
 
+<a name="contributing"></a>
 ## 🤝 Contributing
 
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
@@ -354,6 +358,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
+<a name="comparison"></a>
 ## 📊 Comparison
 
 | Feature | LP | Python | C | Go |
