@@ -1,3 +1,7 @@
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 /* Enable POSIX functions like strtok_r */
 #define _POSIX_C_SOURCE 200809L
 #include "codegen.h"

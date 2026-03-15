@@ -18,13 +18,15 @@ esac
 
 echo "=== Starting compilation ==="
 mkdir -p build
-WARN_FLAGS="-Wall -Wextra -Wpedantic"
-gcc -std=c99 -O2 $WARN_FLAGS \
+WARN_FLAGS="-Wall -Wextra "
+gcc -std=gnu99 -O2 $WARN_FLAGS \
     compiler/src/main.c \
     compiler/src/lexer.c \
     compiler/src/ast.c \
     compiler/src/parser.c \
     compiler/src/codegen.c \
+    compiler/src/codegen_asm.c \
+    compiler/src/asm_optimize.c \
     compiler/src/repl.c \
     compiler/src/process_utils.c \
     -I compiler/src \

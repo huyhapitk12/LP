@@ -549,7 +549,11 @@ static inline int lp_val_matches_union(LpVal v, const char *union_types) {
     if (!copy) return 0;
     
     char *saveptr;
+    #ifdef _WIN32
+    char *token = strtok_s(copy, "|", &saveptr);
+#else
     char *token = strtok_r(copy, "|", &saveptr);
+#endif
     int found = 0;
     
     while (token != NULL) {
@@ -563,7 +567,11 @@ static inline int lp_val_matches_union(LpVal v, const char *union_types) {
             found = 1;
             break;
         }
+        #ifdef _WIN32
+        token = strtok_s(NULL, "|", &saveptr);
+#else
         token = strtok_r(NULL, "|", &saveptr);
+#endif
     }
     
     free(copy);

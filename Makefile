@@ -5,8 +5,8 @@
 #   make install  Install to /usr/local/bin (Linux/macOS)
 
 CC      ?= gcc
-WARNFLAGS ?= -Wall -Wextra -Wpedantic
-CFLAGS  := -std=c99 -O2 $(WARNFLAGS)
+WARNFLAGS ?= -Wall -Wextra
+CFLAGS  := -std=gnu99 -O2 $(WARNFLAGS)
 LDFLAGS := -lm
 
 SRC_DIR := compiler/src
@@ -44,7 +44,7 @@ $(TARGET): $(SRCS) $(SQLITE_OBJ)
 	$(CC) $(CFLAGS) $(SRCS) $(SQLITE_OBJ) $(INC_DIR) -o $(TARGET) $(LDFLAGS)
 
 $(SQLITE_OBJ): runtime/sqlite3.c
-	$(CC) -std=c99 -O2 -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 -Wno-implicit-fallthrough -c runtime/sqlite3.c -o $(SQLITE_OBJ)
+	$(CC) -std=gnu99 -O2 -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 -Wno-implicit-fallthrough -c runtime/sqlite3.c -o $(SQLITE_OBJ)
 
 clean:
 ifeq ($(OS),Windows_NT)
