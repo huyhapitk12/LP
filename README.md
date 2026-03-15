@@ -20,8 +20,8 @@
 </p>
 
 <p align="center">
-  <a href="#features">Features</a> •
   <a href="#quick-start">Quick Start</a> •
+  <a href="#features">Features</a> •
   <a href="#documentation">Documentation</a> •
   <a href="#comparison">Comparison</a> •
   <a href="#contributing">Contributing</a>
@@ -343,6 +343,19 @@ See the [LP Language Wiki](https://github.com/huyhapitk12/LP/wiki) for comprehen
 
 ---
 
+<a name="comparison"></a>
+## 📊 Comparison
+
+| Feature | LP | Python | C | Go |
+|---------|----|----|---|-----|
+| Compilation | Native ASM | Interpreted | Native | Native |
+| Dependencies | ~5MB (binutils) | ~100MB+ | ~500MB (GCC) | ~200MB |
+| Startup Time | Instant | Slow | Instant | Instant |
+| Performance | Native | Slow | Native | Native |
+| Memory Safe | Partial | Yes | No | Yes |
+
+---
+
 <a name="contributing"></a>
 ## 🤝 Contributing
 
@@ -355,19 +368,6 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 - 📝 Improve documentation
 - 🔧 Submit pull requests
 - ⭐ Star the repository!
-
----
-
-<a name="comparison"></a>
-## 📊 Comparison
-
-| Feature | LP | Python | C | Go |
-|---------|----|----|---|-----|
-| Compilation | Native ASM | Interpreted | Native | Native |
-| Dependencies | ~5MB (binutils) | ~100MB+ | ~500MB (GCC) | ~200MB |
-| Startup Time | Instant | Slow | Instant | Instant |
-| Performance | Native | Slow | Native | Native |
-| Memory Safe | Partial | Yes | No | Yes |
 
 ---
 
