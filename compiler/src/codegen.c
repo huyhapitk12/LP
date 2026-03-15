@@ -488,6 +488,44 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
                         if (strcmp(func_name, "check_rate_limit") == 0) return LP_BOOL;
                         return LP_STRING;
                     }
+                    if (imp->tier == MOD_TIER1_CP) {
+                        /* Fast I/O - read functions */
+                        if (strcmp(func_name, "read_int") == 0) return LP_INT;
+                        if (strcmp(func_name, "read_float") == 0) return LP_FLOAT;
+                        if (strcmp(func_name, "read_str") == 0) return LP_STRING;
+                        if (strcmp(func_name, "read_line") == 0) return LP_STRING;
+                        /* Fast I/O - write functions */
+                        if (strncmp(func_name, "write", 5) == 0) return LP_VOID;
+                        if (strcmp(func_name, "flush") == 0) return LP_VOID;
+                        /* Number Theory */
+                        if (strcmp(func_name, "sieve") == 0) return LP_PTR; /* bool* */
+                        if (strcmp(func_name, "is_prime") == 0) return LP_BOOL;
+                        if (strcmp(func_name, "mod_pow") == 0) return LP_INT;
+                        if (strcmp(func_name, "mod_inverse") == 0) return LP_INT;
+                        if (strcmp(func_name, "extended_gcd") == 0) return LP_PTR; /* struct */
+                        if (strcmp(func_name, "prime_factors") == 0) return LP_PTR; /* struct */
+                        if (strcmp(func_name, "euler_phi") == 0) return LP_INT;
+                        if (strcmp(func_name, "count_divisors") == 0) return LP_INT;
+                        if (strcmp(func_name, "sum_divisors") == 0) return LP_INT;
+                        /* DSU */
+                        if (strcmp(func_name, "dsu_new") == 0) return LP_PTR;
+                        if (strcmp(func_name, "dsu_find") == 0) return LP_INT;
+                        if (strcmp(func_name, "dsu_union") == 0) return LP_BOOL;
+                        if (strcmp(func_name, "dsu_same") == 0) return LP_BOOL;
+                        if (strcmp(func_name, "dsu_size") == 0) return LP_INT;
+                        /* Heap */
+                        if (strcmp(func_name, "heap_new") == 0) return LP_PTR;
+                        if (strcmp(func_name, "heap_push") == 0) return LP_VOID;
+                        if (strcmp(func_name, "heap_pop") == 0) return LP_INT;
+                        if (strcmp(func_name, "heap_top") == 0) return LP_INT;
+                        if (strcmp(func_name, "heap_is_empty") == 0) return LP_BOOL;
+                        /* Fenwick Tree */
+                        if (strcmp(func_name, "fenwick_new") == 0) return LP_PTR;
+                        if (strcmp(func_name, "fenwick_add") == 0) return LP_VOID;
+                        if (strcmp(func_name, "fenwick_prefix_sum") == 0) return LP_INT;
+                        if (strcmp(func_name, "fenwick_range_sum") == 0) return LP_INT;
+                        return LP_INT;
+                    }
                     return LP_PYOBJ; /* Tier 3 */
                 }
             }
@@ -1317,7 +1355,99 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         buf_write(buf, ")");
                         break;
                     }
-                    /* ---- TIER 2: numpy ??? optimized C arrays ---- */
+                    /* ---- TIER 1: cp (Competitive Programming) ---- */
+                    if (imp->tier == MOD_TIER1_CP) {
+                        /* Fast I/O functions */
+                        if (strcmp(func_name, "read_int") == 0) {
+                            buf_write(buf, "lp_io_read_int(");
+                        } else if (strcmp(func_name, "read_float") == 0) {
+                            buf_write(buf, "lp_io_read_float(");
+                        } else if (strcmp(func_name, "read_str") == 0) {
+                            buf_write(buf, "lp_io_read_str(");
+                        } else if (strcmp(func_name, "read_line") == 0) {
+                            buf_write(buf, "lp_io_read_line(");
+                        } else if (strcmp(func_name, "write") == 0) {
+                            buf_write(buf, "lp_io_write_int(");
+                        } else if (strcmp(func_name, "write_str") == 0) {
+                            buf_write(buf, "lp_io_write_str(");
+                        } else if (strcmp(func_name, "writeln") == 0) {
+                            buf_write(buf, "lp_io_writeln(");
+                        } else if (strcmp(func_name, "write_int") == 0) {
+                            buf_write(buf, "lp_io_write_int(");
+                        } else if (strcmp(func_name, "write_int_ln") == 0) {
+                            buf_write(buf, "lp_io_write_int_ln(");
+                        } else if (strcmp(func_name, "write_str_ln") == 0) {
+                            buf_write(buf, "lp_io_write_str_ln(");
+                        } else if (strcmp(func_name, "flush") == 0) {
+                            buf_write(buf, "lp_io_flush(");
+                        }
+                        /* Number Theory functions */
+                        else if (strcmp(func_name, "sieve") == 0) {
+                            buf_write(buf, "lp_nt_sieve(");
+                        } else if (strcmp(func_name, "is_prime") == 0) {
+                            buf_write(buf, "lp_nt_is_prime(");
+                        } else if (strcmp(func_name, "mod_pow") == 0) {
+                            buf_write(buf, "lp_nt_mod_pow(");
+                        } else if (strcmp(func_name, "mod_inverse") == 0) {
+                            buf_write(buf, "lp_nt_mod_inverse(");
+                        } else if (strcmp(func_name, "extended_gcd") == 0) {
+                            buf_write(buf, "lp_nt_extended_gcd(");
+                        } else if (strcmp(func_name, "prime_factors") == 0) {
+                            buf_write(buf, "lp_nt_prime_factors(");
+                        } else if (strcmp(func_name, "euler_phi") == 0) {
+                            buf_write(buf, "lp_nt_euler_phi(");
+                        } else if (strcmp(func_name, "count_divisors") == 0) {
+                            buf_write(buf, "lp_nt_count_divisors(");
+                        } else if (strcmp(func_name, "sum_divisors") == 0) {
+                            buf_write(buf, "lp_nt_sum_divisors(");
+                        }
+                        /* DSU functions */
+                        else if (strcmp(func_name, "dsu_new") == 0) {
+                            buf_write(buf, "lp_dsu_new(");
+                        } else if (strcmp(func_name, "dsu_find") == 0) {
+                            buf_write(buf, "lp_dsu_find(");
+                        } else if (strcmp(func_name, "dsu_union") == 0) {
+                            buf_write(buf, "lp_dsu_union(");
+                        } else if (strcmp(func_name, "dsu_same") == 0) {
+                            buf_write(buf, "lp_dsu_same(");
+                        } else if (strcmp(func_name, "dsu_size") == 0) {
+                            buf_write(buf, "lp_dsu_size(");
+                        }
+                        /* Heap functions */
+                        else if (strcmp(func_name, "heap_new") == 0) {
+                            buf_write(buf, "lp_heap_new(");
+                        } else if (strcmp(func_name, "heap_push") == 0) {
+                            buf_write(buf, "lp_heap_push(");
+                        } else if (strcmp(func_name, "heap_pop") == 0) {
+                            buf_write(buf, "lp_heap_pop(");
+                        } else if (strcmp(func_name, "heap_top") == 0) {
+                            buf_write(buf, "lp_heap_top(");
+                        } else if (strcmp(func_name, "heap_is_empty") == 0) {
+                            buf_write(buf, "lp_heap_is_empty(");
+                        }
+                        /* Fenwick Tree functions */
+                        else if (strcmp(func_name, "fenwick_new") == 0) {
+                            buf_write(buf, "lp_fenwick_new(");
+                        } else if (strcmp(func_name, "fenwick_add") == 0) {
+                            buf_write(buf, "lp_fenwick_add(");
+                        } else if (strcmp(func_name, "fenwick_prefix_sum") == 0) {
+                            buf_write(buf, "lp_fenwick_prefix_sum(");
+                        } else if (strcmp(func_name, "fenwick_range_sum") == 0) {
+                            buf_write(buf, "lp_fenwick_range_sum(");
+                        }
+                        /* Default fallback */
+                        else {
+                            buf_printf(buf, "lp_cp_%s(", func_name);
+                        }
+                        
+                        for (int i = 0; i < node->call.args.count; i++) {
+                            if (i > 0) buf_write(buf, ", ");
+                            gen_expr(cg, buf, node->call.args.items[i]);
+                        }
+                        buf_write(buf, ")");
+                        break;
+                    }
+                    /* ---- TIER 2: numpy - optimized C arrays ---- */
                     if (imp->tier == MOD_TIER2_NUMPY) {
                         /* np.array([1,2,3]) ??? from_doubles */
                         if (strcmp(func_name, "array") == 0 &&
@@ -3613,6 +3743,7 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
             else if (strcmp(module, "memory") == 0)   tier = MOD_TIER1_MEMORY;
             else if (strcmp(module, "platform") == 0) tier = MOD_TIER1_PLATFORM;
             else if (strcmp(module, "security") == 0) tier = MOD_TIER1_SECURITY;
+            else if (strcmp(module, "cp") == 0)       tier = MOD_TIER1_CP;
             else                                     tier = MOD_TIER3_PYTHON;
 
             /* Register import */
@@ -3646,6 +3777,7 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
                     else if (tier == MOD_TIER1_MEMORY) { cg->uses_native = 1; cg->uses_memory = 1; }
                     else if (tier == MOD_TIER1_PLATFORM) { cg->uses_native = 1; cg->uses_platform = 1; }
                     else if (tier == MOD_TIER1_SECURITY) { cg->uses_native = 1; cg->uses_security = 1; }
+                    else if (tier == MOD_TIER1_CP) { cg->uses_native = 1; cg->uses_cp = 1; }
                     else cg->uses_native = 1;
                 } else {
                     if (mod_dup) free(mod_dup);
@@ -3688,6 +3820,9 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
     }
     if (cg->uses_platform) {
         buf_write(&cg->header, "#include \"lp_platform.h\"\n");
+    }
+    if (cg->uses_cp) {
+        buf_write(&cg->header, "#include \"lp_cp.h\"\n");
     }
     if (cg->uses_python) {
         buf_write(&cg->header, "#include \"lp_python.h\"\n");

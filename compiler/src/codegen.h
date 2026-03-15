@@ -30,7 +30,7 @@ typedef enum {
     MOD_TIER1_OS, MOD_TIER1_SYS, MOD_TIER1_STRING,
     MOD_TIER1_HTTP, MOD_TIER1_JSON, MOD_TIER1_SQLITE,
     MOD_TIER1_THREAD, MOD_TIER1_MEMORY, MOD_TIER1_PLATFORM,
-    MOD_TIER1_SECURITY,
+    MOD_TIER1_SECURITY, MOD_TIER1_CP,
     MOD_TIER2_NUMPY,
     MOD_TIER3_PYTHON
 } ModTier;
@@ -93,6 +93,7 @@ typedef struct {
     int uses_parallel;/* needs lp_parallel.h (OpenMP) */
     int uses_gpu;     /* needs lp_gpu.h */
     int uses_security;/* needs lp_security.h */
+    int uses_cp;      /* needs lp_cp.h (competitive programming) */
     int thread_adapter_count;
 } CodeGen;
 
