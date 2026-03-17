@@ -36,45 +36,45 @@ static void skip_newline_chars(Lexer *lex) {
 
 /* Check if identifier is a keyword */
 static TokenType check_keyword(const char *s, int len) {
-    typedef struct { const char *kw; TokenType type; } KW;
+    typedef struct { const char *kw; int kw_len; TokenType type; } KW;
     static const KW keywords[] = {
-        {"def", TOK_DEF}, {"class", TOK_CLASS},
-        {"if", TOK_IF}, {"elif", TOK_ELIF}, {"else", TOK_ELSE},
-        {"for", TOK_FOR}, {"while", TOK_WHILE}, {"return", TOK_RETURN},
-        {"import", TOK_IMPORT}, {"from", TOK_FROM}, {"as", TOK_AS},
-        {"and", TOK_AND}, {"or", TOK_OR}, {"not", TOK_NOT},
-        {"in", TOK_IN}, {"is", TOK_IS},
-        {"True", TOK_TRUE}, {"False", TOK_FALSE}, {"None", TOK_NONE},
-        {"true", TOK_TRUE}, {"false", TOK_FALSE}, {"none", TOK_NONE},
-        {"pass", TOK_PASS}, {"break", TOK_BREAK}, {"continue", TOK_CONTINUE},
-        {"const", TOK_CONST}, {"struct", TOK_STRUCT},
-        {"async", TOK_ASYNC}, {"await", TOK_AWAIT},
-        {"with", TOK_WITH},
-        {"try", TOK_TRY}, {"except", TOK_EXCEPT},
-        {"finally", TOK_FINALLY}, {"raise", TOK_RAISE},
-        {"lambda", TOK_LAMBDA}, {"yield", TOK_YIELD},
-        {"parallel", TOK_PARALLEL},
-        {"private", TOK_PRIVATE}, {"protected", TOK_PROTECTED},
+        {"def", 3, TOK_DEF}, {"class", 5, TOK_CLASS},
+        {"if", 2, TOK_IF}, {"elif", 4, TOK_ELIF}, {"else", 4, TOK_ELSE},
+        {"for", 3, TOK_FOR}, {"while", 5, TOK_WHILE}, {"return", 6, TOK_RETURN},
+        {"import", 6, TOK_IMPORT}, {"from", 4, TOK_FROM}, {"as", 2, TOK_AS},
+        {"and", 3, TOK_AND}, {"or", 2, TOK_OR}, {"not", 3, TOK_NOT},
+        {"in", 2, TOK_IN}, {"is", 2, TOK_IS},
+        {"True", 4, TOK_TRUE}, {"False", 5, TOK_FALSE}, {"None", 4, TOK_NONE},
+        {"true", 4, TOK_TRUE}, {"false", 5, TOK_FALSE}, {"none", 4, TOK_NONE},
+        {"pass", 4, TOK_PASS}, {"break", 5, TOK_BREAK}, {"continue", 8, TOK_CONTINUE},
+        {"const", 5, TOK_CONST}, {"struct", 6, TOK_STRUCT},
+        {"async", 5, TOK_ASYNC}, {"await", 5, TOK_AWAIT},
+        {"with", 4, TOK_WITH},
+        {"try", 3, TOK_TRY}, {"except", 6, TOK_EXCEPT},
+        {"finally", 7, TOK_FINALLY}, {"raise", 5, TOK_RAISE},
+        {"lambda", 6, TOK_LAMBDA}, {"yield", 5, TOK_YIELD},
+        {"parallel", 8, TOK_PARALLEL},
+        {"private", 7, TOK_PRIVATE}, {"protected", 9, TOK_PROTECTED},
         /* Pattern Matching */
-        {"match", TOK_MATCH}, {"case", TOK_CASE},
+        {"match", 5, TOK_MATCH}, {"case", 4, TOK_CASE},
         /* Settings/Pragma keywords */
-        {"settings", TOK_SETTINGS}, {"gpu", TOK_GPU}, {"cpu", TOK_CPU},
-        {"device", TOK_DEVICE}, {"threads", TOK_THREADS},
-        {"schedule", TOK_SCHEDULE}, {"chunk", TOK_CHUNK},
-        {"unified", TOK_UNIFIED},
+        {"settings", 8, TOK_SETTINGS}, {"gpu", 3, TOK_GPU}, {"cpu", 3, TOK_CPU},
+        {"device", 6, TOK_DEVICE}, {"threads", 7, TOK_THREADS},
+        {"schedule", 8, TOK_SCHEDULE}, {"chunk", 5, TOK_CHUNK},
+        {"unified", 7, TOK_UNIFIED},
         /* Security keywords */
-        {"security", TOK_SECURITY}, {"level", TOK_LEVEL},
-        {"auth", TOK_AUTH}, {"rate", TOK_RATE}, {"limit", TOK_LIMIT},
-        {"validate", TOK_VALIDATE}, {"sanitize", TOK_SANITIZE},
-        {"encrypt", TOK_ENCRYPT}, {"hash", TOK_HASH},
-        {"injection", TOK_INJECTION}, {"xss", TOK_XSS},
-        {"csrf", TOK_CSRF}, {"cors", TOK_CORS}, {"headers", TOK_HEADERS},
-        {"readonly", TOK_READONLY}, {"write", TOK_WRITE},
-        {"admin", TOK_ADMIN}, {"user", TOK_USER}, {"guest", TOK_GUEST},
-        {NULL, TOK_ERROR}
+        {"security", 8, TOK_SECURITY}, {"level", 5, TOK_LEVEL},
+        {"auth", 4, TOK_AUTH}, {"rate", 4, TOK_RATE}, {"limit", 5, TOK_LIMIT},
+        {"validate", 8, TOK_VALIDATE}, {"sanitize", 8, TOK_SANITIZE},
+        {"encrypt", 7, TOK_ENCRYPT}, {"hash", 4, TOK_HASH},
+        {"injection", 9, TOK_INJECTION}, {"xss", 3, TOK_XSS},
+        {"csrf", 4, TOK_CSRF}, {"cors", 4, TOK_CORS}, {"headers", 7, TOK_HEADERS},
+        {"readonly", 8, TOK_READONLY}, {"write", 5, TOK_WRITE},
+        {"admin", 5, TOK_ADMIN}, {"user", 4, TOK_USER}, {"guest", 5, TOK_GUEST},
+        {"", 0, TOK_ERROR}
     };
-    for (int i = 0; keywords[i].kw; i++) {
-        if ((int)strlen(keywords[i].kw) == len && memcmp(s, keywords[i].kw, len) == 0)
+    for (int i = 0; keywords[i].kw_len > 0; i++) {
+        if (keywords[i].kw_len == len && memcmp(s, keywords[i].kw, len) == 0)
             return keywords[i].type;
     }
     return TOK_IDENTIFIER;
