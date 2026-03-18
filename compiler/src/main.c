@@ -947,7 +947,7 @@ int main(int argc, char **argv) {
             return 1;
         }
 
-        char obj_file[512];
+        char obj_file[520];  /* Extra space for ".o" suffix */
         snprintf(obj_file, sizeof(obj_file), "%s.o", exe_file);
 
         /* SECURITY FIX: Use spawn instead of system() to prevent command injection */
