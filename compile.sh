@@ -18,8 +18,8 @@ esac
 
 echo "=== Starting compilation ==="
 mkdir -p build
-WARN_FLAGS="-Wall -Wextra -Wpedantic"
-gcc -std=c99 -O2 $WARN_FLAGS \
+WARN_FLAGS="-Wall -Wextra"
+gcc -std=gnu99 -O2 $WARN_FLAGS \
     compiler/src/main.c \
     compiler/src/lexer.c \
     compiler/src/ast.c \
@@ -33,7 +33,7 @@ gcc -std=c99 -O2 $WARN_FLAGS \
     -I runtime \
     -o "$OUT" -lm
 
-gcc -O2 -c runtime/sqlite3.c -o runtime/sqlite3.o
+gcc -std=gnu99 -O2 -c runtime/sqlite3.c -o runtime/sqlite3.o
 
 echo "=== Build successful: $OUT ==="
 ls -la "$OUT"
