@@ -561,6 +561,7 @@ static AstNode *parse_postfix(Parser *p) {
                     }
                     advance(p);
                 }
+                (void)is_generic; /* TODO: use this for error handling */
                 
                 if (check(p, TOK_RBRACKET)) {
                     /* This could be a generic type instantiation */
