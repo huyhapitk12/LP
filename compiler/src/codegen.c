@@ -202,6 +202,7 @@ static int is_union_type(const char *ann) {
 }
 
 /* Helper: check if a type name matches one of the types in a union */
+__attribute__((unused))
 static int type_matches_union(const char *type_name, const char *union_ann) {
     if (!type_name || !union_ann) return 0;
     

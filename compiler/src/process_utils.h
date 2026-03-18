@@ -1,6 +1,8 @@
 #ifndef LP_PROCESS_UTILS_H
 #define LP_PROCESS_UTILS_H
 
+#include <stddef.h>  /* for size_t */
+
 #ifndef _WIN32
 #include <sys/types.h>
 

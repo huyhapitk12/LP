@@ -5,7 +5,7 @@ REM Usage: build.bat
 
 echo [LP Build] Compiling LP compiler...
 if not exist "build" mkdir build
-set "CFLAGS=-std=c99 -O2 -Wall -Wextra -Wpedantic"
+set "CFLAGS=-std=c11 -O2 -Wall -Wextra"
 set "GCC="
 
 REM Prefer GCC already exposed in PATH (GitHub Actions adds this for us)
