@@ -1,0 +1,8385 @@
+
+============================================================
+### Home
+============================================================
+LP Language Wiki
+Welcome to the LP Language Wiki! This is the central hub for comprehensive documentation.
+🚀 Getting Started
+Page
+Description
+Installation Guide
+How to install and set up LP
+First Programs
+Your first LP programs
+Language Basics
+Core language concepts
+📖 Language Reference
+Page
+Description
+Expressions & Collections
+Working with data
+Object-Oriented Programming
+Classes and inheritance
+Error Handling
+Exceptions and control flow
+Language Reference
+Complete syntax reference
+🔧 Advanced Topics
+Page
+Description
+Concurrency & Parallelism
+Threads and parallel for
+Runtime Modules
+Built-in modules
+CLI & Tooling
+Command-line tools
+Build & Distribution
+Cross-compilation
+C API Export
+Interoperability
+🔒 Security Features
+Page
+Description
+Security Explained
+How @security works
+Security Module Reference
+Security API reference
+Calling Security Functions
+Usage examples
+📚 Resources
+Page
+Description
+Examples Cookbook
+Code examples
+Troubleshooting
+Common issues and fixes
+Parallel Computing
+OpenMP & GPU computing
+Features
+Feature overview
+Feature Status
+Implementation status
+Quick Reference
+Cheat sheet
+🌍 International
+Page
+Description
+Vietnamese Guide
+Vietnamese documentation
+📋 Quick Links
+Latest Release
+: Check the
+Releases
+page
+Report a Bug
+Issue Tracker
+Contributing
+: See
+CONTRIBUTING.md
+Code of Conduct
+: See
+CODE_OF_CONDUCT.md
+📊 Project Status
+Category
+Status
+Core Syntax
+✅ Complete
+Runtime Modules
+✅ 12 modules
+Parallel Computing
+✅ OpenMP + GPU
+Security Features
+✅ Built-in
+Optimizations
+✅ 3 passes
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Features
+============================================================
+LP Language Features Overview
+Last updated: March 2025 | Version 0.3.0
+This page provides a comprehensive overview of all LP language features.
+✅ Fully Supported Features
+Core Language
+Feature
+Status
+Notes
+Variables & Type Inference
+Full support
+Functions
+Including default args, *args
+Classes
+With inheritance
+private
+protected
+Compile-time checked
+if
+elif
+else
+for
+loops
+With
+range()
+while
+loops
+With
+break
+continue
+try
+except
+finally
+raise
+with
+statement
+Lambda (single-line)
+Lambda (multiline)
+String methods
+Full set
+F-strings
+f"value: {x}"
+Pattern Matching
+match
+case
+Decorators
+@settings
+@security
+Collections
+Feature
+Status
+Notes
+List literals
+Dict literals
+Set literals
+Tuple literals
+List comprehensions
+⚠️
+Numeric-focused
+Dictionary comprehensions
+{k: v for x in iter}
+Parallel Computing
+Feature
+Status
+Notes
+parallel for
+Requires OpenMP
+@settings
+decorator
+Threads, schedule, GPU
+GPU device selection
+device="gpu"
+Unified GPU memory
+unified=True
+Security Features
+Feature
+Status
+Notes
+@security
+decorator
+Rate limiting, auth
+Input validation
+validate=True
+SQL injection prevention
+prevent_injection=True
+XSS prevention
+prevent_xss=True
+Access control
+admin=True
+readonly=True
+⚠️
+Partially Supported
+Feature
+Status
+Notes
+thread.spawn
+⚠️
+Strict worker restrictions
+numpy
+module
+⚠️
+Basic functions only
+Typed exceptions
+⚠️
+Generic runtime behavior
+❌ Not Yet Implemented
+Feature
+Status
+Notes
+Async/await
+Planned
+Type unions
+Planned
+Generic types
+Planned
+🎯 Decorators Reference
+@settings Options
+@settings
+threads
+)                    #
+Thread
+count
+@settings
+schedule
+"dynamic"
+chunk
+100
+) #
+Scheduling
+@settings
+device
+"gpu"
+gpu_id
+)       #
+GPU
+execution
+@settings
+device
+"auto"
+)                #
+Auto
+select
+@settings
+unified
+True
+)                 #
+Unified
+memory
+@security Options
+@security
+level
+)                      #
+Security
+level
+@security
+auth
+True
+)                    #
+Require
+auth
+@security
+rate_limit
+100
+)               #
+Requests
+min
+@security
+admin
+True
+)                   #
+Admin
+only
+@security
+readonly
+True
+)                #
+Read
+only
+@security
+validate
+True
+sanitize
+True
+) #
+handling
+📦 Built-in Modules
+Module
+Description
+Status
+math
+Mathematical functions
+random
+Random number generation
+time
+Time and date
+os
+Operating system
+sys
+System information
+string
+String utilities
+http
+HTTP client
+json
+JSON parsing
+sqlite
+SQLite database
+thread
+Threading
+memory
+Memory management
+platform
+Platform info
+🔗 See Also
+Language Reference
+Parallel Computing
+Runtime Modules
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Feature Status
+============================================================
+LP Language Feature Status
+Last updated: 2025-03-14
+Version: 0.3.0
+This document provides a comprehensive overview of LP language features, their implementation status, and any known limitations.
+Quick Reference
+Category
+Fully Supported
+Partial
+Not Yet
+Core Syntax
+25+
+Runtime Modules
+12
+Operators
+20+
+CLI Tools
+10
+Optimizations
+Modern Features
+Compilation Backends
+✅ Native Assembly Backend (Default)
+LP compiles directly to x86-64 assembly without requiring GCC or LLVM:
+lp file.lp
+Native compilation (default)
+lp file.lp --gcc
+Use GCC backend (optional)
+Benefits:
+No heavy compiler dependencies (~5MB vs ~1GB)
+Fast compilation
+Direct control over generated code
+✅ GCC C Backend (Optional)
+For maximum compatibility and optimization:
+lp file.lp --gcc
+Use GCC backend
+lp file.lp -o out.c
+Generate C code
+Optimizations
+✅ Constant Folding
+Evaluate constant expressions at compile time:
+Before
+optimization
+int
+int
+100
+After
+optimization
+compile
+time
+int
+int
+20
+✅ Dead Code Elimination
+Remove unreachable code:
+if
+False
+:
+    #
+This
+code
+is
+removed
+print
+"Never executed"
+✅ Loop Unrolling
+Unroll small loops for better performance:
+Small
+constant
+loops
+are
+unrolled
+for
+in
+range
+):
+print
+Core Language Features
+✅ Fully Supported
+Variables and Types
+Type
+inference
+42
+int
+pi
+14
+float
+name
+"LP"
+str
+flag
+True
+bool
+Explicit
+types
+count
+int
+100
+ratio
+float
+label
+str
+"text"
+active
+bool
+False
+Functions
+Basic
+function
+def
+add
+int
+int
+) ->
+int
+return
+Default
+arguments
+def
+greet
+name
+str
+"World"
+) ->
+str
+return
+"Hello "
+name
+Variadic
+functions
+def
+sum_all
+(*
+args
+) ->
+int
+total
+for
+in
+args
+total
+total
+return
+total
+Keyword
+arguments
+(**
+kwargs
+def
+configure
+(**
+kwargs
+):
+pass
+Classes and OOP
+Base
+class
+class
+Entity
+float
+float
+def
+move
+self
+dx
+float
+dy
+float
+):
+self
+self
+dx
+self
+self
+dy
+Inheritance
+class
+Player
+Entity
+):
+name
+str
+"Hero"
+health
+int
+100
+Access
+modifiers
+class
+Secret
+private
+hidden
+int
+42
+protected
+internal
+str
+"internal"
+public
+visible
+bool
+True
+Control Flow
+Conditionals
+if
+score
+>=
+90
+grade
+"A"
+elif
+score
+>=
+80
+grade
+"B"
+else
+grade
+"C"
+For
+loops
+for
+in
+range
+10
+):
+print
+for
+in
+range
+100
+):
+print
+)
+
+#
+While
+loops
+while
+count
+count
+-=
+if
+count
+==
+continue
+if
+count
+==
+break
+Pass
+statement
+def
+placeholder
+():
+pass
+Exception Handling
+Try
+except
+finally
+try
+result
+risky_operation
+()
+except
+print
+"Error occurred"
+finally
+cleanup
+()
+
+#
+Raise
+exception
+def
+validate
+int
+):
+if
+raise
+"x must be non-negative"
+Context Managers
+File
+handling
+with
+open
+"data.txt"
+"r"
+as
+content
+read
+()
+print
+content
+Lambda Functions
+Single
+line
+lambda
+add
+lambda
+result
+add
+)
+
+#
+Multiline
+lambda
+process
+lambda
+return
+Collections
+List
+numbers
+= [
+numbers
+append
+print
+numbers
+])
+
+#
+Dict
+config
+= {
+"host"
+"localhost"
+"port"
+8080
+config
+"debug"
+] =
+True
+Set
+unique
+= {
+}  # {
+}
+
+#
+Tuple
+point
+= (
+10
+20
+point
+String Operations
+"  Hello World  "
+Case
+conversion
+upper
+()           #
+"  HELLO WORLD  "
+lower
+()           #
+"  hello world  "
+Whitespace
+strip
+()           #
+"Hello World"
+lstrip
+()          #
+"Hello World  "
+rstrip
+()          #
+"  Hello World"
+Search
+and
+replace
+find
+"World"
+)     #
+replace
+"World"
+"LP"
+)  #
+"  Hello LP  "
+count
+"l"
+)        #
+Split
+and
+join
+parts
+"a,b,c"
+split
+","
+)  # [
+"a"
+"b"
+"c"
+joined
+"-"
+join
+parts
+)     #
+"a-b-c"
+Checks
+"123"
+isdigit
+()     #
+True
+"abc"
+isalpha
+()     #
+True
+"a1b2"
+isalnum
+()    #
+True
+startswith
+"  H"
+) #
+True
+endswith
+"d  "
+)   #
+True
+Operators
+Arithmetic:
+Addition
+Subtraction
+Multiplication
+Division
+float
+//
+Floor
+division
+% b       # Modulo (Python-style)
+**
+Power
+Bitwise:
+AND
+OR
+XOR
+NOT
+<<
+Left
+shift
+>>
+Right
+shift
+Comparison:
+==
+Equal
+!=
+Not
+equal
+Less
+than
+Greater
+than
+<=
+Less
+or
+equal
+>=
+Greater
+or
+equal
+Logical:
+and
+Logical
+AND
+or
+Logical
+OR
+not
+Logical
+NOT
+is
+Identity
+in
+list
+Membership
+Assignment:
++=
+-=
+*=
+/=
+&=
+|=
+^=
+<<=
+>>
+Parallel Execution
+Parallel
+for
+loop
+OpenMP
+is
+automatically
+enabled
+parallel
+for
+in
+range
+1000000
+):
+process_item
+)
+
+#
+Parallel
+for
+with
+range
+parameters
+parallel
+for
+in
+range
+100
+):
+print
+Generated C Code:
+#pragma
+omp parallel for
+for
+int64_t
+lp_i
+lp_i
+1000000
+lp_i
+++
+) {
+process_item
+lp_i
+);
+}
+Compilation:
+OpenMP is automatically detected and enabled
+lp file.lp
+Run directly
+lp file.lp -c output
+Compile to executable
+lp file.lp -o file.c
+Generate C only
+Note:
+The LP compiler automatically adds
+-fopenmp
+when it detects
+parallel for
+loops. No manual flags needed!
+@settings Decorator
+The
+@settings
+decorator allows fine-grained control over parallel and GPU execution:
+Configure
+thread
+count
+@settings
+threads
+def
+parallel_process
+data
+list
+) ->
+list
+results
+= []
+parallel
+for
+item
+in
+data
+results
+append
+process
+item
+))
+return
+results
+Use
+GPU
+acceleration
+@settings
+device
+"gpu"
+gpu_id
+def
+gpu_compute
+int
+) ->
+int
+result
+parallel
+for
+in
+range
+):
+result
++=
+return
+result
+Dynamic
+scheduling
+with
+chunk
+size
+@settings
+threads
+schedule
+"dynamic"
+chunk
+100
+def
+process_large_dataset
+data
+list
+) ->
+int
+count
+parallel
+for
+item
+in
+data
+count
++=
+item
+return
+count
+Auto
+select
+best
+device
+GPU
+if
+available
+otherwise
+CPU
+@settings
+device
+"auto"
+def
+auto_parallel
+int
+) ->
+int
+result
+parallel
+for
+in
+range
+):
+result
++=
+return
+result
+Available Settings:
+Option
+Description
+Example Values
+threads
+Number of threads for parallel execution
+16
+schedule
+OpenMP scheduling policy
+"static"
+"dynamic"
+"guided"
+"auto"
+chunk
+Chunk size for scheduling
+100
+1000
+device
+Execution device
+"cpu"
+"gpu"
+"auto"
+gpu_id
+GPU device ID
+unified
+Use unified memory for GPU
+True
+False
+Scheduling Policies:
+static
+: Divide work evenly (default)
+dynamic
+: Work in chunks, good for uneven workloads
+guided
+: Decreasing chunk sizes
+auto
+: Let runtime decide
+Generated C Code:
+// @settings(threads=4, schedule="dynamic", chunk=100)
+lp_parallel_set_threads
+);
+lp_parallel_configure
+"dynamic"
+100
+);
+#pragma
+omp parallel for num_threads(4) schedule(dynamic, 100)
+for
+int64_t
+lp_i
+lp_i
+lp_i
+++
+) {
+// ...
+⚠️
+Partially Supported
+List Comprehensions
+Status:
+Numeric-focused, limited functionality
+Works
+squares
+= [
+for
+in
+range
+10
+)]
+
+#
+Limited
+may
+not
+work
+for
+complex
+expressions
+filtered
+= [
+for
+in
+data
+if
+]  #
+Partial
+support
+Threading
+Status:
+Strict worker restrictions
+# ✅
+Allowed
+named
+function
+or
+arg
+returns
+int
+void
+def
+worker
+int
+) ->
+int
+return
+thread
+spawn
+worker
+42
+result
+thread
+join
+)
+
+# ❌
+NOT
+Allowed
+thread
+spawn
+lambda
+42
+)  #
+Lambda
+not
+allowed
+thread
+spawn
+worker
+)         #
+Too
+many
+args
+def
+bad
+() ->
+str
+return
+"hi"
+Wrong
+return
+type
+NumPy Module
+Status:
+Basic functions only
+import
+numpy
+as
+np
+# ✅
+Supported
+arr
+np
+array
+([
+])
+zeros
+np
+zeros
+10
+ones
+np
+ones
+ranged
+np
+arange
+100
+spaced
+np
+linspace
+50
+squared
+np
+sqrt
+arr
+absolute
+np
+abs
+arr
+sorted_arr
+np
+sort
+arr
+)
+
+# ❌
+Not
+available
+np
+dot
+(),
+np
+matmul
+(),
+np
+reshape
+(),
+etc
+✅ Newly Added Features (v0.1.1)
+These features were recently added and are now fully supported:
+HTTP POST
+# ✅
+Now
+supported
+response
+http
+post
+"https://api.example.com/submit"
+"data=value"
+)
+
+# ✅
+Works
+GET
+requests
+response
+http
+get
+"https://api.example.com/data"
+Note:
+Both
+http.get()
+and
+http.post()
+are now fully supported.
+JSON Parse
+# ✅
+All
+supported
+data
+json
+loads
+('{
+"name"
+"LP"
+}')   #
+Parse
+JSON
+string
+data
+json
+parse
+('{
+"name"
+"LP"
+}')   #
+Alias
+for
+loads
+text
+json
+dumps
+data
+)                #
+Serialize
+to
+JSON
+Dictionary Comprehensions
+# ✅
+Now
+supported
+squares
+= {
+for
+in
+range
+10
+)}
+
+#
+With
+condition
+evens
+= {
+for
+in
+range
+10
+if
+% 2 == 0}
+Generators / Yield
+# ✅
+Now
+supported
+basic
+generator
+pattern
+def
+counter
+):
+while
+yield
++=
+❌ Not Supported Yet
+No features currently marked as not supported. All planned features are now implemented!
+✅ Newly Added Features (v0.3.0)
+These features were recently added and are now fully supported:
+F-Strings
+# ✅
+Now
+supported
+name
+"LP"
+version
+greeting
+"Hello from {name} v{version}!"
+print
+greeting
+)  #
+Output
+Hello
+from
+LP
+v1
+!
+
+#
+Expressions
+in
+strings
+10
+20
+print
+"Sum: {x + y}"
+)  #
+Output
+Sum
+30
+Pattern Matching (match/case)
+# ✅
+Now
+supported
+match
+value
+case
+print
+"one"
+case
+print
+"two"
+case
+_:
+print
+"other"
+)
+
+#
+With
+guard
+expressions
+match
+case
+if
+print
+"positive"
+case
+_:
+print
+"non-positive"
+Decorators
+# ✅
+Now
+supported
+@settings
+threads
+def
+parallel_task
+():
+print
+"Running with 4 threads"
+)
+
+#
+Multiple
+decorators
+@decorator1
+@decorator2
+def
+func
+():
+pass
+# ✅
+NEW
+Security
+decorator
+for
+input
+validation
+and
+access
+control
+@security
+def
+basic_secure
+():
+print
+"Function with default security"
+@security
+level
+"high"
+auth
+"bearer"
+def
+authenticated_api
+():
+print
+"API requiring authentication"
+@security
+rate_limit
+100
+validate
+True
+injection
+True
+def
+safe_input_handler
+():
+print
+"Protected against injection attacks"
+@security
+admin
+readonly
+def
+admin_readonly
+():
+print
+"Admin access, readonly mode"
+@security Decorator Options
+The
+@security
+decorator provides comprehensive security features for functions:
+Option
+Type
+Description
+level
+int/str
+Security level: 0-4 or "none", "low", "medium", "high", "critical"
+auth
+str
+Authentication type: "basic", "bearer", "api_key", "oauth"
+rate_limit
+int
+Maximum requests per minute
+validate
+bool
+Enable input validation
+sanitize
+bool
+Enable output sanitization
+injection
+bool
+Prevent SQL/command injection
+xss
+bool
+Prevent XSS attacks
+csrf
+bool
+Enable CSRF protection
+cors
+str/bool
+Enable CORS with specified origins
+headers
+bool
+Enable secure headers
+encrypt
+bool
+Enable data encryption
+hash
+str
+Hash algorithm: "md5", "sha256", "sha512"
+readonly
+flag
+Enable readonly mode
+admin
+flag
+Set access level to admin
+user
+flag
+Set access level to user
+guest
+flag
+Set access level to guest
+Async/Await
+# ✅
+Now
+supported
+async
+def
+fetch_data
+url
+str
+) ->
+str
+return
+"data from "
+url
+async
+def
+main
+():
+data
+await
+fetch_data
+"https://example.com"
+print
+data
+Note:
+Async/await is implemented as syntactic sugar for synchronous code. Great for code organization and future extensibility.
+Type Unions
+# ✅
+Now
+supported
+def
+process
+int
+str
+) ->
+int
+str
+return
+Variables
+with
+union
+types
+data
+int
+str
+float
+42
+data
+"hello"
+data
+14
+Note:
+Union types are represented as
+LpVal
+(variant type) at runtime with automatic type tagging.
+Generic Types
+# ✅
+Now
+supported
+class
+Box
+]:
+value
+def
+get
+self
+) ->
+return
+self
+value
+def
+set
+self
+val
+):
+self
+value
+val
+Usage
+int_box
+Box
+int
+] =
+Box
+()
+int_box
+set
+42
+value
+int_box
+get
+()
+
+#
+Multiple
+type
+parameters
+class
+Pair
+]:
+key
+value
+Runtime Modules
+✅ Fully Supported
+Module
+Functions
+Constants
+math
+sin, cos, tan, sqrt, pow, factorial, gcd, lcm, isnan, isinf, floor, ceil, round, abs, log, exp
+pi, e, tau
+random
+seed, random, randint, uniform
+time
+time, sleep
+os
+getcwd, remove, rename, mkdir
+sep, name
+os.path
+join, exists, isfile, isdir, basename, dirname, getsize
+sys
+platform, maxsize, exit, getrecursionlimit, argv_len, argv_get
+platform, maxsize
+sqlite
+connect, execute, query
+memory
+arena_new, arena_alloc, arena_reset, arena_free, pool_new, pool_alloc, pool_free, pool_destroy, cast
+platform
+os, arch, cores
+⚠️
+Partially Supported
+Module
+Supported
+Not Supported
+http
+get
+post
+put
+delete
+json
+loads
+dumps
+parse
+numpy
+array, zeros, ones, arange, linspace, sqrt, abs, sin, cos, sort
+dot, matmul, reshape, etc.
+thread
+spawn, join, lock_*
+(worker restrictions apply)
+CLI Commands
+✅ All Supported
+Run directly (native ASM backend - default, no GCC!)
+lp file.lp
+Run with GCC backend (optional)
+lp file.lp --gcc
+Generate C code
+lp file.lp -o output.c
+Compile executable
+lp file.lp -c output.exe
+Generate assembly
+lp file.lp -asm output.s
+Run tests
+lp
+test
+examples
+Profile execution
+lp profile file.lp
+Watch mode (recompile on change)
+lp watch file.lp
+Build with flags
+lp build file.lp --release --strip
+Package distribution
+lp package file.lp --format zip
+Export C API
+lp
+export
+file.lp -o api_name
+lp
+export
+file.lp --library -o mylib
+Cross-Platform Support
+Platform
+Architecture
+Status
+Linux
+x64
+✅ Full
+Linux
+ARM64
+✅ Full
+Windows
+x64
+✅ Full (MSYS2 UCRT64)
+macOS
+ARM64
+✅ Full
+macOS
+x64
+⚠️
+Untested
+Type System
+Supported Types
+Type
+LP Syntax
+C Equivalent
+Integer
+int
+i64
+int64_t
+Float
+float
+f64
+double
+String
+str
+const char*
+Boolean
+bool
+int
+Void
+void
+void
+List
+list
+LpList*
+Dict
+dict
+LpDict*
+Set
+set
+LpSet*
+Tuple
+tuple
+LpTuple*
+Dynamic value
+val
+LpVal
+Raw pointer
+ptr
+void*
+Memory arena
+arena
+LpArena*
+Memory pool
+pool
+LpPool*
+SQLite DB
+sqlite_db
+sqlite3*
+Thread handle
+thread
+LpThread
+Mutex lock
+lock
+LpLock
+Performance Characteristics
+Feature
+Performance
+Compiled code
+Native C performance
+Memory management
+Manual + arena/pool allocators
+Function calls
+Direct C function calls
+String operations
+Zero-copy where possible
+Collections
+Hash table O(1) lookup
+Parallel loops
+OpenMP-based (when available)
+Coming Soon (Roadmap)
+GPU Acceleration
+- CUDA/OpenCL support via
+@settings(device="gpu")
+Parallel Settings
+- Fine-grained control:
+@settings(threads=8, schedule="dynamic")
+Automatic Parallelization
+- Compiler auto-detects parallelizable loops
+Distributed Computing
+- Multi-node parallel execution
+Better error messages
+- More descriptive compiler errors
+Package manager
+- Dependency management
+Standard library expansion
+- More modules and utilities
+Potential Future Features
+The following features are planned or being considered for future releases:
+High Priority
+Feature
+Description
+Status
+GPU Computing
+CUDA/OpenCL kernel generation
+Runtime ready, compiler integration planned
+Parallel Reductions
+Built-in parallel sum, min, max
+Runtime ready
+Async/Await
+Asynchronous programming
+Planned
+Pattern Matching
+match/case
+statements
+Planned
+F-Strings
+Formatted string literals
+Planned
+Decorators
+Function decorators
+Planned
+Medium Priority
+Feature
+Description
+Status
+Generic Types
+Type parameters for classes
+Planned
+Type Unions
+int | str
+type annotations
+Planned
+Exception Types
+Custom exception classes
+Planned
+Iterator Protocol
+__iter__
+__next__
+methods
+Planned
+Context Managers
+__enter__
+__exit__
+methods
+Planned
+Operator Overloading
+__add__
+__sub__
+, etc.
+Planned
+Low Priority / Experimental
+Feature
+Description
+Status
+Metaclasses
+Advanced OOP features
+Exploring
+Macros
+Compile-time code generation
+Exploring
+Contracts
+Design by contract
+Exploring
+Effect System
+Track side effects
+Exploring
+Linear Types
+Resource management
+Exploring
+Parallel Computing Features
+Feature
+Description
+Status
+OpenMP Integration
+parallel for
+loops
+✅ Implemented
+Thread Management
+parallel.threads()
+parallel.cores()
+✅ Runtime ready
+Parallel Algorithms
+Parallel sort, reduce, scan
+Runtime ready
+GPU Detection
+gpu.is_available()
+gpu.device_name()
+✅ Runtime ready
+GPU Memory
+Unified memory allocation
+Runtime ready
+GPU Kernels
+Auto-generate CUDA/OpenCL
+Planned
+Distributed Computing
+Multi-node execution
+Exploring
+Module Extensions
+Module
+New Functions
+Status
+http
+PUT, DELETE, PATCH, headers, auth
+Planned
+json
+Schema validation, streaming
+Planned
+sqlite
+Migrations, ORM-like features
+Planned
+numpy
+Matrix operations, FFT, linear algebra
+Planned
+thread
+Thread pools, futures, channels
+Planned
+parallel
+Reductions, algorithms
+Runtime ready
+gpu
+Memory management, kernels
+Runtime ready
+Performance Tips
+Parallel Computing
+Use appropriate iteration counts
+- Parallel overhead is worth it for large loops
+Avoid data dependencies
+- Each iteration should be independent
+Use dynamic scheduling
+- For uneven workloads:
+@settings(schedule="dynamic")
+Set thread affinity
+- Use
+OMP_PROC_BIND=true
+environment variable
+Memory Management
+Use arenas for temporary allocations
+- Faster allocation/deallocation
+Prefer pools for fixed-size objects
+- Better cache locality
+Minimize allocations in hot loops
+- Allocate once, reuse
+String Operations
+Use
+join()
+for concatenation
+- More efficient than
+in loops
+Cache frequently used strings
+- Avoid repeated allocations
+Contributing
+See the main README.md for contribution guidelines.
+License
+LP is released under the MIT License.
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Installation and Setup
+============================================================
+Installation and Setup
+What you'll learn
+This guide shows how to build the LP compiler on Windows, Linux, and macOS, how to verify that the toolchain is usable, and how to diagnose the most common setup failures.
+Prerequisites
+A checkout of this repository.
+A working C toolchain for your host platform.
+Concepts
+LP is a compiler front-end plus runtime headers.
+The compiler executable is built from
+compiler/src/*.c
+Default: LP compiles directly to x86-64 assembly
+(no GCC/LLVM required!)
+Optional: LP can generate C code
+and use a host C compiler for maximum compatibility.
+Runtime headers are loaded from the repository
+runtime/
+directory at compile time.
+Compilation Backends
+Backend
+Command
+Dependencies
+Use Case
+Native ASM
+(default)
+lp file.lp
+binutils (~5MB)
+Fast, lightweight
+GCC C
+lp file.lp --gcc
+GCC (~500MB)
+Maximum optimization
+C output
+lp file.lp -o out.c
+Any C compiler
+Portability
+In the rest of the docs,
+lp
+means one of these:
+an installed
+lp
+binary on your
+PATH
+build\lp.exe
+on Windows
+./build/lp
+on Linux or macOS
+./build/lp-posix.exe
+inside MSYS2 or Cygwin bash
+Windows Setup
+Recommended local toolchain
+Use MSYS2 UCRT64 GCC.
+Expected compiler path:
+C:\msys64\ucrt64\bin\gcc.exe
+Build the compiler
+build.bat
+Expected result:
+build\lp.exe
+Verify the compiler
+build\lp.exe --help
+build\lp.exe test examples
+Linux Setup
+Install a standard toolchain first.
+Example for Ubuntu or Debian:
+sudo apt-get update
+sudo apt-get install -y build-essential
+Build the compiler with either path:
+make
+or
+./compile.sh
+Verify it:
+./build/lp --help
+./build/lp
+test
+examples
+macOS Setup
+Install Xcode Command Line Tools:
+xcode-select --install
+Then build the compiler:
+make
+or
+./compile.sh
+Verify it:
+./build/lp --help
+Build Entry Points
+build.bat
+Host platform: Windows.
+Expected toolchain: MSYS2 UCRT64 GCC.
+Output:
+build\lp.exe
+compile.sh
+Host platform: POSIX shell environments.
+Output on Linux/macOS:
+build/lp
+Output in Cygwin or MSYS shell:
+build/lp-posix.exe
+make
+Host platform: Linux, macOS, or compatible environments.
+Output:
+build/lp
+on POSIX and
+build/lp.exe
+when
+OS=Windows_NT
+is set.
+Verify The Full Local Pipeline
+Create
+hello.lp
+def
+main
+():
+print
+"hello"
+main
+()
+Run these checks:
+lp hello.lp
+lp hello.lp -o hello.c
+lp hello.lp -c hello.exe
+lp
+test
+examples
+If all four succeed, your local LP host build path is healthy.
+Cross-Target Verification
+You can also verify that
+--target
+failure modes are wired correctly even before installing cross-compilers.
+lp build hello.lp --target linux-x64
+Expected behavior today:
+LP should fail quickly if the required cross-toolchain is not installed.
+The error should name the missing target compiler instead of failing silently later.
+Examples
+Windows quick session
+build.bat
+build\lp.exe test examples
+build\lp.exe examples\test_type_inference.lp
+Linux quick session
+make
+./build/lp
+test
+examples
+./build/lp examples/test_type_inference.lp
+Common errors and limitations
+Error: GCC not found
+Meaning:
+LP could not find
+gcc
+or
+cc
+On Windows, the expected MSYS2 path is missing.
+Fix:
+Install MSYS2 UCRT64 GCC on Windows.
+Install
+build-essential
+on Linux.
+Install Xcode Command Line Tools on macOS.
+Error: cannot find lp_runtime.h
+Meaning:
+LP found the compiler executable but could not locate the
+runtime/
+headers.
+Fix:
+Run the compiler from the repository build output or from a properly installed layout.
+Keep
+runtime/
+next to the compiler installation as expected by the current runtime search logic.
+make
+is missing on Windows
+Meaning:
+The Windows machine does not have a POSIX build environment.
+Fix:
+Use
+build.bat
+instead.
+Or install
+make
+inside MSYS2 if you want to verify the POSIX path locally.
+Target toolchain ... was not found
+Meaning:
+lp build --target ...
+correctly detected that the requested cross-compiler is not available.
+Fix:
+Install the target-specific toolchain such as
+x86_64-linux-gnu-gcc
+or
+aarch64-apple-darwin-gcc
+Permission denied
+while rebuilding
+build\lp.exe
+Meaning:
+The compiler executable is still running or held open by another process.
+Fix:
+Close the running process and rebuild again.
+See also
+Home
+- Wiki home
+First Programs
+- Your first LP programs
+Build and Distribution
+- Cross-compilation
+Troubleshooting
+- Common issues
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Language Basics
+============================================================
+Language Basics
+What you'll learn
+This guide covers LP variables, literals, type annotations, type inference, operators, control flow, and functions.
+Prerequisites
+Read
+First Programs
+first.
+Syntax And Concepts
+Comments
+LP uses Python-style line comments:
+this
+is
+comment
+Variables and literals
+Common literal forms:
+count
+21
+ratio
+14
+enabled
+true
+name
+"LP"
+empty
+None
+Type annotations
+You can annotate variables and parameters explicitly:
+count
+int
+21
+ratio
+float
+14
+name
+str
+"LP"
+Type inference
+LP also supports inference for many common assignments:
+21
+text
+"LP"
+This is already used by the regression suite in
+examples/test_type_inference.lp
+Operators
+Common operators include:
+arithmetic:
+//
+**
+comparison:
+==
+!=
+<=
+>=
+boolean:
+and
+or
+not
+For strings,
+==
+and
+!=
+compare content, not pointer identity.
+Control flow
+LP supports standard block-based control flow:
+if
+score
+90
+print
+"A"
+elif
+score
+80
+print
+"B"
+else
+print
+"C"
+Loop forms:
+for
+in
+range
+):
+print
+while
+ready
+break
+Useful flow keywords:
+return
+pass
+break
+continue
+Functions
+Functions use Python-like syntax:
+def
+twice
+int
+) ->
+int
+return
+Return annotations are optional in the current parser:
+def
+twice
+int
+):
+return
+Examples
+Variables and inference
+def
+main
+():
+21
+text
+"LP"
+print
+print
+text
+main
+()
+Control flow and loops
+def
+main
+():
+total
+int
+for
+in
+range
+):
+total
+total
+if
+total
+==
+10
+print
+"ok"
+else
+print
+"bad"
+main
+()
+Functions
+def
+twice
+int
+) ->
+int
+return
+def
+main
+():
+print
+twice
+21
+))
+main
+()
+Common errors and limitations
+A missing colon is a common parser error after
+def
+if
+elif
+else
+for
+while
+try
+, and
+class
+LP expects indentation for block bodies. If you want an empty block, use
+pass
+Type inference works well for common local assignments, but explicit annotations are still useful when you want a stable public API or clearer compiler intent.
+Default parameter values are parsed, but this guide focuses on the most verified function forms used by the current examples and tests.
+See also
+Expressions and Collections
+Object-Oriented Programming
+Language Reference
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### First Programs
+============================================================
+First Programs
+What you'll learn
+This guide shows how to run an LP file, use the REPL, generate C output, compile a native executable, and follow a simple edit-run-debug workflow.
+Prerequisites
+The compiler must already build successfully.
+If needed, follow
+Installation and Setup
+first.
+Concepts
+LP has three everyday workflows:
+Run an LP file directly.
+Generate C for inspection.
+Compile a reusable native executable.
+The direct-run path is convenient for iteration. The compile path is better when you want a named artifact.
+Run Your First Program
+Create
+hello.lp
+def
+main
+():
+print
+"Hello from LP"
+main
+()
+Run it:
+lp hello.lp
+What happens:
+LP reads and parses
+hello.lp
+LP generates a temporary C file.
+LP invokes the host C compiler.
+LP runs the resulting temporary executable.
+Generate C Code
+lp hello.lp -o hello.c
+Use this when you want to:
+inspect generated C
+debug code generation problems
+compile the output manually with your own toolchain flags
+Compile A Native Executable
+lp hello.lp -c hello.exe
+On non-Windows hosts, you would normally use a suffixless name instead:
+lp hello.lp -c hello
+This path keeps the final artifact instead of deleting it after the run.
+Generate Assembly
+lp hello.lp -asm hello.s
+Use this when you want to inspect the host compiler's assembly output.
+Use The REPL
+Start the interactive shell:
+lp
+Useful REPL commands:
+.help
+.clear
+.show
+.exit
+.quit
+Example session:
+> x: int = 3
+> print(x)
+3
+The REPL accumulates state and recompiles the current session after each accepted input.
+Multi-Line Input In The REPL
+You can enter blocks such as functions and control flow:
+> def twice(n: int) -> int:
+.     return n * 2
+.
+> print(twice(21))
+42
+The REPL also recognizes block starters such as
+class
+if
+for
+while
+try
+except
+finally
+, and
+with
+Edit, Run, Debug
+A practical local loop looks like this:
+Edit
+hello.lp
+Run
+lp hello.lp
+If parsing fails, read the contextual compiler error.
+If you need more detail, run
+lp hello.lp -o hello.c
+When the program is stable, run
+lp hello.lp -c hello.exe
+or
+lp build hello.lp --release
+Examples
+Small function program
+def
+twice
+int
+) ->
+int
+return
+def
+main
+():
+print
+twice
+21
+))
+main
+()
+Run it:
+lp hello.lp
+C generation path
+lp hello.lp -o hello.c
+Executable path
+lp hello.lp -c hello.exe
+hello.exe
+Common errors and limitations
+If direct run fails because GCC is missing, LP cannot finish the temporary native build.
+If you only want parser or codegen output,
+-o
+is the least demanding path because it stops after generating C.
+The REPL recompiles accumulated state rather than interpreting line-by-line bytecode.
+Direct run mode creates temporary artifacts and cleans up the generated executable after execution.
+See also
+Language Basics
+CLI and Tooling
+Troubleshooting
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Expressions and Collections
+============================================================
+Expressions and Collections
+What you'll learn
+This guide covers string operations, list, dict, set, and tuple literals, indexing and nested subscript access, lambda expressions, and the current collection-comprehension limitations.
+Prerequisites
+Read
+Language Basics
+first.
+Syntax And Concepts
+Strings
+LP strings support concatenation and common Python-like methods.
+Examples of supported string methods:
+upper()
+lower()
+strip()
+lstrip()
+rstrip()
+find(sub)
+replace(old, new)
+count(sub)
+split(delim)
+join(parts)
+startswith(prefix)
+endswith(suffix)
+isdigit()
+isalpha()
+isalnum()
+String equality uses content comparison.
+Lists, dicts, sets, and tuples
+Literal forms:
+numbers
+= [
+record
+= {
+"name"
+"LP"
+"year"
+2026
+flags
+= {
+pair
+= (
+10
+20
+Indexing and nested subscript
+Common access patterns:
+name
+record
+"name"
+first
+numbers
+Nested subscript such as
+rows[0]["n"]
+is an important verified path in the SQLite tests.
+Lambda expressions
+LP supports both single-expression lambdas and multiline lambdas.
+Single-expression style:
+add
+lambda
+Multiline style:
+multiplier
+lambda
+result
+int
+return
+result
+Collection comprehensions
+Current status:
+List comprehension syntax exists.
+The current code generation path is numeric and array-oriented.
+Dictionary comprehensions are not documented as supported public syntax today.
+Treat comprehensions as a partial feature unless you have verified the exact shape you need.
+Examples
+String methods
+def
+main
+():
+"  AbC AbC  "
+print
+strip
+())
+print
+lower
+().
+strip
+())
+print
+str
+find
+"AbC"
+)))
+print
+str
+count
+"AbC"
+)))
+main
+()
+Collection literals and indexing
+def
+main
+():
+nums
+= [
+10
+20
+30
+item
+= {
+"name"
+"LP"
+"ok"
+true
+print
+nums
+])
+print
+str
+item
+"name"
+]))
+main
+()
+Nested subscript from structured data
+import
+json
+def
+main
+():
+data
+json
+loads
+('{
+"rows"
+:[{
+"n"
+}]}')
+rows
+data
+"rows"
+value
+int
+rows
+][
+"n"
+])
+print
+value
+main
+()
+Multiline lambda
+def
+main
+():
+multiplier
+lambda
+result
+int
+return
+result
+print
+multiplier
+10
+))
+main
+()
+Common errors and limitations
+json.loads(...)
+returns a generic
+LpVal
+-style value, so nested indexing often needs
+int(...)
+str(...)
+float(...)
+, or
+bool(...)
+casts.
+String operations are well covered by the regression tests, but collection comprehensions are not yet documented as a fully general public feature.
+Dictionary comprehensions are not part of the verified public language surface in the current parser/codegen path.
+String
+split()
+returns an internal string-array representation that is intended to work with
+join()
+and indexing-like usage patterns, not as a full Python list clone.
+See also
+Language Basics
+Runtime Modules
+Language Reference
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Language Reference
+============================================================
+Language Reference
+What you'll learn
+This file is a compact lookup reference for LP syntax, builtins, module surface, and command summary.
+Prerequisites
+None.
+Core syntax
+Comments
+comment
+Variable declaration and inference
+int
+42
+name
+"LP"
+Function definition
+def
+add
+int
+int
+) ->
+int
+return
+Functions with default values:
+def
+greet
+name
+str
+"World"
+) ->
+str
+return
+"Hello "
+name
+Variadic functions:
+def
+sum_all
+(*
+args
+) ->
+int
+total
+for
+in
+args
+total
+total
+return
+total
+Class definition
+class
+Player
+Entity
+):
+health
+int
+100
+Control flow
+if
+cond
+pass
+elif
+other
+pass
+else
+pass
+for
+in
+range
+):
+print
+while
+cond
+break
+Exceptions
+try
+risky
+()
+except
+print
+"handled"
+finally
+print
+"cleanup"
+raise
+"error"
+File-oriented
+with
+with
+open
+"file.txt"
+"r"
+as
+print
+read
+())
+Lambda
+add
+lambda
+Multiline form:
+mul
+lambda
+result
+int
+return
+result
+Concurrency
+parallel
+for
+in
+range
+1000
+):
+work
+Access modifiers
+public: default
+private
+protected
+Builtins
+Common builtins documented for normal use:
+print(x)
+len(x)
+range(stop)
+range(start, stop)
+range(start, stop, step)
+open(path, mode)
+str(x)
+int(x)
+float(x)
+bool(x)
+Literal forms
+integers:
+floats:
+3.14
+booleans:
+true
+false
+True
+False
+string:
+"text"
+'text'
+"""multiline"""
+null-like value:
+None
+none
+list:
+[1, 2, 3]
+dict:
+{"k": 1}
+set:
+{1, 2, 3}
+tuple:
+(1, 2)
+Operators
+Arithmetic
+Operator
+Description
+Example
+Addition
+a + b
+Subtraction
+a - b
+Multiplication
+a * b
+Division (float)
+a / b
+//
+Floor division
+a // b
+Modulo
+a % b
+**
+Power
+a ** b
+Bitwise
+Operator
+Description
+Example
+AND
+a & b
+OR
+a | b
+XOR
+a ^ b
+NOT
+~a
+<<
+Left shift
+a << n
+>>
+Right shift
+a >> n
+Comparison
+Operator
+Description
+Example
+==
+Equal
+a == b
+!=
+Not equal
+a != b
+Less than
+a < b
+Greater than
+a > b
+<=
+Less or equal
+a <= b
+>=
+Greater or equal
+a >= b
+Logical
+Operator
+Description
+Example
+and
+Logical AND
+a and b
+or
+Logical OR
+a or b
+not
+Logical NOT
+not a
+is
+Identity
+a is None
+in
+Membership
+x in list
+Assignment
+Operator
+Example
+Equivalent
+a = b
++=
+a += b
+a = a + b
+-=
+a -= b
+a = a - b
+*=
+a *= b
+a = a * b
+/=
+a /= b
+a = a / b
+&=
+a &= b
+a = a & b
+|=
+a |= b
+a = a | b
+^=
+a ^= b
+a = a ^ b
+<<=
+a <<= n
+a = a << n
+>>=
+a >>= n
+a = a >> n
+String methods
+Supported method-style calls:
+upper()
+- Convert to uppercase
+lower()
+- Convert to lowercase
+strip()
+- Remove leading/trailing whitespace
+lstrip()
+- Remove leading whitespace
+rstrip()
+- Remove trailing whitespace
+find(sub)
+- Find substring, returns index or -1
+replace(old, new)
+- Replace all occurrences
+count(sub)
+- Count substring occurrences
+split(delim)
+- Split into array
+join(parts)
+- Join array with separator
+startswith(prefix)
+- Check prefix
+endswith(suffix)
+- Check suffix
+isdigit()
+- Check if all digits
+isalpha()
+- Check if all letters
+isalnum()
+- Check if alphanumeric
+Collection notes
+nested subscript such as
+rows[0]["n"]
+is supported and verified
+list comprehensions exist but are currently documented as partial and numeric-focused
+dictionary comprehensions are not documented as supported public syntax today
+Type annotations
+Basic types
+int
+42
+float
+14
+name
+str
+"LP"
+flag
+bool
+True
+Special types
+data
+val
+json
+loads
+)      #
+Dynamic
+JSON
+value
+ptr
+ptr
+memory
+cast
+addr
+)   #
+Raw
+pointer
+arena
+arena
+memory
+arena_new
+1024
+)  #
+Memory
+arena
+pool
+pool
+memory
+pool_new
+64
+10
+)   #
+Memory
+pool
+Runtime modules
+math
+Representative API:
+pi
+tau
+- Constants
+sin(x)
+cos(x)
+tan(x)
+- Trigonometry
+sqrt(x)
+pow(x, y)
+- Power functions
+factorial(n)
+gcd(a, b)
+lcm(a, b)
+- Integer math
+isnan(x)
+isinf(x)
+- Float checks
+floor(x)
+ceil(x)
+round(x)
+- Rounding
+abs(x)
+log(x)
+exp(x)
+- Other functions
+random
+seed(n)
+- Set seed
+random()
+- Float in [0, 1)
+randint(a, b)
+- Integer in [a, b]
+uniform(a, b)
+- Float in [a, b]
+time
+time()
+- Current timestamp (seconds)
+sleep(seconds)
+- Sleep for duration
+os
+getcwd()
+- Current working directory
+remove(path)
+- Delete file
+rename(src, dst)
+- Rename/move file
+mkdir(path)
+- Create directory
+sep
+- Path separator (
+or
+name
+- OS name (
+"posix"
+or
+"nt"
+os.path
+join(a, b)
+- Join path components
+exists(path)
+- Check if path exists
+isfile(path)
+- Check if file
+isdir(path)
+- Check if directory
+basename(path)
+- Get filename
+dirname(path)
+- Get directory
+getsize(path)
+- Get file size
+sys
+platform
+- Platform string (
+"linux"
+"win32"
+"darwin"
+maxsize
+- Maximum integer value
+exit(code)
+- Exit program
+getrecursionlimit()
+- Get recursion limit
+argv_len()
+- Argument count
+argv_get(i)
+- Get argument by index
+http
+get(url)
+- HTTP GET request (returns response body)
+post(url, data)
+- HTTP POST request (NOW SUPPORTED)
+json
+loads(s)
+- Parse JSON string to val
+dumps(v)
+- Serialize val to JSON string
+parse(s)
+- Alias for
+loads
+(NOW SUPPORTED)
+sqlite
+connect(path)
+- Open database
+execute(db, sql)
+- Execute SQL
+query(db, sql)
+- Query and return results
+thread
+spawn(worker, arg)
+- Spawn thread with worker function
+join(thread)
+- Wait for thread completion
+lock_init()
+- Create mutex lock
+lock_acquire(lock)
+- Acquire lock
+lock_release(lock)
+- Release lock
+Restrictions:
+Worker must be a named LP function
+Worker can have 0 or 1 argument only
+Worker must return
+int
+or
+void
+memory
+arena_new(size)
+- Create arena allocator
+arena_alloc(arena, size)
+- Allocate from arena
+arena_reset(arena)
+- Reset arena
+arena_free(arena)
+- Free arena
+pool_new(chunk_size, count)
+- Create pool allocator
+pool_alloc(pool)
+- Allocate from pool
+pool_free(pool, ptr)
+- Free to pool
+pool_destroy(pool)
+- Destroy pool
+cast(ptr)
+- Cast pointer to object
+platform
+os()
+- OS name string
+arch()
+- Architecture string
+cores()
+- Number of CPU cores
+numpy
+(Partial)
+np.array(data)
+- Create array
+np.zeros(n)
+- Array of zeros
+np.ones(n)
+- Array of ones
+np.arange(start, stop, step)
+- Range array
+np.linspace(a, b, n)
+- Linearly spaced array
+np.sqrt(arr)
+- Element-wise sqrt
+np.abs(arr)
+- Element-wise absolute
+np.sin(arr)
+np.cos(arr)
+- Trigonometry
+np.sort(arr)
+- Sort array
+Feature Status
+Fully Supported ✅
+Feature
+Status
+Notes
+Variables & type inference
+Functions
+Including default args, *args
+Classes
+With inheritance
+private
+protected
+Compile-time checked
+if
+elif
+else
+for
+loops
+With
+range()
+while
+loops
+With
+break
+continue
+try
+except
+finally
+raise
+with
+statement
+Lambda (single-line)
+Lambda (multiline)
+String methods
+Full set
+List literals
+Dict literals
+Set literals
+Tuple literals
+Bitwise operators
+All 6 operators
+Compound assignment
++=
+-=
+, etc.
+parallel for
+Requires OpenMP toolchain
+@settings
+decorator
+Parallel/GPU configuration
+@security
+decorator
+Security features
+F-strings
+f"value: {x}"
+Dictionary comprehensions
+{k: v for x in iter}
+yield
+/ Generators
+Basic generator pattern
+http.post
+HTTP POST requests
+json.parse
+Alias for
+json.loads
+Partially Supported
+⚠️
+Feature
+Status
+Notes
+List comprehensions
+⚠️
+Numeric-focused, limited
+thread.spawn
+⚠️
+Strict worker restrictions
+numpy
+module
+⚠️
+Basic functions only
+Typed exceptions
+⚠️
+Generic runtime behavior
+Not Supported Yet ❌
+Feature
+Status
+Notes
+Async/await
+Not implemented
+Pattern matching
+Not implemented
+Type unions
+Not implemented
+Generic types
+Not implemented
+Supported Decorators ✅
+Decorator
+Description
+Example
+@settings
+Configure parallel/GPU execution
+@settings(threads=8, device="gpu")
+@security
+Security features (rate limit, auth)
+@security(level=3, auth=True)
+@settings Options
+@settings
+threads
+)                    #
+Set
+thread
+count
+@settings
+schedule
+"dynamic"
+chunk
+100
+) #
+Scheduling
+policy
+@settings
+device
+"gpu"
+gpu_id
+)       #
+GPU
+execution
+@settings
+device
+"auto"
+)                #
+Auto
+select
+best
+device
+@settings
+unified
+True
+)                 #
+Unified
+GPU
+memory
+@security Options
+@security
+level
+)                      #
+Security
+level
+@security
+auth
+True
+)                    #
+Require
+authentication
+@security
+rate_limit
+100
+)               #
+Requests
+per
+minute
+@security
+admin
+True
+)                   #
+Require
+admin
+access
+@security
+readonly
+True
+)                #
+Read
+only
+mode
+@security
+validate
+True
+sanitize
+True
+) #
+Input
+output
+handling
+CLI summary
+lp
+lp file.lp
+lp file.lp -o out.c
+lp file.lp -c out.exe
+lp file.lp -asm out.s
+lp test [dir]
+lp profile file.lp
+lp watch file.lp
+lp build file.lp [flags]
+lp package file.lp --format zip|tar.gz
+lp export file.lp [-o name] [--library]
+Common errors and limitations
+If a feature is not listed here as supported, assume it needs confirmation before treating it as stable public surface.
+Cross-target builds need matching external toolchains.
+C API export currently has Windows-oriented shared-library naming in the implementation.
+Integer division
+//
+follows Python semantics (floor division).
+Modulo
+follows Python semantics (result has same sign as divisor).
+See also
+[Documentation Map]
+Runtime Modules
+CLI and Tooling
+Troubleshooting
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Object Oriented Programming
+============================================================
+Object-Oriented Programming
+What you'll learn
+This guide covers classes, fields, methods, inheritance, polymorphism, and LP's compile-time checked
+private
+and
+protected
+access rules.
+Prerequisites
+Read
+Language Basics
+first.
+Syntax And Concepts
+Declaring a class
+LP classes use Python-like syntax with field declarations and methods.
+class
+Entity
+float
+float
+def
+move
+self
+dx
+float
+dy
+float
+) ->
+float
+self
+self
+dx
+self
+self
+dy
+return
+self
+Instantiation
+Create an object by calling the class name:
+player
+Player
+()
+The current examples use default field values rather than custom constructor methods.
+Inheritance
+Subclasses can inherit from a base class:
+class
+Player
+Entity
+):
+health
+int
+100
+Polymorphism
+Methods can be overridden in subclasses. The regression suite verifies inherited and overridden behavior.
+Access control
+LP checks member visibility at compile time.
+private
+: accessible only inside the declaring class.
+protected
+: accessible inside the declaring class and its subclasses.
+public: the default when no access modifier is present.
+The current compiler enforces these rules for:
+field reads
+field writes
+method calls
+Examples
+Core OOP example
+This is the same style used by
+examples/02_oop_game_engine.lp
+class
+Entity
+float
+float
+def
+move
+self
+dx
+float
+dy
+float
+) ->
+float
+self
+self
+dx
+self
+self
+dy
+return
+self
+class
+Player
+Entity
+):
+health
+int
+100
+name
+str
+"Hero"
+def
+take_damage
+self
+amount
+int
+) ->
+int
+self
+health
+self
+health
+amount
+return
+self
+health
+Inheritance and
+protected
+class
+Dog
+protected
+kind
+str
+"dog"
+class
+Puppy
+Dog
+):
+def
+reveal_kind
+self
+) ->
+str
+return
+self
+kind
+This pattern is verified by
+examples/test_inheritance_access.lp
+private
+rejection example
+class
+SecretBox
+private
+code
+int
+box
+SecretBox
+()
+#
+box
+code
+The commented line should be treated as a compile-time error in the current compiler.
+Common errors and limitations
+Access control is compile-time enforced. If you try to touch a
+private
+or
+protected
+member from the wrong scope, the compiler should reject it.
+protected
+is designed for subclass access, not unrestricted same-file access.
+The public docs focus on field defaults and methods. More elaborate object-construction patterns are possible in source, but they are not the center of the verified example set yet.
+Exported C APIs skip
+private
+functions and top-level names that start with
+by convention.
+See also
+Expressions and Collections
+[Error Handling and Advanced Control Flow]
+Examples Cookbook
+Language Reference
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Error Handling
+============================================================
+Error Handling and Advanced Control Flow
+What you'll learn
+This guide covers
+try
+except
+finally
+raise
+, file-oriented
+with
+, and how to read LP parser and codegen diagnostics.
+Prerequisites
+Read
+Language Basics
+first.
+Syntax And Concepts
+Raising an exception
+LP supports string-based
+raise
+expressions:
+raise
+"something went wrong"
+try
+except
+, and
+finally
+Basic structure:
+try
+risky_call
+()
+except
+print
+"handled"
+finally
+print
+"cleanup"
+The current runtime uses a generic exception mechanism. Typed
+except SomeType as err:
+syntax is parsed, but the current code generation path treats exception handling generically.
+with
+for file handles
+LP supports
+with
+statements around file handles returned by
+open()
+with
+open
+"notes.txt"
+"w"
+as
+write
+"hello\n"
+The generated C code closes the file automatically at the end of the block.
+File operations
+The current public file surface is:
+open(path, mode)
+file.read()
+file.write(data)
+file.close()
+Reading parser diagnostics
+LP's parser error output is designed to show:
+the main error message
+nearby source lines
+a highlighted error line
+hints for common mistakes such as missing colons or missing indentation
+Examples
+Raise and catch
+def
+main
+():
+try
+raise
+"broken"
+except
+print
+"handled"
+finally
+print
+"done"
+main
+()
+with
+and file I/O
+def
+main
+():
+with
+open
+"notes.txt"
+"w"
+as
+write
+"LP\n"
+with
+open
+"notes.txt"
+"r"
+as
+text
+read
+()
+print
+text
+main
+()
+What a syntax failure usually means
+def
+main
+()
+print
+"missing colon"
+Expected outcome:
+LP should reject the file.
+The compiler should show the offending line and a hint about the missing colon.
+Common errors and limitations
+except SomeType as err:
+is parsed, but current exception handling is generic. Do not depend on typed exception objects yet.
+with
+is currently documented for file handles from
+open()
+. Treat arbitrary context-manager semantics as unsupported.
+yield
+exists in the lexer and AST, but it is not documented as a stable public language feature yet.
+If you get
+expected indented block
+, add an indented body or use
+pass
+If you get
+expected ':'
+, inspect the end of the preceding control-flow or declaration line.
+See also
+Runtime Modules
+CLI and Tooling
+Troubleshooting
+Language Reference
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Concurrency and Parallelism
+============================================================
+Concurrency and Parallelism
+What you'll learn
+This guide covers
+thread.spawn(...)
+thread.join(...)
+, locks,
+parallel for
+, and the exact restrictions the current compiler enforces.
+Prerequisites
+Read
+Language Basics
+first.
+Read
+Runtime Modules
+if you want module-by-module API detail.
+Syntax And Concepts
+thread.spawn(...)
+Current supported contract:
+the worker must be a named LP function
+the worker may take zero or one argument
+the worker must return
+int
+or
+void
+This contract is enforced during code generation, not left to runtime guesswork.
+thread.join(...)
+thread.join(...)
+waits for the worker and returns an
+int
+result.
+Locks
+The public thread module also exposes:
+thread.lock_init()
+thread.lock_acquire(lock)
+thread.lock_release(lock)
+These are useful when multiple threads touch shared in-memory state.
+parallel for
+LP supports a
+parallel for
+syntax for numeric loop forms:
+parallel
+for
+in
+range
+1000
+):
+work
+Current implementation detail:
+LP emits an OpenMP-style
+#pragma omp parallel for
+in generated C.
+Actual parallel execution depends on the host toolchain and flags.
+LP compiler automatically adds
+-fopenmp
+when parallel loops are detected.
+@settings
+Decorator
+LP provides the
+@settings
+decorator for fine-grained control over parallel execution:
+Configure
+thread
+count
+@settings
+threads
+def
+parallel_process
+data
+list
+) ->
+list
+results
+= []
+parallel
+for
+item
+in
+data
+results
+append
+process
+item
+))
+return
+results
+Set
+scheduling
+policy
+and
+chunk
+size
+@settings
+threads
+schedule
+"dynamic"
+chunk
+100
+def
+process_uneven_workload
+data
+list
+) ->
+int
+count
+parallel
+for
+item
+in
+data
+count
++=
+item
+return
+count
+GPU
+execution
+@settings
+device
+"gpu"
+gpu_id
+def
+gpu_compute
+int
+) ->
+int
+result
+parallel
+for
+in
+range
+):
+result
++=
+return
+result
+Auto
+select
+best
+device
+@settings
+device
+"auto"
+def
+auto_parallel
+int
+) ->
+int
+result
+parallel
+for
+in
+range
+):
+result
++=
+return
+result
+Available settings:
+Setting
+Type
+Description
+Default
+threads
+int
+Number of threads (0 = auto)
+schedule
+string
+"static", "dynamic", "guided", "auto"
+"static"
+chunk
+int
+Chunk size for scheduling
+device
+string
+"cpu", "gpu", "auto"
+"cpu"
+gpu_id
+int
+GPU device ID
+unified
+bool
+Use unified memory for GPU
+false
+Examples
+Thread worker and join
+import
+thread
+def
+worker
+int
+) ->
+int
+return
+10
+def
+main
+():
+thread
+thread
+spawn
+worker
+32
+result
+int
+thread
+join
+print
+result
+main
+()
+Thread plus SQLite example
+The regression suite verifies a real threaded workflow in
+examples/test_thread_sqlite.lp
+Key pattern:
+import
+sqlite
+import
+thread
+def
+store_worker
+worker_id
+int
+) ->
+int
+db
+sqlite_db
+sqlite
+connect
+"thread_test.db"
+sqlite
+execute
+db
+"PRAGMA busy_timeout = 5000;"
+return
+worker_id
+10
+parallel for
+import
+math
+def
+compute
+idx
+int
+) ->
+float
+return
+math
+sin
+idx
+) *
+math
+cos
+idx
+def
+main
+():
+parallel
+for
+in
+range
+1000
+):
+value
+compute
+main
+()
+Anti-Patterns
+These should be treated as compile-time errors in the current compiler:
+passing a lambda directly to
+thread.spawn(...)
+using a worker with more than one argument
+using a worker that returns a type other than
+int
+or
+void
+calling
+thread.spawn(...)
+with one argument when the worker expects none
+calling
+thread.spawn(...)
+with no argument when the worker expects one
+Common errors and limitations
+thread.spawn(...)
+is intentionally strict. If you want to thread work, wrap it in a named LP function first.
+thread.join(...)
+returns
+int
+, so model worker result channels accordingly.
+parallel for
+does not currently provide automatic reduction semantics for shared accumulators.
+The current docs treat
+parallel for
+as partially supported because runtime speedup depends on your toolchain configuration, not just LP syntax.
+See also
+Runtime Modules
+Build and Distribution
+Examples Cookbook
+Language Reference
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Parallel Computing
+============================================================
+Parallel and GPU Computing in LP
+LP provides built-in support for parallel computing using OpenMP and GPU acceleration.
+Overview
+LP integrates OpenMP directly into the language through the
+parallel
+keyword, allowing you to easily parallelize loops for multi-core CPU execution. OpenMP is enabled by default when compiling.
+Compilation Backends
+LP supports two compilation backends:
+Native ASM Backend (Default)
+: Direct LP → Assembly → Machine Code
+GCC Backend (Optional)
+: LP → C → GCC → Machine Code
+lp file.lp
+Native compilation (default)
+lp file.lp --gcc
+GCC backend with OpenMP support
+Quick Start
+Basic Parallel For Loop
+Simple
+parallel
+for
+loop
+processes
+iterations
+in
+parallel
+parallel
+for
+in
+range
+1000000
+):
+process_item
+This generates C code with OpenMP:
+#pragma
+omp parallel for
+for
+int64_t
+lp_i
+lp_i
+1000000
+lp_i
+++
+) {
+process_item
+lp_i
+);
+}
+Parallel For with Range
+Parallel
+for
+with
+start
+end
+step
+parallel
+for
+in
+range
+100
+):
+print
+Example: Parallel Data Processing
+import
+math
+def
+analyze_sample
+sample_id
+int
+) ->
+float
+baseline
+float
+math
+sin
+sample_id
+01
+smoothing
+float
+math
+cos
+sample_id
+015
+return
+baseline
+smoothing
+def
+main
+():
+print
+"Processing one million independent samples..."
+parallel
+for
+sample_id
+in
+range
+1000000
+):
+analyze_sample
+sample_id
+print
+"Finished sample processing."
+main
+()
+Compilation
+OpenMP is automatically enabled when you use
+parallel for
+in your code. Just compile normally:
+Compile and run directly
+lp your_program.lp
+Compile to executable
+lp your_program.lp -c your_program
+Generate C code only
+lp your_program.lp -o your_program.c
+The LP compiler automatically adds
+-fopenmp
+when it detects parallel loops.
+Parallel Settings with @settings Decorator
+LP provides fine-grained control over parallel execution through the
+@settings
+decorator:
+Basic Usage
+Configure
+thread
+count
+@settings
+threads
+def
+parallel_process
+data
+list
+) ->
+list
+results
+= []
+parallel
+for
+in
+range
+len
+data
+)):
+results
+append
+process
+data
+]))
+return
+results
+Set
+scheduling
+policy
+and
+chunk
+size
+@settings
+threads
+schedule
+"dynamic"
+chunk
+100
+def
+process_large_dataset
+data
+list
+) ->
+int
+count
+parallel
+for
+item
+in
+data
+count
++=
+item
+return
+count
+GPU
+execution
+@settings
+device
+"gpu"
+gpu_id
+def
+gpu_compute
+int
+) ->
+int
+result
+parallel
+for
+in
+range
+):
+result
++=
+return
+result
+Auto
+device
+selection
+GPU
+if
+available
+otherwise
+CPU
+@settings
+device
+"auto"
+def
+auto_parallel
+int
+) ->
+int
+result
+parallel
+for
+in
+range
+):
+result
++=
+return
+result
+Unified
+memory
+for
+GPU
+seamless
+CPU
+GPU
+data
+sharing
+@settings
+device
+"gpu"
+unified
+True
+def
+unified_memory_compute
+size
+int
+) ->
+list
+results
+= []
+parallel
+for
+in
+range
+size
+):
+results
+append
+return
+results
+Available Settings
+Setting
+Type
+Description
+Default
+threads
+int
+Number of threads (0 = auto)
+0 (auto)
+schedule
+string
+Scheduling policy: "static", "dynamic", "guided", "auto"
+"static"
+chunk
+int
+Chunk size for scheduling
+0 (auto)
+device
+string
+Execution device: "cpu", "gpu", "auto"
+"cpu"
+gpu_id
+int
+GPU device ID
+unified
+bool
+Use unified memory for GPU
+false
+Scheduling Policies
+static
+: Divide work evenly across threads (default, best for uniform workloads)
+dynamic
+: Work in chunks assigned on-demand (best for uneven workloads)
+guided
+: Decreasing chunk sizes (hybrid approach)
+auto
+: Let OpenMP runtime decide
+Generated C Code
+When you use
+@settings
+, LP generates appropriate OpenMP pragmas:
+@settings
+threads
+schedule
+"dynamic"
+chunk
+100
+def
+process
+data
+list
+) ->
+int
+result
+parallel
+for
+item
+in
+data
+result
++=
+item
+return
+result
+Generates:
+void
+lp_process
+LpArray
+data
+) {
+/* === PARALLEL/GPU SETTINGS === */
+lp_parallel_set_threads
+);
+lp_parallel_configure
+"dynamic"
+100
+);
+/* === END PARALLEL/GPU SETTINGS === */
+int64_t
+result
+#pragma
+omp parallel for num_threads(4) schedule(dynamic, 100)
+for
+int64_t
+data
+len
+++
+) {
+result
++=
+data
+items
+];
+    }
+}
+Runtime Functions
+The
+lp_parallel.h
+module provides runtime functions for parallel computing:
+Thread Management
+import
+parallel
+Get
+number
+of
+available
+CPU
+cores
+cores
+int
+parallel
+cores
+()
+
+#
+Get
+set
+thread
+count
+max_threads
+int
+parallel
+max_threads
+()
+parallel
+set_threads
+)
+
+#
+Get
+current
+thread
+ID
+in
+parallel
+region
+tid
+int
+parallel
+thread_id
+()
+Timing
+import
+parallel
+start
+float
+parallel
+wtime
+()
+
+# ...
+parallel
+computation
+...
+end
+float
+parallel
+wtime
+()
+print
+"Elapsed time:"
+end
+start
+Parallel Reductions
+import
+parallel
+Sum
+reduction
+calculated
+in
+parallel
+data
+list
+= [
+10
+total
+int
+parallel
+sum
+data
+)
+
+#
+Max
+Min
+maximum
+int
+parallel
+max
+data
+minimum
+int
+parallel
+min
+data
+GPU Computing
+LP includes GPU abstraction for CUDA/OpenCL support:
+GPU Detection
+import
+gpu
+Check
+GPU
+availability
+if
+gpu
+is_available
+():
+print
+"GPU detected:"
+gpu
+device_name
+))
+print
+"Memory:"
+gpu
+total_memory
+))
+else
+print
+"No GPU available, using CPU"
+GPU Execution with @settings
+Use
+specific
+GPU
+device
+@settings
+device
+"gpu"
+gpu_id
+def
+gpu_compute
+int
+) ->
+int
+result
+parallel
+for
+in
+range
+):
+result
++=
+return
+result
+Auto
+select
+best
+device
+GPU
+if
+available
+@settings
+device
+"auto"
+def
+auto_device_compute
+data
+list
+) ->
+list
+results
+= []
+parallel
+for
+item
+in
+data
+results
+append
+process
+item
+))
+return
+results
+Unified
+memory
+for
+seamless
+CPU
+GPU
+data
+sharing
+@settings
+device
+"gpu"
+unified
+True
+def
+unified_compute
+data
+list
+) ->
+list
+results
+= []
+parallel
+for
+in
+range
+len
+data
+)):
+results
+append
+data
+] *
+return
+results
+GPU Runtime Functions
+The
+lp_gpu.h
+module provides GPU management:
+import
+gpu
+Get
+device
+count
+num_gpus
+int
+gpu
+device_count
+()
+
+#
+Get
+device
+info
+device
+gpu
+get_device
+print
+"Name:"
+device
+name
+print
+"Memory:"
+device
+total_memory
+print
+"Compute Units:"
+device
+compute_units
+)
+
+#
+Select
+device
+gpu
+select_device
+)
+
+#
+Synchronize
+wait
+for
+GPU
+operations
+to
+complete
+gpu
+sync
+()
+Best Practices
+1. Choose Appropriate Loop Granularity
+Good
+Large
+iteration
+count
+benefits
+from
+parallelization
+parallel
+for
+in
+range
+1000000
+):
+result
+] =
+expensive_computation
+)
+
+#
+Avoid
+Small
+iteration
+counts
+may
+have
+overhead
+parallel
+for
+in
+range
+10
+):  #
+Sequential
+is
+faster
+result
+] =
+simple_operation
+2. Avoid Data Dependencies
+Good
+Independent
+iterations
+parallel
+for
+in
+range
+1000
+):
+result
+] =
+data
+] *
+Avoid
+Dependencies
+between
+iterations
+parallel
+for
+in
+range
+1000
+):
+result
+] =
+result
+] +
+data
+]  #
+Race
+condition
+3. Use Reductions for Accumulators
+Sequential
+version
+total
+int
+for
+in
+range
+1000
+):
+total
++=
+data
+]
+
+#
+Parallel
+version
+requires
+explicit
+reduction
+handling
+# (
+Currently
+need
+to
+implement
+manually
+in
+LP
+Performance Tips
+Use OpenMP scheduling
+: For uneven workloads, use
+schedule="dynamic"
+Set appropriate chunk sizes
+: Balance overhead vs load balancing
+Avoid false sharing
+: Ensure threads don't write to nearby memory locations
+Use thread-local storage
+: For thread-specific data
+Compilation Flags
+When compiling generated C code with OpenMP:
+Basic OpenMP
+gcc -fopenmp program.c -o program
+With optimizations
+gcc -O3 -fopenmp -march=native program.c -o program -lm
+Set thread count at runtime
+OMP_NUM_THREADS=8 ./program
+Architecture
+┌─────────────────────────────────────────┐
+│             LP Source Code              │
+│   parallel for i in range(N):          │
+│       process(i)                       │
+└────────────────┬────────────────────────┘
+                 │ LP Compiler
+                 ▼
+┌─────────────────────────────────────────┐
+│            Generated C Code             │
+│   #pragma omp parallel for             │
+│   for (int64_t i = 0; i < N; i++)      │
+│       process(i);                      │
+└────────────────┬────────────────────────┘
+                 │ C Compiler (gcc -fopenmp)
+                 ▼
+┌─────────────────────────────────────────┐
+│           Native Binary                │
+│   - Multi-threaded execution           │
+│   - Automatic work distribution        │
+│   - Thread pool management             │
+└─────────────────────────────────────────┘
+Future Roadmap
+@settings Decorator
+: Fine-grained parallel/GPU control (implemented)
+GPU Device Selection
+: Select GPU device with
+device="gpu"
+(implemented)
+Scheduling Policies
+: Static, dynamic, guided, auto (implemented)
+GPU Kernel Generation
+: Automatic CUDA/OpenCL code generation (in progress)
+Distributed Computing
+: Multi-node parallel execution (planned)
+Automatic Parallelization
+: Compiler auto-detects parallelizable loops (planned)
+Parallel Algorithms
+: Built-in parallel sort, reduce, scan, etc. (planned)
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Security Explained
+============================================================
+@security Explained Visually
+Simple Concept
+┌─────────────────────────────────────────────────────────────┐
+│                    WITHOUT @security                         │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   User ──────────────────► Function ────────► Result        │
+│                                                             │
+│   • Anyone can call                                        │
+│   • No rate limiting                                       │
+│   • No input validation                                    │
+│   • Vulnerable to attacks                                  │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                      WITH @security                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   User                                                     │
+│     │                                                       │
+│     ▼                                                       │
+│   ┌──────────────┐                                         │
+│   │  CHECK #1    │  Rate limit?                            │
+│   │  Exceeded    │───YES──► ❌ BLOCK (too many requests)   │
+│   │  limit?      │                                         │
+│   └──────┬───────┘                                         │
+│          │ NO                                               │
+│          ▼                                                  │
+│   ┌──────────────┐                                         │
+│   │  CHECK #2    │  Authentication?                        │
+│   │  Logged in?  │───NO───► ❌ BLOCK (not logged in)       │
+│   │              │                                         │
+│   └──────┬───────┘                                         │
+│          │ YES                                              │
+│          ▼                                                  │
+│   ┌──────────────┐                                         │
+│   │  CHECK #3    │  Input validation?                      │
+│   │  Malicious   │───YES──► ❌ BLOCK (malicious input)     │
+│   │  input?      │                                         │
+│   └──────┬───────┘                                         │
+│          │ NO                                               │
+│          ▼                                                  │
+│   ┌──────────────┐                                         │
+│   │  CHECK #4    │  Permission?                            │
+│   │  Has access? │───NO───► ❌ BLOCK (no permission)       │
+│   │              │                                         │
+│   └──────┬───────┘                                         │
+│          │ YES                                              │
+│          ▼                                                  │
+│        Function ───────────► ✅ Result                     │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+Real-World Example
+LP Code:
+@security
+rate_limit
+10
+auth
+"bearer"
+injection
+True
+def
+transfer_money
+to_account
+str
+amount
+int
+) ->
+str
+:
+    #
+Transfer
+money
+return
+"Transferred {amount} to {to_account}"
+When compiled, it generates equivalent C code:
+const
+char
+lp_transfer_money
+const
+char
+to_account
+int64_t
+amount
+) {
+// ========== SECURITY CHECKS ==========
+// CHECK 1: Rate limiting
+static
+time_t
+last_request
+static
+int
+request_count
+time_t
+now
+time
+NULL
+);
+if
+now
+last_request
+>=
+60
+) {
+request_count
+last_request
+now
+;
+    }
+request_count
+++
+if
+request_count
+10
+) {
+fprintf
+stderr
+"ERROR: Rate limit exceeded (max 10/minute)\n"
+);
+return
+"ERROR: Too many requests"
+;
+    }
+// CHECK 2: Authentication
+if
+(!
+current_user_is_authenticated
+()) {
+fprintf
+stderr
+"ERROR: Authentication required\n"
+);
+return
+"ERROR: Please login first"
+;
+    }
+// CHECK 3: SQL Injection detection
+if
+lp_detect_sql_injection
+to_account
+)) {
+fprintf
+stderr
+"ERROR: Potential SQL injection detected\n"
+);
+return
+"ERROR: Invalid input"
+;
+    }
+// ========== END SECURITY CHECKS ==========
+// Actual function (if all checks pass)
+char
+result
+256
+];
+snprintf
+result
+sizeof
+result
+),
+"Transferred %lld to %s"
+, 
+             (
+long long
+amount
+to_account
+);
+return
+lp_strdup
+result
+);
+}
+Before/After Comparison
+Before (no @security):
+def
+transfer_money
+to_account
+str
+amount
+int
+):
+return
+"Transferred {amount} to {to_account}"
+→ Hacker can:
+  ✓ Call 1000 times in 1 second (spam)
+  ✓ No login required
+  ✓ Pass: to_account = "'; DROP TABLE accounts; --"
+  → Delete database!
+After (with @security):
+@security
+rate_limit
+10
+auth
+"bearer"
+injection
+True
+def
+transfer_money
+to_account
+str
+amount
+int
+):
+return
+"Transferred {amount} to {to_account}"
+→ Hacker CANNOT:
+  ✗ Call more than 10 times/min → BLOCK
+  ✗ Not logged in → BLOCK  
+  ✗ Pass SQL injection → BLOCK
+  
+→ Only logged-in users with clean input can use it
+@security Options
+Option
+Effect
+Example
+rate_limit=10
+Max 10 requests/minute
+Prevent spam
+auth="bearer"
+Require Bearer token
+Only logged-in users
+auth="api_key"
+Require API key
+Only apps with key
+injection=True
+Prevent SQL injection
+Block
+' OR '1'='1
+xss=True
+Prevent XSS
+Block
+<script>
+csrf=True
+Prevent CSRF
+Require token
+admin
+Admin only
+Sensitive functions
+readonly
+Read-only mode
+No data modification
+level="high"
+High security
+More checks
+Combining Multiple Options
+Money
+transfer
+API
+maximum
+security
+@security
+level
+"critical"
+,      #
+Highest
+level
+auth
+"bearer"
+,         #
+Require
+login
+rate_limit
+,          #
+Only
+times
+min
+injection
+True
+,        #
+Prevent
+SQL
+injection
+xss
+True
+,              #
+Prevent
+XSS
+csrf
+True
+Prevent
+CSRF
+def
+transfer_money
+to
+str
+amount
+int
+):
+    #
+Fully
+protected
+return
+"Transferred {amount} to {to}"
+User
+info
+API
+moderate
+security
+@security
+auth
+"api_key"
+,        #
+Require
+API
+key
+rate_limit
+100
+100
+times
+min
+def
+get_user_info
+user_id
+int
+):
+return
+"User {user_id}"
+Public
+API
+low
+security
+@security
+rate_limit
+1000
+1000
+times
+min
+def
+public_search
+query
+str
+):
+return
+"Results for: {query}"
+Summary
+@security is like a "security guard" standing before the function:
+
+      👤 User
+         │
+         ▼
+    👮 @security (CHECK)
+         │
+    ┌────┴────┐
+    │         │
+   PASS      FAIL
+    │         │
+    ▼         ▼
+  🚪 Func    ❌ Block!
+See Also
+Security Module Reference
+- Full API reference
+Calling Security Functions
+- Usage examples
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Security Module Reference
+============================================================
+LP Security Module - Complete Reference
+Table of Contents
+Overview
+@security Decorator
+Security Module Functions
+Examples
+Overview
+LP Security provides 2 ways to protect your application:
+@security decorator
+- Automatically injects security checks at function start
+security module
+- Call security functions directly from code
+@security Decorator
+Syntax
+@security
+options
+...)
+def
+function_name
+params
+):
+    #
+function
+body
+Options
+Option
+Type
+Description
+Example
+level
+int/str
+Security level (0-4 or "none"/"low"/"medium"/"high"/"critical")
+level="high"
+auth
+str
+Authentication type ("basic", "bearer", "api_key", "oauth")
+auth="bearer"
+rate_limit
+int
+Max requests per minute
+rate_limit=100
+validate
+bool
+Enable input validation
+validate=True
+sanitize
+bool
+Enable output sanitization
+sanitize=True
+injection
+bool
+Prevent SQL injection
+injection=True
+xss
+bool
+Prevent XSS attacks
+xss=True
+csrf
+bool
+Enable CSRF protection
+csrf=True
+cors
+str/bool
+Enable CORS with origins
+cors="https://example.com"
+headers
+bool
+Enable security headers
+headers=True
+encrypt
+bool
+Enable data encryption
+encrypt=True
+hash
+str
+Hash algorithm ("md5", "sha256")
+hash="sha256"
+readonly
+flag
+Enable readonly mode
+readonly
+admin
+flag
+Require admin access
+admin
+user
+flag
+Require user access
+user
+guest
+flag
+Allow guest access
+guest
+Examples
+Basic
+security
+@security
+def
+api_function
+():
+return
+"OK"
+Rate
+limiting
+@security
+rate_limit
+10
+def
+limited_api
+():
+return
+"Limited to 10 req/min"
+Authentication
+required
+@security
+auth
+"bearer"
+def
+protected_api
+():
+return
+"Protected data"
+Admin
+only
+@security
+admin
+def
+admin_delete
+id
+int
+):
+return
+"Deleted {id}"
+Combined
+options
+@security
+level
+"critical"
+auth
+"api_key"
+rate_limit
+injection
+True
+xss
+True
+def
+secure_api
+data
+str
+):
+return
+"Processed: {data}"
+Security Module Functions
+Import and use:
+import
+security
+Authentication Context
+Function
+Description
+Returns
+security.set_authenticated(level, user_id)
+Set user as authenticated
+void
+security.set_guest()
+Logout (set as guest)
+void
+security.is_authenticated()
+Check if authenticated
+bool
+security.get_access_level()
+Get current access level
+int
+Login
+as
+user
+security
+set_authenticated
+"john_doe"
+)
+
+#
+Login
+as
+admin
+security
+set_authenticated
+"admin_user"
+)
+
+#
+Logout
+security
+set_guest
+()
+
+#
+Check
+status
+if
+security
+is_authenticated
+():
+level
+security
+get_access_level
+()
+Validation Functions
+Function
+Description
+Returns
+security.validate_email(email)
+Validate email format
+bool
+security.validate_url(url)
+Validate URL format
+bool
+security.validate_numeric(str)
+Validate numeric string
+bool
+security.validate_alphanumeric(str)
+Validate alphanumeric
+bool
+security.validate_identifier(id)
+Validate identifier name
+bool
+security.is_safe_string(str)
+Check for safe characters
+bool
+if
+security
+validate_email
+"user@example.com"
+):
+print
+"Valid email"
+if
+security
+validate_url
+"https://google.com"
+):
+print
+"Valid URL"
+if
+security
+validate_identifier
+"my_function"
+):
+print
+"Valid identifier"
+Detection Functions
+Function
+Description
+Returns
+security.detect_sql_injection(str)
+Detect SQL injection patterns
+bool
+security.detect_xss(str)
+Detect XSS patterns
+bool
+dangerous
+"'; DROP TABLE users; --"
+if
+security
+detect_sql_injection
+dangerous
+):
+print
+"SQL injection detected!"
+xss
+"<script>alert('xss')</script>"
+if
+security
+detect_xss
+xss
+):
+print
+"XSS detected!"
+Escape Functions
+Function
+Description
+Returns
+security.sql_escape(str)
+Escape for SQL
+str
+security.html_escape(str)
+Escape HTML entities
+str
+security.strip_html(str)
+Remove HTML tags
+str
+SQL
+escape
+safe
+security
+sql_escape
+"O'Brien"
+)
+#
+Result
+"O''Brien"
+HTML
+escape
+safe
+security
+html_escape
+"<b>Hello</b>"
+)
+#
+Result
+"&lt;b&gt;Hello&lt;/b&gt;"
+Strip
+HTML
+clean
+security
+strip_html
+"<p>Hello</p>"
+)
+#
+Result
+"Hello"
+Hash Functions
+Function
+Description
+Returns
+security.hash_md5(str)
+MD5 hash
+str (32 hex chars)
+security.hash_sha256(str)
+SHA256 hash
+str (64 hex chars)
+Hash
+password
+hashed
+security
+hash_sha256
+"password123"
+print
+"Hashed: {hashed}"
+Rate Limiting
+Function
+Description
+Returns
+security.check_rate_limit(name, limit)
+Check rate limit
+bool
+security.rate_limit_remaining(name)
+Get remaining requests
+int
+Check
+rate
+limit
+manually
+if
+security
+check_rate_limit
+"my_function"
+10
+):
+    #
+Still
+within
+limit
+do_work
+()
+else
+print
+"Rate limit exceeded"
+)
+
+#
+Get
+remaining
+remaining
+security
+rate_limit_remaining
+"my_function"
+print
+"Remaining: {remaining}"
+Complete Example
+import
+security
+# ===
+Authentication
+Context
+===
+
+#
+Login
+as
+admin
+security
+set_authenticated
+"admin_user"
+)
+
+# ===
+Protected
+Functions
+===
+@security
+rate_limit
+auth
+"bearer"
+def
+transfer_money
+to
+str
+amount
+int
+) ->
+str
+return
+"Transferred {amount} to {to}"
+@security
+admin
+def
+delete_user
+id
+int
+) ->
+str
+return
+"Deleted user {id}"
+# ===
+Main
+Program
+===
+def
+main
+():
+    #
+Validate
+inputs
+email
+"user@example.com"
+if
+not
+security
+validate_email
+email
+):
+print
+"Invalid email"
+return
+Escape
+user
+input
+user_input
+"'; DROP TABLE users; --"
+if
+security
+detect_sql_injection
+user_input
+):
+print
+"SQL injection blocked!"
+return
+safe_input
+security
+sql_escape
+user_input
+print
+"Safe: {safe_input}"
+)
+    
+    #
+Call
+protected
+API
+result
+transfer_money
+"account1"
+100
+print
+"Result: {result}"
+)
+    
+    #
+Hash
+sensitive
+data
+password_hash
+security
+hash_sha256
+"secret123"
+print
+"Hash: {password_hash}"
+)
+    
+    #
+Logout
+security
+set_guest
+()
+return
+main
+()
+Access Levels
+Level
+Constant
+Description
+LP_ACCESS_GUEST
+Guest (not authenticated)
+LP_ACCESS_USER
+Normal user
+LP_ACCESS_ADMIN
+Administrator
+LP_ACCESS_SUPER
+Super admin
+Security Levels
+Level
+Description
+0 - none
+No security checks
+1 - low
+Basic validation
+2 - medium
+Default - standard checks
+3 - high
+Strict validation, character filtering
+4 - critical
+Maximum security
+See Also
+Security Explained
+- How @security works
+Calling Security Functions
+- Usage examples
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Calling Security Functions
+============================================================
+Calling Functions with @security
+1. Normal Function Calls
+When a function has
+@security
+, you call it normally. Security checks run automatically:
+Define
+function
+with
+security
+@security
+rate_limit
+10
+auth
+"bearer"
+def
+transfer_money
+to
+str
+amount
+int
+) ->
+str
+return
+"Sent {amount} to {to}"
+Call
+the
+function
+security
+checks
+run
+automatically
+result
+transfer_money
+"account1"
+100
+)
+
+#
+Results
+:
+# -
+Rate
+limit
+exceeded
+return
+print
+"Rate limit exceeded"
+# -
+Not
+authenticated
+return
+print
+"Authentication required"
+# -
+All
+checks
+pass
+execute
+function
+normally
+2. Call Flow
+┌─────────────────────────────────────────────────────────────┐
+│  transfer_money("account1", 100)                            │
+│                                                             │
+│  Step 1: Check rate_limit                                   │
+│          → If > 10 calls/min → ❌ return 0                  │
+│          → If OK → continue                                 │
+│                                                             │
+│  Step 2: Check authentication                               │
+│          → If not logged in → ❌ return 0                   │
+│          → If OK → continue                                 │
+│                                                             │
+│  Step 3: Execute function                                   │
+│          → return "Sent 100 to account1"                    │
+└─────────────────────────────────────────────────────────────┘
+3. Setting Authentication Context
+Before calling functions that require auth, set up the context:
+Import
+security
+module
+import
+security
+Set
+authenticated
+user
+access
+level
+guest
+user
+admin
+security
+set_authenticated
+"admin_user"
+)
+
+#
+Now
+you
+can
+call
+auth
+required
+functions
+transfer_money
+"account1"
+100
+)  # ✅
+OK
+Logout
+security
+set_guest
+()
+
+#
+Try
+to
+call
+auth
+required
+function
+transfer_money
+"account1"
+100
+)  # ❌
+FAIL
+not
+authenticated
+4. Security Module - Utility Functions
+You can also call security functions directly:
+import
+security
+# ===
+VALIDATION
+===
+
+#
+Validate
+email
+if
+security
+validate_email
+"test@example.com"
+):
+print
+"Email OK"
+else
+print
+"Invalid email"
+)
+
+#
+Validate
+URL
+if
+security
+validate_url
+"https://google.com"
+):
+print
+"URL OK"
+)
+
+#
+Check
+if
+input
+is
+safe
+if
+security
+is_safe_string
+user_input
+):
+print
+"Input is safe"
+)
+
+# ===
+DETECTION
+===
+
+#
+Detect
+SQL
+injection
+dangerous
+"'; DROP TABLE users; --"
+if
+security
+detect_sql_injection
+dangerous
+):
+print
+"SQL injection detected!"
+)
+
+#
+Detect
+XSS
+xss_attempt
+"<script>alert('xss')</script>"
+if
+security
+detect_xss
+xss_attempt
+):
+print
+"XSS detected!"
+)
+
+# ===
+ESCAPE
+SANITIZE
+===
+
+#
+Escape
+for
+SQL
+safe
+security
+sql_escape
+user_input
+)
+#
+"O'Brien"
+"O''Brien"
+Escape
+for
+HTML
+safe_html
+security
+html_escape
+content
+)
+#
+"<b>"
+"&lt;b&gt;"
+# ===
+RATE
+LIMIT
+===
+
+#
+Manual
+rate
+limit
+check
+if
+security
+check_rate_limit
+"my_function"
+10
+):
+    #
+Quota
+available
+do_something
+()
+else
+:
+    #
+Quota
+exceeded
+print
+"Rate limit exceeded"
+5. Complete Example
+import
+security
+Set
+user
+context
+security
+set_authenticated
+"john_doe"
+)
+
+#
+API
+function
+with
+protection
+@security
+rate_limit
+auth
+"bearer"
+def
+api_create_user
+name
+str
+email
+str
+) ->
+str
+:
+    #
+Validate
+input
+if
+not
+security
+validate_email
+email
+):
+return
+"Error: Invalid email"
+Sanitize
+input
+safe_name
+security
+html_escape
+name
+return
+"Created user: {safe_name}"
+Main
+def
+main
+():
+print
+"=== Calling function with @security ==="
+)
+    
+    #
+Call
+API
+security
+check
+is
+automatic
+result
+api_create_user
+"John"
+"john@example.com"
+print
+result
+)
+    
+    #
+If
+called
+more
+than
+times
+min
+blocked
+If
+not
+logged
+in
+blocked
+return
+main
+()
+6. Execution Flow
+User code:  transfer_money("acc", 100)
+                    │
+                    ▼
+         ┌─────────────────────┐
+         │  @security checks   │
+         │  (automatically     │
+         │   inserted at       │
+         │   function start)   │
+         │                     │
+         │  1. Rate limit?     │──NO──► return 0
+         │  2. Authenticated?  │──NO──► return 0
+         │  3. Access level?   │──NO──► return 0
+         └─────────────────────┘
+                    │
+                   YES
+                    │
+                    ▼
+         ┌─────────────────────┐
+         │  Function body      │
+         │  return "Sent..."   │
+         └─────────────────────┘
+See Also
+Security Explained
+- How @security works
+Security Module Reference
+- Full API reference
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Runtime Modules
+============================================================
+Runtime Modules
+What you'll learn
+This guide documents the public runtime surface that the current LP compiler knows how to lower to native code, including verified modules, builtins that map directly into the runtime, and the most important limitations.
+Prerequisites
+Read
+Language Basics
+first.
+Read
+Expressions and Collections
+if you want more background on strings and collection access.
+Module Status Overview
+Module or surface
+Status
+Notes
+math
+Supported
+Direct mapping to native math helpers.
+random
+Supported
+Seed, random, randint, uniform.
+time
+Supported
+time()
+and
+sleep()
+os
+and
+os.path
+Supported
+Native file-system helpers.
+sys
+Supported
+Platform string, argv helpers, exit, size helpers.
+http
+Partially supported
+http.get(...)
+only.
+json
+Partially supported
+json.loads(...)
+and
+json.dumps(...)
+only.
+sqlite
+Supported
+connect
+execute
+query
+thread
+Partially supported
+Public surface is available, but
+spawn
+has strict compiler rules.
+memory
+Supported
+Arena, pool, and
+cast
+platform
+Supported
+os
+arch
+cores
+open()
+and file handles
+Supported
+File-oriented runtime helpers.
+numpy
+import path
+Internal or experimental
+Present in source, not documented as stable public workflow yet.
+arbitrary Python import fallback
+Internal or experimental
+Exists in source, but current build path is not a stable public workflow yet.
+math
+Supported API
+constants:
+math.pi
+math.e
+math.tau
+math.inf
+math.nan_v
+functions:
+sqrt
+fabs
+ceil
+floor
+round
+trunc
+sin
+cos
+tan
+asin
+acos
+atan
+atan2
+sinh
+cosh
+tanh
+exp
+log
+log2
+log10
+pow
+factorial
+gcd
+lcm
+isnan
+isinf
+radians
+degrees
+Example
+import
+math
+def
+main
+():
+print
+math
+sin
+))
+print
+math
+gcd
+12
+18
+))
+main
+()
+random
+Supported API
+random.seed(n)
+random.random()
+random.randint(a, b)
+random.uniform(a, b)
+Example
+import
+random
+def
+main
+():
+random
+seed
+print
+random
+randint
+10
+))
+main
+()
+time
+Supported API
+time.time()
+time.sleep(seconds)
+Example
+import
+time
+def
+main
+():
+start
+time
+time
+()
+time
+sleep
+print
+time
+time
+() -
+start
+main
+()
+os
+and
+os.path
+Supported API
+os.getcwd()
+os.remove(path)
+os.rename(src, dst)
+os.mkdir(path)
+os.sep
+os.name
+os.path.join(a, b)
+os.path.exists(path)
+os.path.isfile(path)
+os.path.isdir(path)
+os.path.basename(path)
+os.path.dirname(path)
+os.path.getsize(path)
+Example
+import
+os
+def
+main
+():
+path
+os
+path
+join
+"logs"
+"app.txt"
+print
+path
+print
+os
+getcwd
+())
+main
+()
+sys
+Supported API
+sys.platform
+sys.maxsize
+sys.exit(code)
+sys.getrecursionlimit()
+Example
+import
+sys
+def
+main
+():
+print
+sys
+platform
+print
+sys
+maxsize
+main
+()
+Limitation
+sys.argv_*
+and the size-helper internals exist in runtime source, but they are not documented here as stable public program-level APIs because the generated
+main
+path does not currently expose them as a verified end-to-end workflow.
+http
+Supported API
+http.get(url)
+Unsupported API
+http.post(...)
+any other HTTP verb not explicitly documented here
+Example
+import
+http
+def
+main
+():
+body
+str
+http
+get
+"https://jsonplaceholder.typicode.com/posts/1"
+print
+body
+main
+()
+Limitation
+The compiler intentionally rejects unsupported
+http.*
+calls with a compile-time error.
+json
+Supported API
+json.loads(text)
+json.dumps(value)
+Unsupported API
+json.parse(...)
+undocumented helpers not listed here
+Example
+import
+json
+def
+main
+():
+data
+json
+loads
+('{
+"name"
+"LP"
+"ok"
+true
+}')
+print
+str
+data
+"name"
+]))
+print
+json
+dumps
+data
+))
+main
+()
+Limitation
+json.loads(...)
+returns a generic runtime value, so nested access often needs explicit casts such as
+int(...)
+str(...)
+, or
+bool(...)
+sqlite
+Supported API
+sqlite.connect(path)
+sqlite.execute(db, sql)
+sqlite.query(db, sql)
+Example
+import
+sqlite
+def
+main
+():
+db
+sqlite_db
+sqlite
+connect
+"system.db"
+sqlite
+execute
+db
+"CREATE TABLE IF NOT EXISTS logs (n INTEGER);"
+sqlite
+execute
+db
+"INSERT INTO logs (n) VALUES (1);"
+rows
+sqlite
+query
+db
+"SELECT COUNT(*) AS n FROM logs"
+print
+int
+rows
+][
+"n"
+]))
+main
+()
+thread
+Supported API
+thread.spawn(worker)
+thread.spawn(worker, arg)
+thread.join(thread_handle)
+thread.lock_init()
+thread.lock_acquire(lock)
+thread.lock_release(lock)
+Example
+import
+thread
+def
+worker
+int
+) ->
+int
+return
+def
+main
+():
+thread
+thread
+spawn
+worker
+41
+print
+thread
+join
+))
+main
+()
+Limitation
+The worker restrictions described in
+Concurrency and Parallelism
+are part of the supported public contract.
+memory
+Supported API
+memory.arena_new(size)
+memory.arena_alloc(arena, bytes)
+memory.arena_reset(arena)
+memory.arena_free(arena)
+memory.pool_new(chunk_size, num_chunks)
+memory.pool_alloc(pool)
+memory.pool_free(pool, ptr)
+memory.pool_destroy(pool)
+memory.cast(ptr, Type)
+Example
+import
+memory
+class
+Pair
+left
+int
+right
+int
+def
+main
+():
+arena
+memory
+arena_new
+64
+ptr_a
+memory
+arena_alloc
+arena
+16
+pair_a
+memory
+cast
+ptr_a
+Pair
+pair_a
+left
+pair_a
+right
+print
+pair_a
+left
+pair_a
+right
+memory
+arena_free
+arena
+main
+()
+platform
+Supported API
+platform.os()
+platform.arch()
+platform.cores()
+Example
+import
+platform
+def
+main
+():
+print
+str
+platform
+os
+()))
+print
+str
+platform
+arch
+()))
+print
+platform
+cores
+())
+main
+()
+File I/O builtins
+Supported API
+open(path, mode)
+file.read()
+file.write(text)
+file.close()
+file handles inside
+with
+Example
+def
+main
+():
+with
+open
+"notes.txt"
+"w"
+as
+write
+"LP\n"
+with
+open
+"notes.txt"
+"r"
+as
+print
+read
+())
+main
+()
+Value conversion builtins
+Common builtins used across the examples and tests:
+str(x)
+int(x)
+float(x)
+bool(x)
+len(x)
+print(x)
+range(...)
+These are part of the everyday LP surface even though they are not imported from modules.
+Common errors and limitations
+Unknown
+http.*
+and
+json.*
+calls are intentionally rejected when they are outside the currently supported API subset.
+thread.spawn(...)
+is not a generic callback runner. It requires a named LP worker function.
+memory.cast(...)
+expects a class type in the documented public workflow.
+os.path.*
+is a stable native path for file-system helpers. Arbitrary nested module calls outside documented cases are not guaranteed.
+Source paths for
+numpy
+and arbitrary Python imports exist in the compiler, but they are not documented as stable public workflows yet because the build path is still environment-sensitive.
+See also
+Concurrency and Parallelism
+CLI and Tooling
+Language Reference
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### CLI and Tooling
+============================================================
+CLI and Tooling
+What you'll learn
+This guide documents every public
+lp
+command path exposed by the current compiler entry point, including direct file execution, testing, profiling, watch mode, build, packaging, and C API export.
+Prerequisites
+Read
+Installation and Setup
+first.
+Command Summary
+Command
+Purpose
+lp
+Start the interactive REPL.
+lp file.lp
+Parse, compile, and run an LP file directly.
+lp file.lp -o out.c
+Generate C only.
+lp file.lp -c out.exe
+Compile a named native executable.
+lp file.lp -asm out.s
+Generate assembly.
+lp test [dir]
+Run LP tests in a directory.
+lp profile file.lp
+Build and run the profiling path.
+lp watch file.lp
+Recompile and rerun on file changes.
+lp build file.lp ...
+Build a standalone artifact with build flags.
+lp package file.lp --format ...
+Build then archive the result.
+lp export file.lp ...
+Generate a C API header and optionally a shared library.
+lp
+Starts the REPL.
+Useful REPL commands:
+.help
+.clear
+.show
+.exit
+.quit
+lp file.lp
+Runs an LP file directly.
+lp hello.lp
+Behavior:
+parse source
+generate temporary C
+compile temporary native executable
+run it
+clean up the temporary executable
+lp file.lp -o out.c
+Generate C only.
+lp hello.lp -o hello.c
+Use this when you want to inspect the generated C or compile it manually.
+lp file.lp -c out.exe
+Compile a reusable native executable.
+lp hello.lp -c hello.exe
+On POSIX hosts you would usually omit the
+.exe
+suffix yourself.
+lp file.lp -asm out.s
+Generate assembly.
+lp hello.lp -asm hello.s
+lp test [dir]
+Run LP regression tests.
+lp
+test
+examples
+Behavior today:
+scans for
+test_*.lp
+parses each file
+finds
+def test_*()
+functions
+compiles per-test harness executables
+runs them and prints pass or fail status
+lp profile file.lp
+Profile a program.
+lp profile hello.lp
+Current behavior:
+LP wraps the generated
+main
+body with timing instrumentation
+the profiler prints a total execution report
+this is a simple built-in profiling path, not a full production profiler UI
+lp watch file.lp
+Watch a file and rerun on changes.
+lp watch hello.lp
+Behavior:
+monitors the input file modification time
+recompiles and reruns when the file changes
+clears the screen between runs on supported hosts
+exits with
+Ctrl+C
+lp build file.lp
+Build a standalone native executable.
+lp build app.lp
+Supported flags:
+--release
+--static
+--strip
+--no-console
+-o output_name
+--target windows-x64|linux-x64|linux-arm64|macos-arm64
+Example:
+lp build app.lp --release --strip -o app.exe
+lp package file.lp
+Build and archive an application.
+lp package app.lp --format zip
+lp package app.lp --format tar.gz
+Current behavior:
+calls
+lp build file.lp --release --strip
+archives the resulting host artifact
+accepts
+zip
+and
+tar.gz
+lp export file.lp
+Generate a C API header.
+lp
+export
+api.lp -o my_api
+Generate header plus shared library:
+lp
+export
+api.lp --library -o my_api
+Current behavior:
+without
+--library
+: writes a header only
+with
+--library
+: writes a header and builds a
+.dll
+shared library artifact
+See
+C API Export
+for details.
+lp --help
+Shows the built-in usage summary.
+Common errors and limitations
+Direct run,
+-c
+-asm
+test
+profile
+watch
+build
+package
+, and library export all depend on a working C compiler.
+lp build --target ...
+fails early if the target toolchain is missing.
+lp package
+only knows
+zip
+and
+tar.gz
+lp export --library
+currently writes
+.dll
+naming in the implementation even though the header has non-Windows visibility guards.
+Watch mode recompiles the program repeatedly, so it shares most of the same toolchain failure modes as direct execution.
+See also
+Build and Distribution
+C API Export
+Troubleshooting
+Language Reference
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Build and Distribution
+============================================================
+Build, Distribution, and Cross-Targets
+What you'll learn
+This guide explains the difference between host builds and cross-target builds, how
+lp build
+chooses artifact names, which toolchains are expected, and what the current packaging and distribution limitations are.
+Prerequisites
+Read
+Installation and Setup
+Read
+CLI and Tooling
+for the command overview.
+Concepts
+Host build
+A host build produces a native executable for the machine doing the compilation.
+Examples:
+lp build app.lp
+lp build app.lp --release --strip
+Cross-target build
+A cross-target build asks LP to use a different compiler for a different OS or architecture.
+Example:
+lp build app.lp --target linux-x64
+This requires the matching cross-toolchain to be installed already.
+Supported build flags
+--release
+--static
+--strip
+--no-console
+-o output_name
+--target windows-x64|linux-x64|linux-arm64|macos-arm64
+Artifact Naming Rules
+Host builds
+Windows host builds default to
+<basename>.exe
+POSIX host builds default to
+<basename>
+Cross-target builds
+If
+--target windows-x64
+is used and no
+-o
+is provided, the default artifact name keeps the host executable suffix behavior.
+If
+--target
+is used with a non-Windows target and no
+-o
+is provided, LP defaults to
+<basename>
+without
+.exe
+This behavior was intentionally cleaned up so non-Windows targets do not default to Windows-style names.
+Target Toolchains
+Current target-to-compiler mapping in the implementation:
+Target
+Expected compiler
+windows-x64
+x86_64-w64-mingw32-gcc
+linux-x64
+x86_64-linux-gnu-gcc
+linux-arm64
+aarch64-linux-gnu-gcc
+macos-arm64
+aarch64-apple-darwin-gcc
+Release Builds
+Example:
+lp build app.lp --release --strip
+Current effect:
+higher optimization path
+link-time optimization
+extra aliasing and loop flags
+strip symbols when requested
+Static Builds
+Example:
+lp build app.lp --static
+This forwards
+-static
+to the host toolchain. Whether it succeeds depends on your toolchain and libraries.
+GUI-style Windows builds
+Example:
+lp build app.lp --no-console
+Current effect:
+forwards
+-mwindows
+mainly meaningful for Windows-oriented GUI subsystem builds
+Packaging
+lp package
+currently wraps a host build and then archives it.
+Supported archive formats:
+zip
+tar.gz
+Example:
+lp package app.lp --format zip
+Implementation detail:
+zip
+packaging uses the host
+tar
+command in zip-archive mode
+Windows expects
+tar.exe
+POSIX expects
+tar
+Cross-Target Verification Strategy
+Minimal verification
+Even without the cross-toolchain installed, you can verify that LP reports the missing tool cleanly:
+lp build app.lp --target linux-x64
+Real verification
+To prove the full path, you need:
+the target compiler installed
+the LP compiler built on the host machine
+a successful
+lp build ... --target ...
+run
+ideally, a real test run on the target OS or CI runner
+Current repository status
+This repository includes host build entrypoints for:
+build.bat
+compile.sh
+Makefile
+It also includes CI coverage intended to exercise Windows, Linux, and macOS host build paths.
+Common errors and limitations
+Missing target toolchain is the most common cross-target failure. LP now reports that directly.
+Cross-target success still depends on the requested compiler actually existing on your machine or CI runner.
+parallel for
+code generation is separate from cross-target logic. A successful target build does not automatically mean OpenMP runtime acceleration is enabled.
+lp export --library
+still uses
+.dll
+naming in the current implementation, so it is not yet a generic cross-platform shared-library packaging story.
+lp package
+packages host builds. It is not a full cross-platform release manager.
+See also
+CLI and Tooling
+C API Export
+Troubleshooting
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### C API Export
+============================================================
+C API Export
+What you'll learn
+This guide explains how
+lp export
+generates a C-facing header, how
+--library
+extends that flow, which LP functions become part of the exported API, and which limitations still matter today.
+Prerequisites
+Read
+CLI and Tooling
+first.
+A working host C compiler is required if you use
+--library
+Concepts
+lp export
+is aimed at interoperability with native C or C-compatible callers.
+Current public workflow:
+parse an LP file
+generate a C API header
+optionally compile a shared library artifact
+Header-only export
+Generate a header:
+lp
+export
+api.lp -o demo_api
+Result:
+demo_api.h
+If
+-o
+is omitted, LP uses the LP file basename.
+Header plus shared library
+Generate both:
+lp
+export
+api.lp --library -o demo_api
+Result in the current implementation:
+demo_api.h
+demo_api.dll
+What gets exported
+The header generator walks top-level LP function definitions.
+Current rules:
+top-level public functions are exported
+private
+top-level functions are skipped
+top-level function names starting with
+are skipped by convention
+classes are not automatically turned into a documented stable C object API here
+Naming convention
+Exported symbols are prefixed with
+lp_
+If your LP function is:
+def
+add
+int
+int
+) ->
+int
+return
+The generated declaration follows this pattern:
+LP_EXTERN
+int64_t
+lp_add
+int64_t
+lp_a
+int64_t
+lp_b
+);
+Example LP source
+def
+add
+int
+int
+) ->
+int
+return
+Generate the API:
+lp
+export
+add.lp -o add_api
+lp
+export
+add.lp --library -o add_api
+Minimal C integration example
+#include
+"add_api.h"
+#include
+<stdio.h>
+int
+main
+void
+) {
+printf
+"%lld\n"
+, (
+long long
+lp_add
+20
+22
+));
+return
+;
+}
+Important implementation details
+The generated header uses
+__declspec(dllexport)
+on Windows and visibility attributes elsewhere.
+The current library artifact naming is still
+.dll
+in the implementation when
+--library
+is requested.
+Parameters without explicit LP type annotations may degrade to less helpful C signatures in exported headers. For stable native interop, prefer explicit parameter and return annotations.
+Common errors and limitations
+--library
+requires a working host C compiler and the runtime include path.
+The current implementation is oriented around C-callable top-level functions, not full class or object export.
+Shared-library naming is not yet normalized across Windows, Linux, and macOS.
+Experimental Python-interoperability paths are unrelated to
+lp export
+and are not a replacement for this stable header-generation path.
+See also
+CLI and Tooling
+Build and Distribution
+Troubleshooting
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Examples Cookbook
+============================================================
+Examples Cookbook
+What you'll learn
+This guide walks through the example and regression files in
+examples/
+, explains what each one demonstrates, and shows the fastest command to run it.
+Prerequisites
+Read
+First Programs
+first.
+Cookbook Index
+File
+Main topic
+01_web_fetcher_thread.lp
+HTTP + threads + SQLite
+02_oop_game_engine.lp
+classes, inheritance, methods
+03_memory_arena.lp
+manual arena allocation
+04_parallel_for.lp
+parallel for
+syntax
+05_system_sqlite.lp
+platform + SQLite
+test_global_multiline_lambda.lp
+top-level multiline lambda
+test_inheritance_access.lp
+protected
+inheritance rules
+test_json.lp
+JSON round-trip
+test_memory_control.lp
+arena and pool helpers
+test_multiline_lambda.lp
+local multiline lambda
+test_string_operations.lp
+string methods
+test_thread_sqlite.lp
+thread join + nested subscript + SQLite
+test_type_inference.lp
+local type inference
+01_web_fetcher_thread.lp
+What it teaches
+http.get(...)
+thread.spawn(...)
+thread.join(...)
+SQLite writes from worker threads
+Run it
+lp examples/01_web_fetcher_thread.lp
+What to notice
+each worker is a named function
+each worker returns
+int
+the main thread validates
+thread.join(...)
+results
+02_oop_game_engine.lp
+What it teaches
+class fields
+inherited movement logic
+subclass-specific behavior
+method calls on objects
+Run it
+lp examples/02_oop_game_engine.lp
+What to notice
+both
+Player
+and
+Enemy
+inherit from
+Entity
+methods mutate object fields directly through
+self
+03_memory_arena.lp
+What it teaches
+memory.arena_new(...)
+memory.arena_alloc(...)
+memory.cast(...)
+explicit arena cleanup
+Run it
+lp examples/03_memory_arena.lp
+What to notice
+memory is managed explicitly
+cleanup is part of the example, not optional decoration
+04_parallel_for.lp
+What it teaches
+the
+parallel for
+syntax
+numeric range iteration for heavy work
+current reduction caveats
+Run it
+lp examples/04_parallel_for.lp
+What to notice
+the example uses
+math.sin(...)
+and
+math.cos(...)
+the code comments already warn that reductions are not automatic
+05_system_sqlite.lp
+What it teaches
+platform.os()
+platform.arch()
+platform.cores()
+SQLite table creation and querying
+Run it
+lp examples/05_system_sqlite.lp
+What to notice
+platform helpers return runtime values that are easy to print with
+str(...)
+SQLite query results are accessed through nested subscript
+test_global_multiline_lambda.lp
+What it teaches
+top-level multiline lambda assignment
+Run it
+lp
+test
+examples
+test_inheritance_access.lp
+What it teaches
+protected
+field access from a subclass
+protected
+method access from a subclass
+override behavior
+Run it
+lp
+test
+examples
+test_json.lp
+What it teaches
+json.loads(...)
+json.dumps(...)
+indexed access into parsed JSON values
+Run it
+lp
+test
+examples
+test_memory_control.lp
+What it teaches
+arena allocation
+pool allocation
+memory.cast(...)
+on both allocation paths
+Run it
+lp
+test
+examples
+test_multiline_lambda.lp
+What it teaches
+multiline lambda inside local scope
+Run it
+lp
+test
+examples
+test_string_operations.lp
+What it teaches
+strip
+lower
+upper
+find
+count
+split
+join
+startswith
+endswith
+isdigit
+Run it
+lp
+test
+examples
+test_thread_sqlite.lp
+What it teaches
+thread return values through
+join
+SQLite use from multiple workers
+nested subscript access like
+rows[0]["n"]
+Run it
+lp
+test
+examples
+test_type_inference.lp
+What it teaches
+inferred
+int
+and
+str
+inferred value flow into another function call
+Run it
+lp
+test
+examples
+Common errors and limitations
+Some examples require network access, especially
+01_web_fetcher_thread.lp
+SQLite examples create local
+.db
+files as part of normal execution.
+parallel for
+syntax is demonstrated in the examples, but actual parallel speedup still depends on toolchain configuration.
+See also
+Runtime Modules
+Troubleshooting
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Quick Reference
+============================================================
+LP Quick Reference Card
+A quick syntax reference for LP language.
+🔤 Variables & Types
+Type
+inference
+42
+name
+"LP"
+pi
+14
+flag
+True
+Explicit
+types
+count
+int
+100
+ratio
+float
+label
+str
+"text"
+active
+bool
+False
+📝 Functions
+Basic
+function
+def
+add
+int
+int
+) ->
+int
+return
+Default
+arguments
+def
+greet
+name
+str
+"World"
+) ->
+str
+return
+"Hello "
+name
+Variadic
+function
+def
+sum_all
+(*
+args
+) ->
+int
+total
+for
+in
+args
+total
++=
+return
+total
+📦 Classes
+class
+Animal
+def
+speak
+self
+) ->
+str
+return
+"sound"
+class
+Dog
+Animal
+):
+def
+speak
+self
+) ->
+str
+return
+"woof"
+Access
+modifiers
+class
+Example
+public_var
+int
+private
+internal
+int
+protected
+protected
+int
+🔄 Control Flow
+Conditionals
+if
+10
+print
+"big"
+elif
+print
+"medium"
+else
+print
+"small"
+)
+
+#
+For
+loops
+for
+in
+range
+):
+print
+for
+in
+range
+10
+):
+print
+)
+
+#
+While
+loops
+while
+condition
+break
+continue
+Pattern
+matching
+match
+value
+case
+print
+"one"
+case
+if
+10
+print
+"big"
+case
+_:
+print
+"other"
+⚡ Parallel Computing
+Basic
+parallel
+for
+parallel
+for
+in
+range
+1000000
+):
+process
+)
+
+#
+With
+@settings
+@settings
+threads
+schedule
+"dynamic"
+chunk
+100
+def
+parallel_process
+data
+list
+) ->
+list
+results
+= []
+parallel
+for
+item
+in
+data
+results
+append
+process
+item
+))
+return
+results
+GPU
+acceleration
+@settings
+device
+"gpu"
+gpu_id
+def
+gpu_compute
+int
+) ->
+int
+result
+parallel
+for
+in
+range
+):
+result
++=
+return
+result
+🔒 Security
+Rate
+limiting
+@security
+rate_limit
+100
+def
+api_endpoint
+():
+pass
+Authentication
+required
+@security
+auth
+True
+level
+def
+protected_function
+():
+pass
+Admin
+only
+@security
+admin
+True
+def
+admin_function
+():
+pass
+Read
+only
+mode
+@security
+readonly
+True
+def
+read_function
+():
+pass
+📚 Collections
+Lists
+nums
+= [
+nums
+append
+nums
+]  #
+access
+Dicts
+obj
+= {
+"name"
+"LP"
+"version"
+obj
+"name"
+obj
+keys
+()
+
+#
+Sets
+unique
+= {
+unique
+add
+)
+
+#
+Tuples
+pair
+= (
+first
+second
+pair
+🧵 Strings
+strings
+name
+"LP"
+version
+greeting
+"Hello from {name} v{version}!"
+Methods
+text
+upper
+()
+text
+lower
+()
+text
+strip
+()
+text
+split
+","
+text
+find
+"sub"
+text
+replace
+"old"
+"new"
+🎯 Lambda
+Single
+line
+add
+lambda
+Multi
+line
+process
+lambda
+result
+int
+return
+result
+📂 File I/O
+With
+statement
+with
+open
+"file.txt"
+"r"
+as
+content
+read
+()
+with
+open
+"out.txt"
+"w"
+as
+write
+"content"
+⚠️
+Error Handling
+try
+risky_operation
+()
+except
+print
+"error occurred"
+finally
+cleanup
+()
+raise
+"custom error"
+📦 Imports
+import
+math
+import
+time
+import
+http
+import
+json
+import
+sqlite
+Using
+modules
+math
+sqrt
+16
+time
+now
+()
+http
+get
+"https://api.example.com"
+json
+loads
+('{
+"key"
+"value"
+}')
+🔧 CLI Commands
+lp file.lp
+Run file
+lp file.lp --gcc
+Use GCC backend
+lp file.lp -o out.c
+Generate C
+lp file.lp -c output
+Compile to exe
+lp file.lp -asm out.s
+Generate assembly
+lp
+test
+examples
+Run tests
+lp profile file.lp
+Profile
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Troubleshooting
+============================================================
+Troubleshooting
+What you'll learn
+This guide maps common LP failures to the most likely causes and the fastest fixes.
+Prerequisites
+None.
+Setup and build failures
+Symptom:
+Error: GCC not found
+Cause:
+no usable C compiler is on
+PATH
+on Windows, the expected MSYS2 GCC path is missing
+Fix:
+Windows: install MSYS2 UCRT64 GCC and rebuild with
+build.bat
+Linux: install
+build-essential
+macOS: install Xcode Command Line Tools
+Symptom:
+Error: cannot find lp_runtime.h
+Cause:
+the compiler executable cannot locate the
+runtime/
+include directory
+Fix:
+run the compiler from the repository layout or install runtime headers beside it in the expected structure
+Symptom:
+make
+is not available on the current machine
+Cause:
+the host does not have a POSIX build environment
+Fix:
+use
+build.bat
+on Windows
+or install
+make
+inside MSYS2, WSL, Linux, or macOS
+Symptom:
+Permission denied
+while rebuilding
+build\lp.exe
+Cause:
+the executable is still running or locked by another process
+Fix:
+close the running process and rebuild
+Parser and syntax failures
+Symptom:
+expected ':'
+Cause:
+a colon is missing after
+def
+class
+if
+elif
+else
+for
+while
+try
+except
+finally
+, or
+with
+Fix:
+inspect the failing line and add the colon
+Symptom:
+expected indented block
+Cause:
+the block body is missing or not indented
+Fix:
+indent the block body
+or use
+pass
+for an empty block
+Symptom: the compiler prints nearby lines and a highlight bar
+Cause:
+this is LP's enhanced parser error display working as intended
+Fix:
+focus on the highlighted line first
+then read the hint below the context output
+Access control failures
+Symptom: access to
+private
+or
+protected
+member is rejected
+Cause:
+the current scope is not allowed to read, write, or call that member
+Fix:
+move the access inside the declaring class or a valid subclass for
+protected
+change the member to public if the access should be part of the public API
+Module API failures
+Symptom:
+http.post
+is rejected
+Cause:
+only
+http.get(...)
+is supported today
+Fix:
+use
+http.get(...)
+or add the missing API to the runtime and compiler before documenting or relying on it
+Symptom:
+json.parse
+is rejected
+Cause:
+only
+json.loads(...)
+and
+json.dumps(...)
+are supported today
+Fix:
+switch to
+json.loads(...)
+or
+json.dumps(...)
+Threading failures
+Symptom:
+thread.spawn
+rejects the worker
+Cause:
+One of these conditions is true:
+the worker is not a named LP function
+the worker has more than one parameter
+the worker returns something other than
+int
+or
+void
+the caller passed the wrong number of arguments to the worker
+Fix:
+wrap the logic in a named LP function
+reduce the worker signature to zero or one parameter
+change the return type to
+int
+or
+void
+Tooling failures
+Symptom:
+lp test examples
+reports compile errors for test harnesses
+Cause:
+one or more
+test_*.lp
+files do not parse or compile
+Fix:
+run the failing file directly with
+lp file.lp -o out.c
+if you need more codegen visibility
+Symptom:
+lp watch file.lp
+keeps failing
+Cause:
+the watched file still has a parse, codegen, or toolchain error
+Fix:
+fix the underlying compiler or syntax error first
+then save the file again to trigger a clean run
+Symptom:
+lp profile file.lp
+fails during compilation
+Cause:
+the profile path still depends on the same host compiler and runtime include path as other build modes
+Fix:
+fix GCC discovery or runtime include discovery first
+Symptom:
+Unknown package format
+Cause:
+lp package
+only accepts
+zip
+or
+tar.gz
+Fix:
+use one of the supported formats
+Symptom:
+lp export --library
+fails
+Cause:
+host compiler is missing
+runtime include path is missing
+shared-library build failed
+Fix:
+verify the normal host build path first with
+lp file.lp -c out.exe
+then retry the export path
+Cross-target failures
+Symptom:
+Target toolchain ... was not found
+Cause:
+the requested cross-compiler is not installed on the machine
+Fix:
+Install the compiler that matches your target:
+windows-x64
+->
+x86_64-w64-mingw32-gcc
+linux-x64
+->
+x86_64-linux-gnu-gcc
+linux-arm64
+->
+aarch64-linux-gnu-gcc
+macos-arm64
+->
+aarch64-apple-darwin-gcc
+Common errors and limitations
+Unsupported APIs should be documented as unsupported, not treated as mysterious compiler bugs.
+parallel for
+syntax may compile even when your toolchain is not configured for real OpenMP parallel execution.
+Some advanced source paths exist in the compiler but are not yet stable public workflows. If the docs do not present them as supported, treat them carefully.
+See also
+Installation and Setup
+CLI and Tooling
+Build and Distribution
+Clone this wiki locally
+You can’t perform that action at this time.
+
+============================================================
+### Vietnamese Guide
+============================================================
+Huong Dan LP Bang Tieng Viet
+Muc tieu
+Tai lieu nay la ban onboarding tieng Viet de ban co the:
+build compiler LP
+chay chuong trinh dau tien
+hieu cu phap co ban
+dung cac module chinh
+dung CLI chinh
+hieu build host va cross-target
+xu ly cac loi pho bien
+Dieu kien truoc
+Ban da clone repo.
+Ban co C compiler phu hop voi may dang dung.
+Cai dat nhanh
+Windows
+Duong build local duoc ho tro tot nhat hien nay:
+MSYS2 UCRT64 GCC
+Build compiler:
+build.bat
+Kiem tra:
+build\lp.exe --help
+build\lp.exe test examples
+Linux hoac macOS
+Build compiler:
+make
+hoac
+./compile.sh
+Kiem tra:
+./build/lp --help
+./build/lp
+test
+examples
+Chuong trinh dau tien
+Tao
+hello.lp
+def
+main
+():
+print
+"Xin chao tu LP"
+main
+()
+Chay (Native ASM - khong can GCC!):
+lp hello.lp
+Chay voi GCC backend:
+lp hello.lp --gcc
+Sinh C:
+lp hello.lp -o hello.c
+Compile ra executable:
+lp hello.lp -c hello.exe
+Compilation Backends
+Native Assembly Backend (Mac dinh)
+LP bien dich truc tiep sang assembly ma khong can GCC/LLVM:
+lp file.lp
+Native compilation (default)
+Uu diem:
+Khong can heavy compiler dependencies (~5MB thay vi ~1GB)
+Compilation nhanh
+Control truct tiep generated code
+GCC Backend (Tuy chon)
+De su dung GCC backend:
+lp file.lp --gcc
+Use GCC backend
+Optimizations
+LP tu dong ap dung cac optimizations sau:
+Constant Folding
+Evaluate constant expressions tai compile time:
+Truoc
+optimization
+int
+Sau
+optimization
+compile
+time
+int
+Dead Code Elimination
+Loai bo unreachable code:
+if
+False
+:
+    #
+Doan
+code
+nay
+bi
+loai
+bo
+print
+"Never executed"
+Loop Unrolling
+Unroll small loops cho performance tot hon:
+Small
+constant
+loops
+duoc
+unroll
+for
+in
+range
+):
+print
+Cu phap co ban
+Bien va kieu du lieu
+int
+21
+name
+str
+"LP"
+ratio
+float
+14
+ok
+bool
+true
+LP cung ho tro type inference:
+21
+text
+"LP"
+Ham
+def
+twice
+int
+) ->
+int
+return
+Re nhanh va lap
+if
+10
+print
+"lon"
+else
+print
+"nho"
+for
+in
+range
+):
+print
+F-Strings
+name
+"LP"
+version
+greeting
+"Hello from {name} v{version}!"
+print
+greeting
+)  #
+Output
+Hello
+from
+LP
+v1
+!
+
+#
+Bieu
+thuc
+trong
+string
+10
+20
+print
+"Sum: {x + y}"
+)  #
+Output
+Sum
+30
+Pattern Matching (match/case)
+match
+value
+case
+print
+"one"
+case
+print
+"two"
+case
+_:
+print
+"other"
+)
+
+#
+Voi
+guard
+expression
+match
+case
+if
+print
+"positive"
+case
+_:
+print
+"non-positive"
+Decorators
+LP ho tro hai decorator chinh:
+@settings - Cau hinh Parallel/GPU
+Cau
+hinh
+so
+threads
+@settings
+threads
+def
+parallel_process
+data
+list
+) ->
+list
+results
+= []
+parallel
+for
+item
+in
+data
+results
+append
+process
+item
+))
+return
+results
+GPU
+acceleration
+@settings
+device
+"gpu"
+gpu_id
+def
+gpu_compute
+int
+) ->
+int
+result
+parallel
+for
+in
+range
+):
+result
++=
+return
+result
+Dynamic
+scheduling
+voi
+chunk
+size
+@settings
+threads
+schedule
+"dynamic"
+chunk
+100
+def
+process_large_dataset
+data
+list
+) ->
+int
+count
+parallel
+for
+item
+in
+data
+count
++=
+item
+return
+count
+Auto
+select
+best
+device
+@settings
+device
+"auto"
+def
+auto_parallel
+int
+) ->
+int
+result
+parallel
+for
+in
+range
+):
+result
++=
+return
+result
+Cac tuy chon @settings:
+Setting
+Type
+Mo ta
+Mac dinh
+threads
+int
+So threads (0 = auto)
+schedule
+string
+"static", "dynamic", "guided", "auto"
+"static"
+chunk
+int
+Chunk size cho scheduling
+device
+string
+"cpu", "gpu", "auto"
+"cpu"
+gpu_id
+int
+GPU device ID
+unified
+bool
+Unified memory cho GPU
+false
+@security - Bao mat
+Rate
+limiting
+va
+authentication
+@security
+level
+auth
+True
+rate_limit
+100
+def
+secure_api_endpoint
+data
+dict
+) ->
+dict
+return
+"status"
+"ok"
+}
+
+#
+Access
+control
+@security
+admin
+True
+def
+admin_function
+():
+pass
+Readonly
+mode
+@security
+readonly
+True
+def
+read_only_function
+():
+pass
+Cac tuy chon @security:
+Setting
+Type
+Mo ta
+level
+int
+Muc bao mat (0-4)
+auth
+bool
+Yeu cau authentication
+rate_limit
+int
+So requests toi da/phut
+admin
+bool
+Yeu cau admin access
+readonly
+bool
+Chi doc
+validate
+bool
+Validate input
+sanitize
+bool
+Sanitize output
+Class va ke thua
+class
+Animal
+def
+speak
+self
+) ->
+str
+return
+"animal"
+class
+Dog
+Animal
+):
+def
+speak
+self
+) ->
+str
+return
+"dog"
+private
+va
+protected
+private
+: chi dung duoc ben trong class khai bao no
+protected
+: dung duoc trong class va subclass
+LP check cac luat nay o compile-time
+Strings va collections
+String methods dang duoc verify tot:
+upper()
+lower()
+strip()
+find()
+count()
+split()
+join()
+startswith()
+endswith()
+isdigit()
+Collection literals:
+nums
+= [
+obj
+= {
+"name"
+"LP"
+pair
+= (
+Nested subscript kieu sau da duoc verify:
+rows
+][
+"n"
+Modules chinh
+HTTP
+Ho tro:
+http.get(url)
+Chua ho tro:
+http.post(...)
+JSON
+Ho tro:
+json.loads(text)
+json.dumps(value)
+Chua ho tro:
+json.parse(...)
+SQLite
+Ho tro:
+sqlite.connect(...)
+sqlite.execute(...)
+sqlite.query(...)
+Thread
+Ho tro:
+thread.spawn(...)
+thread.join(...)
+Rang buoc hien tai cua
+thread.spawn(...)
+worker phai la named LP function
+toi da 1 argument
+return type phai la
+int
+hoac
+void
+Memory
+Ho tro:
+memory.arena_new(...)
+memory.arena_alloc(...)
+memory.arena_reset(...)
+memory.arena_free(...)
+memory.pool_new(...)
+memory.pool_alloc(...)
+memory.pool_free(...)
+memory.pool_destroy(...)
+memory.cast(...)
+Platform
+Ho tro:
+platform.os()
+platform.arch()
+platform.cores()
+CLI chinh
+lp
+lp file.lp
+lp file.lp -o out.c
+lp file.lp -c out.exe
+lp file.lp -asm out.s
+lp test examples
+lp profile file.lp
+lp watch file.lp
+lp build file.lp --release --strip
+lp package file.lp --format zip
+lp export file.lp -o api_name
+lp export file.lp --library -o api_name
+Build host va cross-target
+Host build la build cho chinh may dang compile.
+Cross-target la build cho OS hoac architecture khac:
+lp build app.lp --target windows-x64
+lp build app.lp --target linux-x64
+lp build app.lp --target linux-arm64
+lp build app.lp --target macos-arm64
+Neu thieu toolchain, LP se bao loi ro rang som.
+Toolchain mong doi hien tai:
+windows-x64
+->
+x86_64-w64-mingw32-gcc
+linux-x64
+->
+x86_64-linux-gnu-gcc
+linux-arm64
+->
+aarch64-linux-gnu-gcc
+macos-arm64
+->
+aarch64-apple-darwin-gcc
+Loi pho bien
+Error: GCC not found
+Nguyen nhan:
+may chua co compiler phu hop
+Cach sua:
+Windows: cai MSYS2 UCRT64 GCC
+Linux: cai
+build-essential
+macOS: cai Xcode Command Line Tools
+Error: cannot find lp_runtime.h
+Nguyen nhan:
+LP khong tim thay runtime headers
+Cach sua:
+chay compiler dung layout repo hoac dung layout cai dat dung
+thread.spawn
+bi reject
+Nguyen nhan:
+worker khong phai named function
+worker co hon 1 tham so
+worker return type khong phai
+int
+hoac
+void
+http.post
+hoac
+json.parse
+bi reject
+Nguyen nhan:
+day la API chua duoc ho tro trong compiler hien tai
+Tai lieu tiep theo
+Neu muon doc day du hon, chuyen sang bo docs chinh bang tieng Anh:
+[Documentation Map]
+Installation and Setup
+Runtime Modules
+CLI and Tooling
+Language Reference
+Clone this wiki locally
+You can’t perform that action at this time.
