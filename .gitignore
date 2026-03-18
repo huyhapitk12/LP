@@ -36,3 +36,25 @@ test_http_gen.c
 thread_test.db
 __lp_*.c
 __lp_*.exe
+
+# Environment files
+.env
+.env.*
+
+# Download folder (generated files)
+download/
+
+# Upload folder (temporary uploads)
+upload/
+
+# Skills folder (AI system files, not part of LP)
+skills/
+
+# Wiki files (should be in wiki repo, not main repo)
+lp_wiki/
+lp_project/
+
+# JSON data files
+*.json
+!vscode-lp/package.json
+!.github/
