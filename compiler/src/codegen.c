@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <ctype.h>
 #include "lp_compat.h"
 
 /* --- Buffer --- */
@@ -283,6 +284,66 @@ static int parse_native_array_dims(const char *ann, char *sizes[4]) {
     }
     
     return dims;
+}
+
+/* Convert size expression to C code with lp_ prefix for variables
+ * E.g., "n + 2" -> "lp_n + 2" 
+ * Allocates memory for result, caller must free */
+static char *convert_size_expr_to_c(const char *expr) {
+    if (!expr) return strdup("1");
+    
+    /* Allocate result buffer - worst case is each char becomes "lp_" + char */
+    size_t len = strlen(expr);
+    size_t capacity = len * 4 + 1;
+    char *result = (char *)malloc(capacity);
+    if (!result) return strdup("1");
+    
+    size_t out_len = 0;
+    const char *p = expr;
+    
+    while (*p) {
+        /* Check if this is start of an identifier */
+        if (isalpha((unsigned char)*p) || *p == '_') {
+            /* Extract identifier */
+            const char *start = p;
+            while (isalnum((unsigned char)*p) || *p == '_') p++;
+            
+            /* Check if it's a keyword (skip prefixing) */
+            size_t id_len = p - start;
+            int is_keyword = (id_len == 2 && strncmp(start, "if", 2) == 0) ||
+                            (id_len == 4 && strncmp(start, "true", 4) == 0) ||
+                            (id_len == 5 && strncmp(start, "false", 5) == 0);
+            
+            if (!is_keyword) {
+                /* Add lp_ prefix */
+                if (out_len + 3 < capacity) {
+                    result[out_len++] = 'l';
+                    result[out_len++] = 'p';
+                    result[out_len++] = '_';
+                }
+            }
+            
+            /* Copy identifier */
+            for (const char *c = start; c < p && out_len < capacity - 1; c++) {
+                result[out_len++] = *c;
+            }
+        } else {
+            /* Non-identifier character, copy as-is */
+            if (out_len < capacity - 1) {
+                result[out_len++] = *p;
+            }
+            p++;
+        }
+    }
+    result[out_len] = '\0';
+    
+    /* If empty, default to "1" */
+    if (out_len == 0) {
+        free(result);
+        return strdup("1");
+    }
+    
+    return result;
 }
 
 static LpType type_from_annotation(CodeGen *cg, const char *ann) {
@@ -2685,7 +2746,35 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     scope_define_obj(cg->scope, node->assign.name, t, class_name);
                     existing = scope_lookup(cg->scope, node->assign.name);
                     if (existing) existing->declared = 1;  /* Mark as declared */
-                    if (assign_buf == &cg->helpers && node->assign.value && node->assign.value->type == NODE_LAMBDA) {
+                    
+                    /* Handle native array allocation */
+                    if (t == LP_NATIVE_ARRAY_1D || t == LP_NATIVE_ARRAY_2D) {
+                        write_indent(assign_buf, assign_indent);
+                        char *sizes[4] = {NULL, NULL, NULL, NULL};
+                        int dims = parse_native_array_dims(node->assign.type_ann, sizes);
+                        
+                        if (dims == 1) {
+                            /* 1D array: LpIntArray* lp_arr = lp_int_array_new(size) */
+                            char *c_size = convert_size_expr_to_c(sizes[0]);
+                            buf_printf(assign_buf, "LpIntArray* lp_%s = lp_int_array_new(%s);", 
+                                      node->assign.name, c_size ? c_size : "1");
+                            if (c_size) free(c_size);
+                        } else if (dims >= 2) {
+                            /* 2D array: LpIntArray2D* lp_arr = lp_int_array2d_new(rows, cols) */
+                            char *c_size0 = convert_size_expr_to_c(sizes[0]);
+                            char *c_size1 = convert_size_expr_to_c(sizes[1]);
+                            buf_printf(assign_buf, "LpIntArray2D* lp_%s = lp_int_array2d_new(%s, %s);", 
+                                      node->assign.name, c_size0 ? c_size0 : "1", c_size1 ? c_size1 : "1");
+                            if (c_size0) free(c_size0);
+                            if (c_size1) free(c_size1);
+                        }
+                        buf_write(assign_buf, "\n");
+                        
+                        /* Free size strings */
+                        for (int i = 0; i < dims; i++) {
+                            if (sizes[i]) free(sizes[i]);
+                        }
+                    } else if (assign_buf == &cg->helpers && node->assign.value && node->assign.value->type == NODE_LAMBDA) {
                         Buffer lambda_expr_buf;
                         buf_init(&lambda_expr_buf);
                         gen_expr(cg, &lambda_expr_buf, node->assign.value);
@@ -2714,7 +2803,35 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                         /* First use: emit declaration */
                         existing->declared = 1;
                         const char *class_name = existing->class_name;
-                        if (assign_buf == &cg->helpers && node->assign.value && node->assign.value->type == NODE_LAMBDA) {
+                        
+                        /* Handle native array allocation */
+                        if (existing->type == LP_NATIVE_ARRAY_1D || existing->type == LP_NATIVE_ARRAY_2D) {
+                            write_indent(assign_buf, assign_indent);
+                            char *sizes[4] = {NULL, NULL, NULL, NULL};
+                            int dims = parse_native_array_dims(node->assign.type_ann, sizes);
+                            
+                            if (dims == 1) {
+                                /* 1D array: LpIntArray* lp_arr = lp_int_array_new(size) */
+                                char *c_size = convert_size_expr_to_c(sizes[0]);
+                                buf_printf(assign_buf, "LpIntArray* lp_%s = lp_int_array_new(%s);", 
+                                          node->assign.name, c_size ? c_size : "1");
+                                if (c_size) free(c_size);
+                            } else if (dims >= 2) {
+                                /* 2D array: LpIntArray2D* lp_arr = lp_int_array2d_new(rows, cols) */
+                                char *c_size0 = convert_size_expr_to_c(sizes[0]);
+                                char *c_size1 = convert_size_expr_to_c(sizes[1]);
+                                buf_printf(assign_buf, "LpIntArray2D* lp_%s = lp_int_array2d_new(%s, %s);", 
+                                          node->assign.name, c_size0 ? c_size0 : "1", c_size1 ? c_size1 : "1");
+                                if (c_size0) free(c_size0);
+                                if (c_size1) free(c_size1);
+                            }
+                            buf_write(assign_buf, "\n");
+                            
+                            /* Free size strings */
+                            for (int i = 0; i < dims; i++) {
+                                if (sizes[i]) free(sizes[i]);
+                            }
+                        } else if (assign_buf == &cg->helpers && node->assign.value && node->assign.value->type == NODE_LAMBDA) {
                             Buffer lambda_expr_buf;
                             buf_init(&lambda_expr_buf);
                             gen_expr(cg, &lambda_expr_buf, node->assign.value);
@@ -3333,7 +3450,9 @@ static void emit_local_declarations(CodeGen *cg, Buffer *buf, Scope *scope, int 
     /* Only emit for the current scope level, not parent scopes */
     for (int i = 0; i < scope->count; i++) {
         Symbol *sym = &scope->symbols[i];
-        if (!sym->is_function && sym->type != LP_CLASS) {
+        /* Skip functions, classes, and native arrays (need special handling) */
+        if (!sym->is_function && sym->type != LP_CLASS &&
+            sym->type != LP_NATIVE_ARRAY_1D && sym->type != LP_NATIVE_ARRAY_2D) {
             /* Emit declaration without initialization */
             write_indent(buf, indent);
             const char *class_name = sym->class_name;

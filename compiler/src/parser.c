@@ -48,9 +48,10 @@ static void parse_block(Parser *p, NodeList *body);
 
 /* --- Type annotation parsing (supports unions: int | str and generics: Box[int]) --- */
 static char *parse_type_annotation(Parser *p) {
-    /* Parse a type annotation, which can be a single type, a union of types, or a generic type.
-     * Examples: int, str, int | str, Box[int], dict[str, int]
-     * Returns a string with types (e.g., "int|str|float" or "Box[int]" or "dict[str,int]")
+    /* Parse a type annotation, which can be a single type, a union of types, a generic type,
+     * or a native array type for competitive programming.
+     * Examples: int, str, int | str, Box[int], dict[str, int], int[n+2][m+2]
+     * Returns a string with types (e.g., "int|str|float" or "Box[int]" or "int[n+2][m+2]")
      */
     if (!check(p, TOK_IDENTIFIER)) {
         error(p, "expected type identifier");
@@ -61,10 +62,17 @@ static char *parse_type_annotation(Parser *p) {
     char *first_type = tok_to_str(p->current);
     advance(p);
     
-    /* Check for generic type arguments: Box[int] or dict[str, int] */
+    /* Check if this is a native array type: int[expr], float[expr], i64[expr], f64[expr] */
+    int is_native_array = 0;
+    if (strcmp(first_type, "int") == 0 || strcmp(first_type, "i64") == 0 ||
+        strcmp(first_type, "float") == 0 || strcmp(first_type, "f64") == 0) {
+        is_native_array = 1;
+    }
+    
+    /* Check for array brackets or generic type arguments */
     if (check(p, TOK_LBRACKET)) {
-        /* Build a generic type string: Base[type1, type2, ...] */
-        size_t capacity = strlen(first_type) + 64;
+        /* Build a type string: Base[...] */
+        size_t capacity = strlen(first_type) + 256;
         char *result = (char *)malloc(capacity);
         if (!result) {
             free(first_type);
@@ -78,57 +86,131 @@ static char *parse_type_annotation(Parser *p) {
         len = base_len;
         free(first_type);
         
-        /* Add opening bracket */
-        result[len++] = '[';
-        result[len] = '\0';
-        
-        advance(p); /* consume '[' */
-        
-        /* Parse type arguments */
-        int first_arg = 1;
-        while (!check(p, TOK_RBRACKET) && !p->had_error) {
-            if (!first_arg) {
-                expect(p, TOK_COMMA, "expected ',' between type arguments");
-                if (len + 1 >= capacity) {
-                    capacity = len + 64;
-                    char *new_result = (char *)realloc(result, capacity);
-                    if (!new_result) break;
-                    result = new_result;
-                }
-                result[len++] = ',';
-                result[len] = '\0';
+        /* Handle multiple bracket groups for multi-dimensional arrays */
+        while (check(p, TOK_LBRACKET)) {
+            /* Add opening bracket */
+            if (len + 1 >= capacity) {
+                capacity = len + 256;
+                char *new_result = (char *)realloc(result, capacity);
+                if (!new_result) break;
+                result = new_result;
             }
-            first_arg = 0;
+            result[len++] = '[';
+            result[len] = '\0';
             
-            /* Parse the type argument (could be another generic) */
-            char *arg_type = parse_type_annotation(p);
-            if (arg_type) {
-                size_t arg_len = strlen(arg_type);
-                if (len + arg_len + 1 >= capacity) {
-                    capacity = len + arg_len + 64;
-                    char *new_result = (char *)realloc(result, capacity);
-                    if (!new_result) {
-                        free(arg_type);
+            advance(p); /* consume '[' */
+            
+            if (is_native_array) {
+                /* For native arrays, capture the expression as-is (until ']') */
+                /* We need to handle nested brackets and expressions */
+                int bracket_depth = 1;
+                while (!check(p, TOK_RBRACKET) && bracket_depth > 0 && !p->had_error) {
+                    /* Capture the token as a string */
+                    char *tok_str = tok_to_str(p->current);
+                    if (tok_str) {
+                        size_t tok_len = strlen(tok_str);
+                        if (len + tok_len + 2 >= capacity) {
+                            capacity = len + tok_len + 256;
+                            char *new_result = (char *)realloc(result, capacity);
+                            if (!new_result) {
+                                free(tok_str);
+                                break;
+                            }
+                            result = new_result;
+                        }
+                        memcpy(result + len, tok_str, tok_len + 1);
+                        len += tok_len;
+                        free(tok_str);
+                    }
+                    
+                    /* Track bracket depth */
+                    if (check(p, TOK_LBRACKET)) bracket_depth++;
+                    else if (check(p, TOK_RBRACKET)) bracket_depth--;
+                    
+                    if (bracket_depth > 0) advance(p);
+                }
+            } else {
+                /* For generic types, parse type arguments normally */
+                int first_arg = 1;
+                while (!check(p, TOK_RBRACKET) && !p->had_error) {
+                    if (!first_arg) {
+                        if (len + 1 >= capacity) {
+                            capacity = len + 64;
+                            char *new_result = (char *)realloc(result, capacity);
+                            if (!new_result) break;
+                            result = new_result;
+                        }
+                        /* Check if next token is an expression (for mixed case) */
+                        if (!check(p, TOK_IDENTIFIER) && !check(p, TOK_INT_LIT)) {
+                            expect(p, TOK_COMMA, "expected ',' between type arguments");
+                            result[len++] = ',';
+                            result[len] = '\0';
+                        }
+                    }
+                    first_arg = 0;
+                    
+                    /* Check if this looks like an expression (number or operator) */
+                    if (check(p, TOK_INT_LIT) || check(p, TOK_PLUS) || check(p, TOK_MINUS) ||
+                        check(p, TOK_STAR) || check(p, TOK_IDENTIFIER)) {
+                        /* This is likely a native array expression, switch mode */
+                        is_native_array = 1;
+                        /* Capture expression tokens */
+                        int bracket_depth = 1;
+                        while (!check(p, TOK_RBRACKET) && bracket_depth > 0 && !p->had_error) {
+                            char *tok_str = tok_to_str(p->current);
+                            if (tok_str) {
+                                size_t tok_len = strlen(tok_str);
+                                if (len + tok_len + 2 >= capacity) {
+                                    capacity = len + tok_len + 256;
+                                    char *new_result = (char *)realloc(result, capacity);
+                                    if (!new_result) {
+                                        free(tok_str);
+                                        break;
+                                    }
+                                    result = new_result;
+                                }
+                                memcpy(result + len, tok_str, tok_len + 1);
+                                len += tok_len;
+                                free(tok_str);
+                            }
+                            if (check(p, TOK_LBRACKET)) bracket_depth++;
+                            else if (check(p, TOK_RBRACKET)) bracket_depth--;
+                            if (bracket_depth > 0) advance(p);
+                        }
                         break;
                     }
-                    result = new_result;
+                    
+                    /* Parse the type argument */
+                    char *arg_type = parse_type_annotation(p);
+                    if (arg_type) {
+                        size_t arg_len = strlen(arg_type);
+                        if (len + arg_len + 1 >= capacity) {
+                            capacity = len + arg_len + 64;
+                            char *new_result = (char *)realloc(result, capacity);
+                            if (!new_result) {
+                                free(arg_type);
+                                break;
+                            }
+                            result = new_result;
+                        }
+                        memcpy(result + len, arg_type, arg_len + 1);
+                        len += arg_len;
+                        free(arg_type);
+                    }
                 }
-                memcpy(result + len, arg_type, arg_len + 1);
-                len += arg_len;
-                free(arg_type);
             }
+            
+            expect(p, TOK_RBRACKET, "expected ']' after array size or type arguments");
+            
+            /* Add closing bracket */
+            if (len + 1 >= capacity) {
+                capacity = len + 2;
+                char *new_result = (char *)realloc(result, capacity);
+                if (new_result) result = new_result;
+            }
+            result[len++] = ']';
+            result[len] = '\0';
         }
-        
-        expect(p, TOK_RBRACKET, "expected ']' after type arguments");
-        
-        /* Add closing bracket */
-        if (len + 1 >= capacity) {
-            capacity = len + 2;
-            char *new_result = (char *)realloc(result, capacity);
-            if (new_result) result = new_result;
-        }
-        result[len++] = ']';
-        result[len] = '\0';
         
         return result;
     }
