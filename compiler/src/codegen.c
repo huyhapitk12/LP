@@ -1009,6 +1009,25 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 LpType lt = infer_type(cg, node->bin_op.left);
                 LpType rt = infer_type(cg, node->bin_op.right);
 
+                /* Special handling for list * int: create a list with repeated elements */
+                if (op == TOK_STAR && lt == LP_LIST && (rt == LP_INT || rt == LP_VAL)) {
+                    buf_write(buf, "lp_list_repeat(");
+                    emit_lp_val(cg, buf, node->bin_op.left);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->bin_op.right);
+                    buf_write(buf, ")");
+                    break;
+                }
+                /* Also handle int * list: 3 * [0] -> [0, 0, 0] */
+                if (op == TOK_STAR && rt == LP_LIST && (lt == LP_INT || lt == LP_VAL)) {
+                    buf_write(buf, "lp_list_repeat(");
+                    emit_lp_val(cg, buf, node->bin_op.right);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->bin_op.left);
+                    buf_write(buf, ")");
+                    break;
+                }
+
                 if (lt == LP_VAL || rt == LP_VAL || lt == LP_DICT || rt == LP_DICT || lt == LP_LIST || rt == LP_LIST) {
                     const char *func = NULL;
                     switch (op) {
@@ -1377,8 +1396,36 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             buf_write(buf, "lp_io_writeln(");
                         } else if (strcmp(func_name, "write_int") == 0) {
                             buf_write(buf, "lp_io_write_int(");
+                            /* Generate argument with type conversion if needed */
+                            for (int i = 0; i < node->call.args.count; i++) {
+                                if (i > 0) buf_write(buf, ", ");
+                                LpType arg_type = infer_type(cg, node->call.args.items[i]);
+                                if (arg_type == LP_VAL || arg_type == LP_LIST) {
+                                    buf_write(buf, "lp_val_as_int(");
+                                    gen_expr(cg, buf, node->call.args.items[i]);
+                                    buf_write(buf, ")");
+                                } else {
+                                    gen_expr(cg, buf, node->call.args.items[i]);
+                                }
+                            }
+                            buf_write(buf, ")");
+                            break;
                         } else if (strcmp(func_name, "write_int_ln") == 0) {
                             buf_write(buf, "lp_io_write_int_ln(");
+                            /* Generate argument with type conversion if needed */
+                            for (int i = 0; i < node->call.args.count; i++) {
+                                if (i > 0) buf_write(buf, ", ");
+                                LpType arg_type = infer_type(cg, node->call.args.items[i]);
+                                if (arg_type == LP_VAL || arg_type == LP_LIST) {
+                                    buf_write(buf, "lp_val_as_int(");
+                                    gen_expr(cg, buf, node->call.args.items[i]);
+                                    buf_write(buf, ")");
+                                } else {
+                                    gen_expr(cg, buf, node->call.args.items[i]);
+                                }
+                            }
+                            buf_write(buf, ")");
+                            break;
                         } else if (strcmp(func_name, "write_str_ln") == 0) {
                             buf_write(buf, "lp_io_write_str_ln(");
                         } else if (strcmp(func_name, "flush") == 0) {
@@ -2568,6 +2615,8 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                         }
                     }
                     scope_define_obj(cg->scope, node->assign.name, t, class_name);
+                    existing = scope_lookup(cg->scope, node->assign.name);
+                    if (existing) existing->declared = 1;  /* Mark as declared */
                     if (assign_buf == &cg->helpers && node->assign.value && node->assign.value->type == NODE_LAMBDA) {
                         Buffer lambda_expr_buf;
                         buf_init(&lambda_expr_buf);
@@ -2592,20 +2641,50 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                         buf_write(assign_buf, ";\n");
                     }
                 } else {
-                    if (assign_buf == &cg->helpers && node->assign.value && node->assign.value->type == NODE_LAMBDA) {
-                        Buffer lambda_expr_buf;
-                        buf_init(&lambda_expr_buf);
-                        gen_expr(cg, &lambda_expr_buf, node->assign.value);
-                        write_indent(assign_buf, assign_indent);
-                        buf_printf(assign_buf, "lp_%s = ", node->assign.name);
-                        buf_write(assign_buf, lambda_expr_buf.data ? lambda_expr_buf.data : "");
-                        buf_write(assign_buf, ";\n");
-                        buf_free(&lambda_expr_buf);
+                    /* Symbol exists - check if it needs declaration */
+                    if (!existing->declared) {
+                        /* First use: emit declaration */
+                        existing->declared = 1;
+                        const char *class_name = existing->class_name;
+                        if (assign_buf == &cg->helpers && node->assign.value && node->assign.value->type == NODE_LAMBDA) {
+                            Buffer lambda_expr_buf;
+                            buf_init(&lambda_expr_buf);
+                            gen_expr(cg, &lambda_expr_buf, node->assign.value);
+                            write_indent(assign_buf, assign_indent);
+                            buf_printf(assign_buf, "__auto_type lp_%s = ", node->assign.name);
+                            buf_write(assign_buf, lambda_expr_buf.data ? lambda_expr_buf.data : "");
+                            buf_write(assign_buf, ";\n");
+                            buf_free(&lambda_expr_buf);
+                        } else {
+                            write_indent(assign_buf, assign_indent);
+                            if (node->assign.value && node->assign.value->type == NODE_LAMBDA) {
+                                buf_printf(assign_buf, "__auto_type lp_%s", node->assign.name);
+                            } else {
+                                buf_printf(assign_buf, "%s lp_%s", lp_type_to_c_obj(existing->type, class_name), node->assign.name);
+                            }
+                            if (node->assign.value) {
+                                buf_write(assign_buf, " = ");
+                                emit_cast(cg, assign_buf, node->assign.value, existing->type);
+                            }
+                            buf_write(assign_buf, ";\n");
+                        }
                     } else {
-                        write_indent(assign_buf, assign_indent);
-                        buf_printf(assign_buf, "lp_%s = ", node->assign.name);
-                        emit_cast(cg, assign_buf, node->assign.value, existing->type);
-                        buf_write(assign_buf, ";\n");
+                        /* Already declared: just assign */
+                        if (assign_buf == &cg->helpers && node->assign.value && node->assign.value->type == NODE_LAMBDA) {
+                            Buffer lambda_expr_buf;
+                            buf_init(&lambda_expr_buf);
+                            gen_expr(cg, &lambda_expr_buf, node->assign.value);
+                            write_indent(assign_buf, assign_indent);
+                            buf_printf(assign_buf, "lp_%s = ", node->assign.name);
+                            buf_write(assign_buf, lambda_expr_buf.data ? lambda_expr_buf.data : "");
+                            buf_write(assign_buf, ";\n");
+                            buf_free(&lambda_expr_buf);
+                        } else {
+                            write_indent(assign_buf, assign_indent);
+                            buf_printf(assign_buf, "lp_%s = ", node->assign.name);
+                            emit_cast(cg, assign_buf, node->assign.value, existing->type);
+                            buf_write(assign_buf, ";\n");
+                        }
                     }
                 }
             }
@@ -2744,20 +2823,23 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     buf_printf(buf, "; lp_%s++) {\n", node->for_stmt.var);
                     
                 } else if (args->count >= 3) {
-                    buf_printf(buf, "int64_t __lp_step_%s = ", node->for_stmt.var);
+                    /* Use a unique step variable name to avoid redefinition */
+                    static int step_counter = 0;
+                    int step_id = step_counter++;
+                    buf_printf(buf, "int64_t __lp_step_%d = ", step_id);
                     gen_expr(cg, buf, args->items[2]);
                     buf_write(buf, ";\n");
 
                     /* Rẽ nhánh if/else dựa trên giá trị step */
                     write_indent(buf, indent);
-                    buf_printf(buf, "if (__lp_step_%s > 0) {\n", node->for_stmt.var);
+                    buf_printf(buf, "if (__lp_step_%d > 0) {\n", step_id);
                     
                     write_indent(buf, indent + 1);
                     buf_printf(buf, "for (int64_t lp_%s = ", node->for_stmt.var);
                     gen_expr(cg, buf, args->items[0]);
                     buf_printf(buf, "; lp_%s < ", node->for_stmt.var);
                     gen_expr(cg, buf, args->items[1]);
-                    buf_printf(buf, "; lp_%s += __lp_step_%s) {\n", node->for_stmt.var, node->for_stmt.var);
+                    buf_printf(buf, "; lp_%s += __lp_step_%d) {\n", node->for_stmt.var, step_id);
                     
                     /* Sinh thân vòng lặp cho nhánh dương */
                     for (int i = 0; i < node->for_stmt.body.count; i++)
@@ -2773,7 +2855,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     gen_expr(cg, buf, args->items[0]);
                     buf_printf(buf, "; lp_%s > ", node->for_stmt.var); /* Dùng dấu > cho step âm */
                     gen_expr(cg, buf, args->items[1]);
-                    buf_printf(buf, "; lp_%s += __lp_step_%s) {\n", node->for_stmt.var, node->for_stmt.var);
+                    buf_printf(buf, "; lp_%s += __lp_step_%d) {\n", node->for_stmt.var, step_id);
                     
                     /* Sinh thân vòng lặp cho nhánh âm */
                     for (int i = 0; i < node->for_stmt.body.count; i++)
@@ -2782,8 +2864,11 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     write_indent(buf, indent + 1);
                     buf_printf(buf, "}\n");
                     
-                    /* Thoát khỏi hàm gen_stmt ở đây vì đã tự sinh thân vòng lặp và dấu đóng ngoặc rồi */
-                    return;
+                    /* Đóng brace cho nhánh else */
+                    write_indent(buf, indent);
+                    buf_printf(buf, "}\n");
+                    
+                    break;
                 }
             } else {
                 LpType iter_type = infer_type(cg, node->for_stmt.iter);
@@ -3174,6 +3259,22 @@ static void scan_declarations(CodeGen *cg, NodeList *body) {
     }
 }
 
+/* Emit declarations for all local variables in scope (hoisting) */
+static void emit_local_declarations(CodeGen *cg, Buffer *buf, Scope *scope, int indent) {
+    if (!scope) return;
+    /* Only emit for the current scope level, not parent scopes */
+    for (int i = 0; i < scope->count; i++) {
+        Symbol *sym = &scope->symbols[i];
+        if (!sym->is_function && sym->type != LP_CLASS) {
+            /* Emit declaration without initialization */
+            write_indent(buf, indent);
+            const char *class_name = sym->class_name;
+            buf_printf(buf, "%s lp_%s;\n", lp_type_to_c_obj(sym->type, class_name), sym->name);
+            sym->declared = 1;  /* Mark as declared so gen_stmt doesn't emit again */
+        }
+    }
+}
+
 static LpType infer_return_type(CodeGen *cg, NodeList *body) {
     for (int i = 0; i < body->count; i++) {
         AstNode *stmt = body->items[i];
@@ -3342,6 +3443,10 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
         }
     }
     buf_write(&cg->funcs, ") {\n");
+
+    /* Scan body for local variable declarations and emit them at the top */
+    scan_declarations(cg, &node->func_def.body);
+    emit_local_declarations(cg, &cg->funcs, func_scope, 1);
 
     /* Process decorators for @settings (parallel/GPU configuration) */
     for (int d = 0; d < node->func_def.decorators.count; d++) {
@@ -3711,6 +3816,8 @@ void codegen_init(CodeGen *cg) {
     cg->uses_parallel = 0;
     cg->uses_gpu = 0;
     cg->uses_security = 0;
+    cg->uses_dsa = 0;
+    cg->has_main = 0;
     cg->thread_adapter_count = 0;
 }
 void codegen_generate(CodeGen *cg, AstNode *program) {
@@ -3840,6 +3947,10 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
             if (func_sym) {
                 populate_function_symbol(cg, func_sym, stmt, NULL);
             }
+            /* Track if main() is defined */
+            if (strcmp(stmt->func_def.name, "main") == 0) {
+                cg->has_main = 1;
+            }
         } else if (stmt->type == NODE_ASYNC_DEF) {
             /* Register async functions similarly to regular functions */
             Symbol *func_sym = scope_define(cg->scope, stmt->async_def.name, LP_VOID);
@@ -3946,7 +4057,11 @@ char *codegen_get_output(CodeGen *cg) {
         buf_write(&out, "    lp_py_finalize();\n");
     }
 
-    buf_write(&out, "    return (int)lp_main();\n}\n");
+    if (cg->has_main) {
+        buf_write(&out, "    return (int)lp_main();\n}\n");
+    } else {
+        buf_write(&out, "    return 0;\n}\n");
+    }
     return out.data;
 }
 void codegen_free(CodeGen *cg) {

@@ -143,6 +143,32 @@ static inline void lp_list_append(LpList *l, LpVal value) {
     }
 }
 
+/* Create a new list by repeating an element n times: [elem] * n */
+static inline LpList* lp_list_repeat(LpVal elem, int64_t n) {
+    LpList *l = lp_list_new();
+    if (!l) return NULL;
+    if (n <= 0) return l;
+    /* Pre-allocate capacity */
+    int64_t cap = (n < 8) ? 8 : n;
+    LpVal* new_items = (LpVal*)realloc(l->items, sizeof(LpVal) * cap);
+    if (!new_items) { lp_list_free(l); return NULL; }
+    l->items = new_items;
+    l->cap = cap;
+    /* Fill with repeated elements */
+    for (int64_t i = 0; i < n; i++) {
+        if (elem.type == LP_VAL_STRING) {
+            LpVal vcopy;
+            vcopy.type = LP_VAL_STRING;
+            vcopy.as.s = strdup(elem.as.s);
+            if (!vcopy.as.s) { lp_list_free(l); return NULL; }
+            l->items[l->len++] = vcopy;
+        } else {
+            l->items[l->len++] = elem;
+        }
+    }
+    return l;
+}
+
 static inline void lp_dict_free(LpDict *d) {
     if (!d) return;
     for (int64_t i = 0; i < d->capacity; i++) {
@@ -332,6 +358,13 @@ static inline int64_t lp_val_as_int_or(LpVal v, int64_t default_val) {
     if (v.type == LP_VAL_INT) return v.as.i;
     if (v.type == LP_VAL_FLOAT) return (int64_t)v.as.f;
     return default_val;
+}
+
+/* Type narrowing - extract int (assumes type is already known to be int) */
+static inline int64_t lp_val_as_int(LpVal v) {
+    if (v.type == LP_VAL_INT) return v.as.i;
+    if (v.type == LP_VAL_FLOAT) return (int64_t)v.as.f;
+    return 0;
 }
 
 /* Type narrowing - extract float with default */
