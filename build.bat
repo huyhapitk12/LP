@@ -38,6 +38,8 @@ echo [LP Build] Using GCC: %GCC%
     compiler\src\asm_optimize.c ^
     compiler\src\repl.c ^
     compiler\src\process_utils.c ^
+    compiler\src\error_reporter.c ^
+    compiler\src\semantic_check.c ^
     -I compiler\src ^
     -I runtime ^
     -o build\lp.exe -lm
