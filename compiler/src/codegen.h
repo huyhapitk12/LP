@@ -94,6 +94,7 @@ typedef struct {
     int uses_gpu;     /* needs lp_gpu.h */
     int uses_security;/* needs lp_security.h */
     int uses_dsa;     /* needs lp_dsa.h (competitive programming / DSA) */
+    int has_main;     /* True if main() function was defined by user */
     int thread_adapter_count;
 } CodeGen;
 
