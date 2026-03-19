@@ -541,14 +541,30 @@ static AstNode *parse_postfix(Parser *p) {
             expr = call;
         } else if (match(p, TOK_LBRACKET)) {
             /* Check for generic instantiation: Name[Type1, Type2, ...]()
-             * We detect this by looking ahead: if we see identifiers followed by comma or ],
-             * and then a '(' for a call, it's a generic instantiation.
+             * We only consider this if the identifier starts with uppercase (type name convention).
+             * If it starts with lowercase, it's definitely a subscript.
              */
+            int might_be_generic = 0;
             if (expr->type == NODE_NAME && check(p, TOK_IDENTIFIER)) {
+                /* Check if the identifier starts with uppercase (type name convention) */
+                const char *id_start = p->current.start;
+                int id_len = p->current.length;
+                (void)id_len;  /* Unused for now */
+                if (id_start && *id_start >= 'A' && *id_start <= 'Z') {
+                    might_be_generic = 1;
+                }
+            }
+            
+            if (might_be_generic) {
                 /* Look ahead to see if this is a generic type argument list */
                 /* Save parser state */
                 Token saved_current = p->current;
                 Token saved_previous = p->previous;
+                const char *saved_lexer_pos = p->lexer.current;
+                int saved_lexer_line = p->lexer.line;
+                int saved_paren_depth = p->lexer.paren_depth;
+                int saved_indent_top = p->lexer.indent_top;
+                int saved_pending_dedents = p->lexer.pending_dedents;
                 
                 /* Try to parse as type arguments */
                 int is_generic = 1;
@@ -628,39 +644,28 @@ static AstNode *parse_postfix(Parser *p) {
                         }
                         expect(p, TOK_RPAREN, "expected ')'");
                         
-                        /* Free the original name expression since we took ownership of the name */
-                        free(expr);
+                        /* Note: expr is arena-allocated, don't free it */
                         expr = call;
                         continue;
                     } else {
-                        /* Just a generic type reference (like in a type annotation context) */
-                        /* Create a NODE_GENERIC_INST but don't call it */
-                        AstNode *gen_inst = ast_new(p->arena, NODE_GENERIC_INST, line);
-                        gen_inst->generic_inst.base_name = expr->name_expr.name;
-                        node_list_init(&gen_inst->generic_inst.type_args);
-                        
-                        /* Re-parse the type arguments */
+                        /* Not a generic instantiation - restore and parse as subscript */
                         p->current = saved_current;
                         p->previous = saved_previous;
-                        advance(p); /* consume '[' */
-                        
-                        do {
-                            expect(p, TOK_IDENTIFIER, "expected type argument");
-                            AstNode *type_arg = ast_new(p->arena, NODE_NAME, p->previous.line);
-                            type_arg->name_expr.name = tok_to_str(p->previous);
-                            node_list_push(&gen_inst->generic_inst.type_args, type_arg);
-                        } while (match(p, TOK_COMMA));
-                        
-                        expect(p, TOK_RBRACKET, "expected ']'");
-                        
-                        free(expr);
-                        expr = gen_inst;
-                        continue;
+                        p->lexer.current = saved_lexer_pos;
+                        p->lexer.line = saved_lexer_line;
+                        p->lexer.paren_depth = saved_paren_depth;
+                        p->lexer.indent_top = saved_indent_top;
+                        p->lexer.pending_dedents = saved_pending_dedents;
                     }
                 } else {
                     /* Not a generic type list, restore and parse as subscript */
                     p->current = saved_current;
                     p->previous = saved_previous;
+                    p->lexer.current = saved_lexer_pos;
+                    p->lexer.line = saved_lexer_line;
+                    p->lexer.paren_depth = saved_paren_depth;
+                    p->lexer.indent_top = saved_indent_top;
+                    p->lexer.pending_dedents = saved_pending_dedents;
                 }
             }
             
