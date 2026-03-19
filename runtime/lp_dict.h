@@ -390,4 +390,71 @@ static inline int lp_val_assert_type(LpVal v, LpValType expected, const char* co
     return 1;
 }
 
+/* ========================================
+ * FAST INT ARRAYS FOR COMPETITIVE PROGRAMMING
+ * Zero-overhead raw int64_t arrays - bypass LpVal boxing
+ * ======================================== */
+
+typedef struct {
+    int64_t *data;
+    int64_t len;
+} LpIntArray;
+
+static inline LpIntArray* lp_int_array_new(int64_t size) {
+    LpIntArray *arr = (LpIntArray*)malloc(sizeof(LpIntArray));
+    if (!arr) return NULL;
+    arr->data = (int64_t*)calloc(size, sizeof(int64_t));
+    if (!arr->data) { free(arr); return NULL; }
+    arr->len = size;
+    return arr;
+}
+
+static inline void lp_int_array_free(LpIntArray *arr) {
+    if (arr) { free(arr->data); free(arr); }
+}
+
+static inline int64_t lp_int_array_get(LpIntArray *arr, int64_t idx) {
+    return arr->data[idx];
+}
+
+static inline void lp_int_array_set(LpIntArray *arr, int64_t idx, int64_t val) {
+    arr->data[idx] = val;
+}
+
+static inline LpIntArray* lp_int_array_repeat(int64_t val, int64_t count) {
+    LpIntArray *arr = lp_int_array_new(count);
+    if (!arr) return NULL;
+    for (int64_t i = 0; i < count; i++) arr->data[i] = val;
+    return arr;
+}
+
+/* 2D array as 1D with row-major indexing */
+typedef struct {
+    int64_t *data;
+    int64_t rows;
+    int64_t cols;
+} LpIntArray2D;
+
+static inline LpIntArray2D* lp_int_array2d_new(int64_t rows, int64_t cols) {
+    LpIntArray2D *arr = (LpIntArray2D*)malloc(sizeof(LpIntArray2D));
+    if (!arr) return NULL;
+    arr->data = (int64_t*)calloc(rows * cols, sizeof(int64_t));
+    if (!arr->data) { free(arr); return NULL; }
+    arr->rows = rows;
+    arr->cols = cols;
+    return arr;
+}
+
+static inline void lp_int_array2d_free(LpIntArray2D *arr) {
+    if (arr) { free(arr->data); free(arr); }
+}
+
+static inline int64_t lp_int_array2d_get(LpIntArray2D *arr, int64_t r, int64_t c) {
+    return arr->data[r * arr->cols + c];
+}
+
+static inline void lp_int_array2d_set(LpIntArray2D *arr, int64_t r, int64_t c, int64_t val) {
+    arr->data[r * arr->cols + c] = val;
+}
+
 #endif /* LP_DICT_H */

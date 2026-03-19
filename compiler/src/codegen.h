@@ -21,7 +21,9 @@ typedef enum {
     LP_INT, LP_FLOAT, LP_STRING, LP_BOOL, LP_VOID,
     LP_PYOBJ, LP_LIST, LP_ARRAY, LP_STR_ARRAY,
     LP_DICT, LP_SET, LP_TUPLE, LP_FILE, LP_CLASS, LP_OBJECT, LP_VAL, LP_SQLITE_DB,
-    LP_THREAD, LP_LOCK, LP_ARENA, LP_POOL, LP_PTR, LP_UNKNOWN
+    LP_THREAD, LP_LOCK, LP_ARENA, LP_POOL, LP_PTR, LP_UNKNOWN,
+    /* Native arrays for competitive programming - zero overhead */
+    LP_NATIVE_ARRAY_1D, LP_NATIVE_ARRAY_2D
 } LpType;
 
 /* Module import tracking */
@@ -57,6 +59,9 @@ typedef struct {
     char *owner_class; /* Which class owns this member. NULL if global. */
     char *base_class;  /* Parent class constraint if this symbol is an LP_CLASS */
     int is_method;     /* True if the symbol is a class method rather than a field */
+    /* Native array dimensions for competitive programming */
+    int array_dims;           /* Number of dimensions (0 = not an array, 1 = 1D, 2 = 2D) */
+    char *array_size_expr[4]; /* Size expression for each dimension (can be expression) */
 } Symbol;
 
 typedef struct Scope Scope;
