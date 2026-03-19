@@ -58,3 +58,7 @@ lp_project/
 *.json
 !vscode-lp/package.json
 !.github/
+a.lp
+a.py
+a.cpp
+test_max.in

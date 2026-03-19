@@ -418,8 +418,8 @@ static void show_error_context(const char *source, const char *error_msg) {
         return;
     }
 
-    fprintf(stderr, "\n\033[1;31m  \xe2\x9d\x8c Compile Error\033[0m\n");
-    fprintf(stderr, "  \033[2m\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\033[0m\n");
+    fprintf(stderr, "\n\033[1;31m  [ERROR] Compile Error\033[0m\n");
+    fprintf(stderr, "  \033[2m--------------------\033[0m\n");
     fprintf(stderr, "  \033[1;37m%s\033[0m\n\n", error_msg);
 
     /* Show context: 2 lines before, error line, 1 line after */
@@ -451,15 +451,15 @@ static void show_error_context(const char *source, const char *error_msg) {
         int line_len = (int)(le - ls);
 
         if (ln == err_line) {
-            fprintf(stderr, "  \033[1;31m%4d \xe2\x94\x82 ", ln);
+            fprintf(stderr, "  \033[1;31m%4d | ", ln);
             fwrite(ls, 1, line_len, stderr);
             fprintf(stderr, "\033[0m\n");
             /* Print ^ pointer */
-            fprintf(stderr, "       \033[1;31m\xe2\x94\x82 ");
+            fprintf(stderr, "       \033[1;31m| ");
             for (int k = 0; k < line_len && k < 60; k++) fprintf(stderr, "^");
             fprintf(stderr, "\033[0m\n");
         } else {
-            fprintf(stderr, "  \033[2m%4d \xe2\x94\x82 ", ln);
+            fprintf(stderr, "  \033[2m%4d | ", ln);
             fwrite(ls, 1, line_len, stderr);
             fprintf(stderr, "\033[0m\n");
         }
@@ -468,13 +468,13 @@ static void show_error_context(const char *source, const char *error_msg) {
     /* Suggestions for common errors */
     fprintf(stderr, "\n");
     if (strstr(error_msg, "expected ':'")) {
-        fprintf(stderr, "  \033[1;36m\xF0\x9F\x92\xa1 Hint: Did you forget a colon ':' after the statement?\033[0m\n");
+        fprintf(stderr, "  \033[1;36m[HINT] Hint: Did you forget a colon ':' after the statement?\033[0m\n");
     } else if (strstr(error_msg, "expected ')'")) {
-        fprintf(stderr, "  \033[1;36m\xF0\x9F\x92\xa1 Hint: Check for unmatched parentheses.\033[0m\n");
+        fprintf(stderr, "  \033[1;36m[HINT] Hint: Check for unmatched parentheses.\033[0m\n");
     } else if (strstr(error_msg, "expected expression")) {
-        fprintf(stderr, "  \033[1;36m\xF0\x9F\x92\xa1 Hint: You might have a syntax error or missing value.\033[0m\n");
+        fprintf(stderr, "  \033[1;36m[HINT] Hint: You might have a syntax error or missing value.\033[0m\n");
     } else if (strstr(error_msg, "expected indented block")) {
-        fprintf(stderr, "  \033[1;36m\xF0\x9F\x92\xa1 Hint: Add an indented body (or use 'pass' for an empty body).\033[0m\n");
+        fprintf(stderr, "  \033[1;36m[HINT] Hint: Add an indented body (or use 'pass' for an empty body).\033[0m\n");
     }
     fprintf(stderr, "\n");
 }
@@ -1317,8 +1317,8 @@ int run_tests(const char *argv0, const char *test_dir) {
     system("");
 #endif
 
-    printf("\n\033[1m\033[36m  \xF0\x9F\xA7\xAA LP Test Runner\033[0m\n");
-    printf("\033[2m  ────────────────────────\033[0m\n\n");
+    printf("\n\033[1m\033[36m  LP Test Runner\033[0m\n");
+    printf("\033[2m  ------------------------\033[0m\n\n");
 
     /* Internal C unit tests */
     extern void run_repl_tests(void);
@@ -1361,7 +1361,7 @@ int run_tests(const char *argv0, const char *test_dir) {
     do {
         char filepath[600];
         if (!lp_join_with_sep(filepath, sizeof(filepath), test_dir, LP_PATH_SEP, fd.name)) {
-            printf("    \033[31m\xE2\x9D\x8C Test file path too long\033[0m\n");
+            printf("    \033[31m[ERROR] Test file path too long\033[0m\n");
             total_failed++;
             continue;
         }
@@ -1371,34 +1371,34 @@ int run_tests(const char *argv0, const char *test_dir) {
         /* Read file */
         FILE *f = fopen(filepath, "rb");
         if (!f) {
-            printf("    \033[31m\xE2\x9D\x8C Cannot open file\033[0m\n");
+            printf("    \033[31m[ERROR] Cannot open file\033[0m\n");
             total_failed++;
             continue;
         }
         if (fseek(f, 0, SEEK_END) != 0) {
             fclose(f);
-            printf("    \033[31m\xE2\x9D\x8C Cannot seek file\033[0m\n");
+            printf("    \033[31m[ERROR] Cannot seek file\033[0m\n");
             total_failed++;
             continue;
         }
         long size = ftell(f);
         if (size < 0 || fseek(f, 0, SEEK_SET) != 0) {
             fclose(f);
-            printf("    \033[31m\xE2\x9D\x8C Cannot read file size\033[0m\n");
+            printf("    \033[31m[ERROR] Cannot read file size\033[0m\n");
             total_failed++;
             continue;
         }
         char *source = (char *)malloc((size_t)size + 1);
         if (!source) {
             fclose(f);
-            printf("    \033[31m\xE2\x9D\x8C Out of memory\033[0m\n");
+            printf("    \033[31m[ERROR] Out of memory\033[0m\n");
             total_failed++;
             continue;
         }
         if (fread(source, 1, (size_t)size, f) != (size_t)size) {
             fclose(f);
             free(source);
-            printf("    \033[31m\xE2\x9D\x8C Short read\033[0m\n");
+            printf("    \033[31m[ERROR] Short read\033[0m\n");
             total_failed++;
             continue;
         }
@@ -1412,7 +1412,7 @@ int run_tests(const char *argv0, const char *test_dir) {
         AstNode *program = parser_parse(&parser);
 
         if (parser.had_error) {
-            printf("    \033[31m\xE2\x9D\x8C Parse error: %s\033[0m\n", parser.error_msg);
+            printf("    \033[31m[ERROR] Parse error: %s\033[0m\n", parser.error_msg);
             ast_free(program); lp_memory_arena_free(arena);
             free(source);
             total_failed++;
@@ -1438,7 +1438,7 @@ int run_tests(const char *argv0, const char *test_dir) {
             char *c_code = codegen_get_output(&cg);
 
             if (cg.had_error) {
-                printf("    \033[31m\xE2\x9D\x8C %s — codegen error\033[0m\n", test_names[t]);
+                printf("    \033[31m[ERROR] %s - codegen error\033[0m\n", test_names[t]);
                 free(c_code);
                 codegen_free(&cg);
                 total_failed++;
@@ -1448,7 +1448,7 @@ int run_tests(const char *argv0, const char *test_dir) {
             /* Write C code, replacing main() with our test caller */
             char tmp_c[512];
             if (!lp_join3(tmp_c, sizeof(tmp_c), "__lp_test_", test_names[t], ".c")) {
-                printf("    \033[31m\xE2\x9D\x8C Test temp path too long\033[0m\n");
+                printf("    \033[31m[ERROR] Test temp path too long\033[0m\n");
                 free(c_code);
                 codegen_free(&cg);
                 total_failed++;
@@ -1456,7 +1456,7 @@ int run_tests(const char *argv0, const char *test_dir) {
             }
             FILE *tmp = fopen(tmp_c, "w");
             if (!tmp) {
-                printf("    \033[31m\xE2\x9D\x8C Cannot write temp file\033[0m\n");
+                printf("    \033[31m[ERROR] Cannot write temp file\033[0m\n");
                 free(c_code);
                 codegen_free(&cg);
                 total_failed++;
@@ -1479,7 +1479,7 @@ int run_tests(const char *argv0, const char *test_dir) {
             /* Compile */
             char inc_flag[600];
             if (!lp_make_include_flag(inc_flag, sizeof(inc_flag), runtime_inc)) {
-                printf("    \033[31m\xE2\x9D\x8C Include path too long\033[0m\n");
+                printf("    \033[31m[ERROR] Include path too long\033[0m\n");
                 remove(tmp_c);
                 free(c_code);
                 codegen_free(&cg);
@@ -1488,7 +1488,7 @@ int run_tests(const char *argv0, const char *test_dir) {
             }
             char exe_path[512];
             if (!lp_join3(exe_path, sizeof(exe_path), "__lp_test_", test_names[t], LP_HOST_EXE_EXT)) {
-                printf("    \033[31m\xE2\x9D\x8C Test output path too long\033[0m\n");
+                printf("    \033[31m[ERROR] Test output path too long\033[0m\n");
                 remove(tmp_c);
                 free(c_code);
                 codegen_free(&cg);
@@ -1499,7 +1499,7 @@ int run_tests(const char *argv0, const char *test_dir) {
             char sqlite_obj[600] = "-lm";
             if (cg.uses_sqlite) {
                 if (!lp_join2(sqlite_obj, sizeof(sqlite_obj), runtime_inc, LP_PATH_SEP_STR "sqlite3.o")) {
-                    printf("    \033[31m\xE2\x9D\x8C SQLite object path too long\033[0m\n");
+                    printf("    \033[31m[ERROR] SQLite object path too long\033[0m\n");
                     remove(tmp_c);
                     free(c_code);
                     codegen_free(&cg);
@@ -1530,7 +1530,7 @@ int run_tests(const char *argv0, const char *test_dir) {
             }
 
             if (ret != 0) {
-                printf("    \033[31m\xE2\x9D\x8C %s \033[2m(compile error)\033[0m\n", test_names[t]);
+                printf("    \033[31m[ERROR] %s \033[2m(compile error)\033[0m\n", test_names[t]);
                 total_failed++;
                 remove(tmp_c);
                 free(c_code);
@@ -1545,10 +1545,10 @@ int run_tests(const char *argv0, const char *test_dir) {
             total_time += elapsed;
 
             if (ret == 0) {
-                printf("    \033[32m\xE2\x9C\x85 %s \033[2m............. %.1fms\033[0m\n", test_names[t], elapsed);
+                printf("    \033[32m[PASS] %s \033[2m............. %.1fms\033[0m\n", test_names[t], elapsed);
                 total_passed++;
             } else {
-                printf("    \033[31m\xE2\x9D\x8C %s \033[2m(exit code %d, %.1fms)\033[0m\n", test_names[t], ret, elapsed);
+                printf("    \033[31m[FAIL] %s \033[2m(exit code %d, %.1fms)\033[0m\n", test_names[t], ret, elapsed);
                 total_failed++;
             }
 
@@ -1567,7 +1567,7 @@ int run_tests(const char *argv0, const char *test_dir) {
     _findclose(hFind);
 
     /* Summary */
-    printf("\033[2m  ────────────────────────\033[0m\n");
+    printf("\033[2m  ------------------------\033[0m\n");
     if (total_failed == 0) {
         printf("\033[1m\033[32m  Results: %d passed, 0 failed (%.1fms total)\033[0m\n", total_passed, total_time);
     } else {
@@ -1591,7 +1591,7 @@ int run_profile(const char *argv0, const char *input_file) {
 #endif
 
     printf("\n\033[1m\033[35m  LP Profiler\033[0m\n");
-    printf("\033[2m  ────────────────────────\033[0m\n");
+    printf("\033[2m  ------------------------\033[0m\n");
     printf("  File: %s\n\n", input_file);
 
     /* Read source */
@@ -1675,9 +1675,9 @@ int run_profile(const char *argv0, const char *input_file) {
         fprintf(tmp, "    int __lp_ret = __lp_main_code();\n");
         fprintf(tmp, "    double __lp_total_ms = (double)(clock() - __lp_total_start) / CLOCKS_PER_SEC * 1000;\n");
         fprintf(tmp, "    fprintf(stderr, \"\\n\\033[35m\\033[1m  === LP PROFILE REPORT ===\\033[0m\\n\");\n");
-        fprintf(tmp, "    fprintf(stderr, \"\\033[2m  ────────────────────────\\033[0m\\n\");\n");
+        fprintf(tmp, "    fprintf(stderr, \"\\033[2m  ------------------------\\033[0m\\n\");\n");
         fprintf(tmp, "    fprintf(stderr, \"  Total execution: \\033[1m%%.3f ms\\033[0m\\n\", __lp_total_ms);\n");
-        fprintf(tmp, "    fprintf(stderr, \"\\033[2m  ────────────────────────\\033[0m\\n\\n\");\n");
+        fprintf(tmp, "    fprintf(stderr, \"\\033[2m  ------------------------\\033[0m\\n\\n\");\n");
         fprintf(tmp, "    return __lp_ret;\n}\n");
     } else {
         fputs(c_code, tmp);
@@ -1754,7 +1754,7 @@ int run_profile(const char *argv0, const char *input_file) {
 
     /* Run */
     printf("  \033[2mRunning...\033[0m\n\n");
-    printf("\033[2m  ─── Output ───────────\033[0m\n");
+    printf("\033[2m  --- Output -----------\033[0m\n");
     fflush(stdout);
     ret = (int)_spawnl(_P_WAIT, exe_path, exe_path, NULL);
 
