@@ -729,6 +729,9 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
                 return LP_FLOAT;
             if (obj_type == LP_STR_ARRAY || obj_type == LP_STRING)
                 return LP_STRING;
+            /* Native arrays contain int64_t */
+            if (obj_type == LP_NATIVE_ARRAY_1D || obj_type == LP_NATIVE_ARRAY_2D)
+                return LP_INT;
             return LP_UNKNOWN;
         }
         case NODE_KWARG:
@@ -2432,6 +2435,21 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 buf_write(buf, ".items[");
                 gen_expr(cg, buf, node->subscript.index);
                 buf_write(buf, "]");
+            } else if (obj_type == LP_NATIVE_ARRAY_1D) {
+                /* LpIntArray* -> use lp_int_array_get(arr, index) */
+                buf_write(buf, "lp_int_array_get(");
+                gen_expr(cg, buf, node->subscript.obj);
+                buf_write(buf, ", ");
+                gen_expr(cg, buf, node->subscript.index);
+                buf_write(buf, ")");
+            } else if (obj_type == LP_NATIVE_ARRAY_2D) {
+                /* LpIntArray2D* -> use lp_int_array2d_get(arr, row, col) */
+                buf_write(buf, "lp_int_array2d_get(");
+                gen_expr(cg, buf, node->subscript.obj);
+                buf_write(buf, ", ");
+                gen_expr(cg, buf, node->subscript.index);
+                buf_write(buf, ", 0");  /* Default column for 1D-style access */
+                buf_write(buf, ")");
             } else {
                 gen_expr(cg, buf, node->subscript.obj);
                 buf_write(buf, "[");
@@ -2907,36 +2925,111 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
         }
         case NODE_SUBSCRIPT_ASSIGN: {
             write_indent(buf, indent);
-            /* Handle augmented assignment to a subscript (like arr[0] += 1) vs direct assignment (arr[0] = 1) */
-            if (node->subscript_assign.op != TOK_ASSIGN) {
-                const char *op_func = "lp_val_add";
-                switch (node->subscript_assign.op) {
-                    case TOK_PLUS_ASSIGN:  op_func = "lp_val_add"; break;
-                    case TOK_MINUS_ASSIGN: op_func = "lp_val_sub"; break;
-                    case TOK_STAR_ASSIGN:  op_func = "lp_val_mul"; break;
-                    case TOK_SLASH_ASSIGN: op_func = "lp_val_div"; break;
-                    default: break;
+            /* Check if object is a native array */
+            LpType obj_type = infer_type(cg, node->subscript_assign.obj);
+            if (obj_type == LP_NATIVE_ARRAY_1D) {
+                /* Native 1D array: use lp_int_array_set */
+                if (node->subscript_assign.op != TOK_ASSIGN) {
+                    /* Augmented assignment: arr[i] += x */
+                    const char *op_str = "+";
+                    switch (node->subscript_assign.op) {
+                        case TOK_PLUS_ASSIGN:  op_str = "+"; break;
+                        case TOK_MINUS_ASSIGN: op_str = "-"; break;
+                        case TOK_STAR_ASSIGN:  op_str = "*"; break;
+                        case TOK_SLASH_ASSIGN: op_str = "/"; break;
+                        default: break;
+                    }
+                    buf_write(buf, "lp_int_array_set(");
+                    gen_expr(cg, buf, node->subscript_assign.obj);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->subscript_assign.index);
+                    buf_printf(buf, ", lp_int_array_get(");
+                    gen_expr(cg, buf, node->subscript_assign.obj);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->subscript_assign.index);
+                    buf_write(buf, ")");
+                    buf_write(buf, " ");
+                    buf_write(buf, op_str);
+                    buf_write(buf, " ");
+                    gen_expr(cg, buf, node->subscript_assign.value);
+                    buf_write(buf, ");\n");
+                } else {
+                    /* Direct assignment: arr[i] = x */
+                    buf_write(buf, "lp_int_array_set(");
+                    gen_expr(cg, buf, node->subscript_assign.obj);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->subscript_assign.index);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->subscript_assign.value);
+                    buf_write(buf, ");\n");
                 }
-                buf_write(buf, "lp_val_set_item(");
-                emit_lp_val(cg, buf, node->subscript_assign.obj);
-                buf_write(buf, ", ");
-                emit_lp_val(cg, buf, node->subscript_assign.index);
-                buf_printf(buf, ", %s(", op_func);
-                buf_write(buf, "lp_val_get_item(");
-                emit_lp_val(cg, buf, node->subscript_assign.obj);
-                buf_write(buf, ", ");
-                emit_lp_val(cg, buf, node->subscript_assign.index);
-                buf_write(buf, "), ");
-                emit_lp_val(cg, buf, node->subscript_assign.value);
-                buf_write(buf, "));\n");
+            } else if (obj_type == LP_NATIVE_ARRAY_2D) {
+                /* Native 2D array: use lp_int_array2d_set */
+                if (node->subscript_assign.op != TOK_ASSIGN) {
+                    buf_write(buf, "lp_int_array2d_set(");
+                    gen_expr(cg, buf, node->subscript_assign.obj);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->subscript_assign.index);
+                    buf_write(buf, ", 0, ");  /* Default col */
+                    buf_printf(buf, "lp_int_array2d_get(");
+                    gen_expr(cg, buf, node->subscript_assign.obj);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->subscript_assign.index);
+                    buf_write(buf, ", 0) ");
+                    const char *op_str = "+";
+                    switch (node->subscript_assign.op) {
+                        case TOK_PLUS_ASSIGN:  op_str = "+"; break;
+                        case TOK_MINUS_ASSIGN: op_str = "-"; break;
+                        case TOK_STAR_ASSIGN:  op_str = "*"; break;
+                        case TOK_SLASH_ASSIGN: op_str = "/"; break;
+                        default: break;
+                    }
+                    buf_write(buf, op_str);
+                    buf_write(buf, " ");
+                    gen_expr(cg, buf, node->subscript_assign.value);
+                    buf_write(buf, ");\n");
+                } else {
+                    buf_write(buf, "lp_int_array2d_set(");
+                    gen_expr(cg, buf, node->subscript_assign.obj);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->subscript_assign.index);
+                    buf_write(buf, ", 0, ");  /* Default col */
+                    gen_expr(cg, buf, node->subscript_assign.value);
+                    buf_write(buf, ");\n");
+                }
             } else {
-                buf_write(buf, "lp_val_set_item(");
-                emit_lp_val(cg, buf, node->subscript_assign.obj);
-                buf_write(buf, ", ");
-                emit_lp_val(cg, buf, node->subscript_assign.index);
-                buf_write(buf, ", ");
-                emit_lp_val(cg, buf, node->subscript_assign.value);
-                buf_write(buf, ");\n");
+                /* Regular LpVal handling */
+                /* Handle augmented assignment to a subscript (like arr[0] += 1) vs direct assignment (arr[0] = 1) */
+                if (node->subscript_assign.op != TOK_ASSIGN) {
+                    const char *op_func = "lp_val_add";
+                    switch (node->subscript_assign.op) {
+                        case TOK_PLUS_ASSIGN:  op_func = "lp_val_add"; break;
+                        case TOK_MINUS_ASSIGN: op_func = "lp_val_sub"; break;
+                        case TOK_STAR_ASSIGN:  op_func = "lp_val_mul"; break;
+                        case TOK_SLASH_ASSIGN: op_func = "lp_val_div"; break;
+                        default: break;
+                    }
+                    buf_write(buf, "lp_val_set_item(");
+                    emit_lp_val(cg, buf, node->subscript_assign.obj);
+                    buf_write(buf, ", ");
+                    emit_lp_val(cg, buf, node->subscript_assign.index);
+                    buf_printf(buf, ", %s(", op_func);
+                    buf_write(buf, "lp_val_get_item(");
+                    emit_lp_val(cg, buf, node->subscript_assign.obj);
+                    buf_write(buf, ", ");
+                    emit_lp_val(cg, buf, node->subscript_assign.index);
+                    buf_write(buf, "), ");
+                    emit_lp_val(cg, buf, node->subscript_assign.value);
+                    buf_write(buf, "));\n");
+                } else {
+                    buf_write(buf, "lp_val_set_item(");
+                    emit_lp_val(cg, buf, node->subscript_assign.obj);
+                    buf_write(buf, ", ");
+                    emit_lp_val(cg, buf, node->subscript_assign.index);
+                    buf_write(buf, ", ");
+                    emit_lp_val(cg, buf, node->subscript_assign.value);
+                    buf_write(buf, ");\n");
+                }
             }
             break;
         }
