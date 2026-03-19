@@ -316,10 +316,10 @@ static void repl_help(void) {
 /* ─── Print banner ─── */
 static void repl_banner(void) {
     printf("\n");
-    printf(C_BOLD C_CYAN "  ╔═══════════════════════════════════════╗" C_RESET "\n");
-    printf(C_BOLD C_CYAN "  ║" C_RESET C_BOLD "     LP Language v0.2 — Interactive     " C_CYAN "║" C_RESET "\n");
-    printf(C_BOLD C_CYAN "  ║" C_RESET C_DIM "     Type .help for commands            " C_CYAN "║" C_RESET "\n");
-    printf(C_BOLD C_CYAN "  ╚═══════════════════════════════════════╝" C_RESET "\n");
+    printf(C_BOLD C_CYAN "  +---------------------------------------+" C_RESET "\n");
+    printf(C_BOLD C_CYAN "  |" C_RESET C_BOLD "     LP Language v0.2 - Interactive     " C_CYAN "|" C_RESET "\n");
+    printf(C_BOLD C_CYAN "  |" C_RESET C_DIM "     Type .help for commands            " C_CYAN "|" C_RESET "\n");
+    printf(C_BOLD C_CYAN "  +---------------------------------------+" C_RESET "\n");
     printf("\n");
 }
 
@@ -429,9 +429,9 @@ int repl_run(const char *argv0) {
                     if (accumulated.len == 0) {
                         printf(C_DIM "  (empty)" C_RESET "\n");
                     } else {
-                        printf(C_DIM "──────────────────────" C_RESET "\n");
+                        printf(C_DIM "----------------------" C_RESET "\n");
                         printf("%s\n", accumulated.data);
-                        printf(C_DIM "──────────────────────" C_RESET "\n");
+                        printf(C_DIM "----------------------" C_RESET "\n");
                     }
                 }
                 continue;

@@ -14,11 +14,11 @@
 #define COLOR_DIM     "\033[2m"
 #define COLOR_RESET   "\033[0m"
 
-/* Unicode symbols */
-#define SYMBOL_ERROR    "❌"
-#define SYMBOL_WARNING  "⚠️"
-#define SYMBOL_HINT     "💡"
-#define SYMBOL_ARROW    "│"
+/* ASCII-safe display symbols */
+#define SYMBOL_ERROR    "[ERROR]"
+#define SYMBOL_WARNING  "[WARN]"
+#define SYMBOL_HINT     "[HINT]"
+#define SYMBOL_ARROW    "|"
 #define SYMBOL_POINTER  "^"
 
 /* Initialize error list */
@@ -270,7 +270,7 @@ void lp_print_error_with_context(LpError *err, const char *source, FILE *out) {
     fprintf(out, "\n");
     fprintf(out, "%s  %s %s%s%s\n", color, symbol, severity_text, 
             (err->severity == SEVERITY_ERROR) ? "" : "", COLOR_RESET);
-    fprintf(out, "%s  ────────────────────────────────────%s\n", COLOR_DIM, COLOR_RESET);
+    fprintf(out, "%s  ------------------------------------%s\n", COLOR_DIM, COLOR_RESET);
     
     /* Error message with code */
     fprintf(out, "  %s[%s]%s Line %d: %s\n", 
