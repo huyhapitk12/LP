@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.3.0-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.1.0-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey.svg" alt="Platform">
   <img src="https://img.shields.io/badge/language-C-555555.svg" alt="Language">
@@ -107,7 +107,7 @@ Run it with native compilation:
 ```lp
 # Variables with type inference
 name = "LP"
-version = 0.3
+version = "0.1.0"
 active = True
 
 # Explicit types
@@ -117,7 +117,7 @@ label: str = "text"
 
 # F-Strings
 greeting = f"Hello from {name} v{version}!"
-print(greeting)  # Output: Hello from LP v0.3!
+print(greeting)  # Output: Hello from LP v0.1.0!
 ```
 
 ### 🧩 Pattern Matching

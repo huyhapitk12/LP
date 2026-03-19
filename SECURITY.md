@@ -6,9 +6,8 @@ We actively support the following versions of LP with security updates:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.3.x   | ✅ Active support  |
-| 0.2.x   | ⚠️ Critical fixes only |
-| < 0.2   | ❌ No longer supported |
+| 0.1.x   | ✅ Active support  |
+| < 0.1   | ❌ No longer supported |
 
 ## Reporting a Vulnerability
 

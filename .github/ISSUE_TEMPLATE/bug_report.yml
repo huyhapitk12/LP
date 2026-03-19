@@ -82,7 +82,7 @@ body:
     attributes:
       label: LP Version
       description: What version of LP are you using?
-      placeholder: "0.3.0"
+      placeholder: "0.1.0"
     validations:
       required: true
 
