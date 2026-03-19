@@ -857,7 +857,7 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "--gcc") == 0 || strcmp(argv[i], "--with-gcc") == 0) {
             use_gcc_backend = 1;  /* Use GCC backend instead of native ASM */
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
-            printf("LP Language v0.3 - Lightweight Native Compiler\n");
+            printf("LP Language v0.1.0 - Lightweight Native Compiler\n");
             printf("Accepts .lp and .py files\n\n");
             printf("Usage:\n");
             printf("  lp <file.lp|.py>            Run directly (native ASM, no GCC!)\n");

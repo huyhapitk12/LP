@@ -230,7 +230,7 @@ docs: Add Vietnamese language guide
 
 ## Environment
 - OS: [e.g., Ubuntu 22.04]
-- LP Version: [e.g., 0.3.0]
+- LP Version: [e.g., 0.1.0]
 - GCC Version: [e.g., 11.3.0]
 
 ## Code Sample
