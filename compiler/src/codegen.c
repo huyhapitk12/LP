@@ -117,6 +117,11 @@ static Symbol *scope_define(Scope *s, const char *name, LpType type) {
     sym->owner_class = NULL;
     sym->base_class = NULL;
     sym->is_method = 0;
+    /* Native array initialization */
+    sym->array_dims = 0;
+    for (int i = 0; i < 4; i++) {
+        sym->array_size_expr[i] = NULL;
+    }
     return sym;
 }
 
@@ -232,12 +237,72 @@ static int type_matches_union(const char *type_name, const char *union_ann) {
     return found;
 }
 
+/* Check if type annotation is a native array: int[expr] or int[expr][expr] */
+static int is_native_array_type(const char *ann) {
+    if (!ann) return 0;
+    /* Check for int[...] pattern */
+    if (strncmp(ann, "int[", 4) == 0) return 1;
+    if (strncmp(ann, "i64[", 4) == 0) return 1;
+    if (strncmp(ann, "float[", 6) == 0) return 1;
+    if (strncmp(ann, "f64[", 4) == 0) return 1;
+    return 0;
+}
+
+/* Parse native array dimensions from type annotation like "int[n+2][m+2]" 
+ * Returns number of dimensions found, extracts size expressions into sizes array */
+static int parse_native_array_dims(const char *ann, char *sizes[4]) {
+    if (!ann || !is_native_array_type(ann)) return 0;
+    
+    int dims = 0;
+    const char *p = ann;
+    
+    /* Skip base type name */
+    while (*p && *p != '[') p++;
+    
+    /* Parse each dimension */
+    while (*p == '[' && dims < 4) {
+        p++; /* skip '[' */
+        const char *start = p;
+        int depth = 1;
+        while (*p && depth > 0) {
+            if (*p == '[') depth++;
+            else if (*p == ']') depth--;
+            if (depth > 0) p++;
+        }
+        /* Extract size expression */
+        int len = (int)(p - start);
+        if (len > 0) {
+            sizes[dims] = (char *)malloc(len + 1);
+            if (sizes[dims]) {
+                strncpy(sizes[dims], start, len);
+                sizes[dims][len] = '\0';
+            }
+            dims++;
+        }
+        if (*p == ']') p++;
+    }
+    
+    return dims;
+}
+
 static LpType type_from_annotation(CodeGen *cg, const char *ann) {
     if (!ann) return LP_UNKNOWN;
     
     /* Check for union types: int|str|float -> return LP_VAL (variant type) */
     if (is_union_type(ann)) {
         return LP_VAL;
+    }
+    
+    /* Check for native arrays: int[expr] or int[expr][expr] */
+    if (is_native_array_type(ann)) {
+        /* Count dimensions to return appropriate type */
+        char *sizes[4] = {NULL, NULL, NULL, NULL};
+        int dims = parse_native_array_dims(ann, sizes);
+        /* Free the size strings (caller will re-parse if needed) */
+        for (int i = 0; i < dims; i++) {
+            if (sizes[i]) free(sizes[i]);
+        }
+        return (dims == 1) ? LP_NATIVE_ARRAY_1D : LP_NATIVE_ARRAY_2D;
     }
     
     if (strcmp(ann, "int") == 0 || strcmp(ann, "i64") == 0) return LP_INT;
@@ -282,6 +347,9 @@ static const char *lp_type_to_c(LpType t) {
         case LP_ARENA:  return "LpArena*";
         case LP_POOL:   return "LpPool*";
         case LP_PTR:    return "void*";
+        /* Native arrays for competitive programming */
+        case LP_NATIVE_ARRAY_1D: return "LpIntArray*";
+        case LP_NATIVE_ARRAY_2D: return "LpIntArray2D*";
         default:        return "int64_t";
     }
 }
