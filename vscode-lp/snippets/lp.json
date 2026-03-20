@@ -183,5 +183,16 @@
       "result = t.join()"
     ],
     "description": "Thread spawn and join"
+  },
+  "Match Statement": {
+    "prefix": "match",
+    "body": [
+      "match ${1:value}:",
+      "    case ${2:pattern}:",
+      "        ${0:pass}",
+      "    case _:",
+      "        pass"
+    ],
+    "description": "Pattern matching statement"
   }
 }

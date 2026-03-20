@@ -3761,11 +3761,47 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     buf_write(buf, "} else ");
                 }
                 
+                /* Create a new scope for this case block to avoid polluting outer scope */
+                /* and to prevent capture variables from bleeding into subsequent cases */
+                Scope *case_scope = scope_new(cg->scope);
+                Scope *old_scope = cg->scope;
+                cg->scope = case_scope;
+                
                 if (case_node->match_case.is_wildcard) {
                     /* Wildcard case: matches everything */
                     buf_write(buf, "{ /* default case */\n");
+                } else if (case_node->match_case.pattern &&
+                           case_node->match_case.pattern->type == NODE_NAME &&
+                           !scope_lookup(old_scope, case_node->match_case.pattern->name_expr.name)) {
+                    /* Capture variable: bind _match_val to the name, then check guard */
+                    LpType match_val_type = infer_type(cg, node->match_stmt.value);
+                    if (match_val_type == LP_UNKNOWN) match_val_type = LP_INT;
+                    const char *cap_name = case_node->match_case.pattern->name_expr.name;
+                    scope_define(cg->scope, cap_name, match_val_type);
+
+                    /* Emit: if (1) { __auto_type lp_n = _match_val; if (guard) { ... } else goto next_case; }
+                       To keep things simple and integrate with the outer `for` body generation without breaking `} else if`,
+                       we can generate a block that executes conditionally. But C `if-else` chaining doesn't like intermediate `}` closures if we want to continue.
+                       A cleaner way: 
+                         if ( { __auto_type lp_n = _match_val; (guard) } )
+                       But statement expressions ({}) evaluate to a value on GCC, which is perfect!
+                       `if ( ({ __auto_type lp_n = _match_val; guard_expr; }) ) {`
+                    */
+                    if (case_node->match_case.guard) {
+                        buf_printf(buf, "if ( ({ __auto_type lp_%s = _match_val; ", cap_name);
+                        gen_expr(cg, buf, case_node->match_case.guard);
+                        buf_write(buf, "; }) ) {\n");
+                        write_indent(buf, indent + 2);
+                        /* Re-declare inside the actual body so the body can use it normally */
+                        buf_printf(buf, "__auto_type lp_%s = _match_val;\n", cap_name);
+                    } else {
+                        /* Capture without guard - always matches */
+                        buf_write(buf, "if (1) {\n");
+                        write_indent(buf, indent + 2);
+                        buf_printf(buf, "__auto_type lp_%s = _match_val;\n", cap_name);
+                    }
                 } else {
-                    /* Pattern match: compare value */
+                    /* Literal pattern match: compare value */
                     buf_write(buf, "if (");
                     if (case_node->match_case.pattern) {
                         LpType pattern_type = infer_type(cg, case_node->match_case.pattern);
@@ -3779,7 +3815,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                         }
                     }
                     
-                    /* Add guard if present */
+                    /* Add guard if present (for literal + guard combos) */
                     if (case_node->match_case.guard) {
                         buf_write(buf, " && (");
                         gen_expr(cg, buf, case_node->match_case.guard);
@@ -3792,6 +3828,9 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 for (int j = 0; j < case_node->match_case.body.count; j++) {
                     gen_stmt(cg, buf, case_node->match_case.body.items[j], indent + 2);
                 }
+                
+                /* Restore the outer scope for the next case */
+                cg->scope = old_scope;
                 
                 first_case = 0;
             }
@@ -3865,9 +3904,10 @@ static void emit_local_declarations(CodeGen *cg, Buffer *buf, Scope *scope, int 
     /* Only emit for the current scope level, not parent scopes */
     for (int i = 0; i < scope->count; i++) {
         Symbol *sym = &scope->symbols[i];
-        /* Skip functions, classes, and native arrays (need special handling) */
+        /* Skip functions, classes, native arrays, and already declared variables (like parameters) */
         if (!sym->is_function && sym->type != LP_CLASS &&
-            sym->type != LP_NATIVE_ARRAY_1D && sym->type != LP_NATIVE_ARRAY_2D) {
+            sym->type != LP_NATIVE_ARRAY_1D && sym->type != LP_NATIVE_ARRAY_2D &&
+            !sym->declared) {
             /* Emit declaration without initialization */
             write_indent(buf, indent);
             const char *class_name = sym->class_name;
@@ -4025,22 +4065,27 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
         Param *p = &node->func_def.params.items[i];
         if (class_name && strcmp(p->name, "self") == 0) {
             buf_printf(&cg->funcs, "LpObj_%s* lp_%s", class_name, p->name);
-            scope_define_obj(func_scope, p->name, LP_OBJECT, class_name);
+            Symbol *sym = scope_define_obj(func_scope, p->name, LP_OBJECT, class_name);
+            if (sym) sym->declared = 1;
         } else if (p->is_vararg) {
             buf_printf(&cg->funcs, "LpArray lp_%s", p->name);
-            scope_define(func_scope, p->name, LP_ARRAY);
+            Symbol *sym = scope_define(func_scope, p->name, LP_ARRAY);
+            if (sym) sym->declared = 1;
         } else if (p->is_kwarg) {
             buf_printf(&cg->funcs, "LpDict* lp_%s", p->name);
-            scope_define(func_scope, p->name, LP_DICT);
+            Symbol *sym = scope_define(func_scope, p->name, LP_DICT);
+            if (sym) sym->declared = 1;
         } else {
             LpType pt = type_from_annotation(cg, p->type_ann);
             if (pt == LP_UNKNOWN) pt = LP_VAL;
             if (pt == LP_OBJECT) {
                 buf_printf(&cg->funcs, "LpObj_%s* lp_%s", p->type_ann, p->name);
-                scope_define_obj(func_scope, p->name, pt, p->type_ann);
+                Symbol *sym = scope_define_obj(func_scope, p->name, pt, p->type_ann);
+                if (sym) sym->declared = 1;
             } else {
                 buf_printf(&cg->funcs, "%s lp_%s", lp_type_to_c(pt), p->name);
-                scope_define(func_scope, p->name, pt);
+                Symbol *sym = scope_define(func_scope, p->name, pt);
+                if (sym) sym->declared = 1;
             }
         }
     }
@@ -4235,22 +4280,27 @@ static void gen_async_func_def(CodeGen *cg, AstNode *node, const char *class_nam
         Param *p = &node->async_def.params.items[i];
         if (class_name && strcmp(p->name, "self") == 0) {
             buf_printf(&cg->funcs, "LpObj_%s* lp_%s", class_name, p->name);
-            scope_define_obj(func_scope, p->name, LP_OBJECT, class_name);
+            Symbol *sym = scope_define_obj(func_scope, p->name, LP_OBJECT, class_name);
+            if (sym) sym->declared = 1;
         } else if (p->is_vararg) {
             buf_printf(&cg->funcs, "LpArray lp_%s", p->name);
-            scope_define(func_scope, p->name, LP_ARRAY);
+            Symbol *sym = scope_define(func_scope, p->name, LP_ARRAY);
+            if (sym) sym->declared = 1;
         } else if (p->is_kwarg) {
             buf_printf(&cg->funcs, "LpDict* lp_%s", p->name);
-            scope_define(func_scope, p->name, LP_DICT);
+            Symbol *sym = scope_define(func_scope, p->name, LP_DICT);
+            if (sym) sym->declared = 1;
         } else {
             LpType pt = type_from_annotation(cg, p->type_ann);
             if (pt == LP_UNKNOWN) pt = LP_VAL;
             if (pt == LP_OBJECT) {
                 buf_printf(&cg->funcs, "LpObj_%s* lp_%s", p->type_ann, p->name);
-                scope_define_obj(func_scope, p->name, pt, p->type_ann);
+                Symbol *sym = scope_define_obj(func_scope, p->name, pt, p->type_ann);
+                if (sym) sym->declared = 1;
             } else {
                 buf_printf(&cg->funcs, "%s lp_%s", lp_type_to_c(pt), p->name);
-                scope_define(func_scope, p->name, pt);
+                Symbol *sym = scope_define(func_scope, p->name, pt);
+                if (sym) sym->declared = 1;
             }
         }
     }
@@ -4629,6 +4679,9 @@ char *codegen_get_output(CodeGen *cg) {
     Buffer out;
     buf_init(&out);
     buf_write(&out, cg->header.data ? cg->header.data : "");
+    if (cg->uses_security) buf_write(&out, "#include \"lp_security.h\"\n");
+    if (cg->uses_parallel) buf_write(&out, "#include \"lp_parallel.h\"\n");
+    if (cg->uses_gpu) buf_write(&out, "#include \"lp_gpu.h\"\n");
     buf_write(&out, cg->helpers.data ? cg->helpers.data : "");
     buf_write(&out, cg->funcs.data ? cg->funcs.data : "");
     buf_write(&out, "int main(void) {\n");
