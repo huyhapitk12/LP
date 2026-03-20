@@ -1276,7 +1276,7 @@ static AstNode *parse_security_pragma(Parser *p) {
     n->security.secure_headers = 1;
     n->security.encrypt_data = 0;
     n->security.hash_algorithm = NULL;
-    n->security.access_level = 1;       /* user by default */
+    n->security.access_level = 0;       /* guest by default */
     n->security.readonly = 0;
     
     /* Parse optional parentheses with security settings */
@@ -1413,8 +1413,8 @@ static AstNode *parse_security_pragma(Parser *p) {
                 n->security.access_level = 0;
             } else if (check(p, TOK_IDENTIFIER)) {
                 /* Generic keyword argument: name = value */
-                char *key = tok_to_str(p->current);
                 advance(p);
+                char *key = tok_to_str(p->previous);
                 if (match(p, TOK_ASSIGN)) {
                     if (check(p, TOK_INT_LIT)) {
                         int val = (int)p->current.int_val;
@@ -1423,8 +1423,8 @@ static AstNode *parse_security_pragma(Parser *p) {
                         else if (strcmp(key, "access_level") == 0) n->security.access_level = val;
                         advance(p);
                     } else if (check(p, TOK_STRING_LIT)) {
-                        char *val = tok_to_str(p->previous);
                         advance(p);
+                        char *val = tok_to_str(p->previous);
                         if (strcmp(key, "auth_type") == 0) n->security.auth_type = val;
                         else if (strcmp(key, "hash") == 0 || strcmp(key, "hash_algorithm") == 0) n->security.hash_algorithm = val;
                         else if (strcmp(key, "cors_origins") == 0) n->security.cors_origins = val;

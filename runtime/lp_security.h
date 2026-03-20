@@ -19,6 +19,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
+#include <stdint.h>
 
 /* Security levels */
 #define LP_SECURITY_NONE     0
@@ -293,8 +294,14 @@ static inline int lp_sql_needs_escape(const char *str) {
         switch (*p) {
             case '\'': case '"': case '\\': case '\0':
             case '\n': case '\r': case '\x1a':
-            case ';': case '--': case '/*':
+            case ';':
                 return 1;
+            case '-':
+                if (*(p+1) == '-') return 1;
+                break;
+            case '/':
+                if (*(p+1) == '*') return 1;
+                break;
             default:
                 break;
         }
@@ -429,6 +436,21 @@ static inline char* lp_strip_html(const char *str) {
     return result;
 }
 
+/* Helper: case-insensitive string search */
+#ifndef strcasestr
+static inline char* strcasestr(const char *haystack, const char *needle) {
+    for (; *haystack; haystack++) {
+        const char *h = haystack;
+        const char *n = needle;
+        while (*h && *n && tolower((unsigned char)*h) == tolower((unsigned char)*n)) {
+            h++; n++;
+        }
+        if (!*n) return (char*)haystack;
+    }
+    return NULL;
+}
+#endif
+
 /* Check for XSS patterns */
 static inline int lp_detect_xss(const char *str) {
     if (!str) return 0;
@@ -449,21 +471,6 @@ static inline int lp_detect_xss(const char *str) {
     
     return 0;
 }
-
-/* Helper: case-insensitive string search */
-#ifndef strcasestr
-static inline char* strcasestr(const char *haystack, const char *needle) {
-    for (; *haystack; haystack++) {
-        const char *h = haystack;
-        const char *n = needle;
-        while (*h && *n && tolower((unsigned char)*h) == tolower((unsigned char)*n)) {
-            h++; n++;
-        }
-        if (!*n) return (char*)haystack;
-    }
-    return NULL;
-}
-#endif
 
 /* ===== Rate Limiting ===== */
 
@@ -625,46 +632,6 @@ static inline char* lp_hash_sha256(const char *input) {
              (unsigned long long)h1, (unsigned long long)h2,
              (unsigned long long)h3, (unsigned long long)h4);
     return result;
-}
-
-/* ============================================
- * VALIDATION HELPER FUNCTIONS
- * ============================================ */
-
-/* Validate URL format */
-static inline int lp_validate_url(const char *url) {
-    if (!url) return 0;
-    
-    /* Must start with http:// or https:// */
-    if (strncmp(url, "http://", 7) == 0) return 1;
-    if (strncmp(url, "https://", 8) == 0) return 1;
-    
-    return 0;
-}
-
-/* Validate alphanumeric */
-static inline int lp_validate_alphanumeric(const char *str) {
-    if (!str || !*str) return 0;
-    for (const char *p = str; *p; p++) {
-        if (!isalnum((unsigned char)*p) && *p != '_' && *p != '-' && *p != '.')
-            return 0;
-    }
-    return 1;
-}
-
-/* Validate identifier (variable/function name) */
-static inline int lp_validate_identifier(const char *id) {
-    if (!id || !*id) return 0;
-    
-    /* Must start with letter or underscore */
-    if (!isalpha((unsigned char)id[0]) && id[0] != '_') return 0;
-    
-    /* Rest must be alphanumeric or underscore */
-    for (const char *p = id + 1; *p; p++) {
-        if (!isalnum((unsigned char)*p) && *p != '_') return 0;
-    }
-    
-    return 1;
 }
 
 /* ============================================

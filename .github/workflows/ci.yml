@@ -80,11 +80,11 @@ jobs:
       - name: Regression Tests (Windows)
         if: runner.os == 'Windows'
         shell: cmd
-        run: build\lp.exe test examples
+        run: build\lp.exe test tests\regression
 
       - name: Regression Tests (Linux/macOS)
         if: runner.os != 'Windows'
-        run: ./build/lp test examples
+        run: ./build/lp test tests/regression
 
   cross-target-verify:
     name: Cross-target verify (${{ matrix.target }})

@@ -1514,7 +1514,7 @@ int run_tests(const char *argv0, const char *test_dir) {
                 ArgList al;
                 al_init(&al);
                 al_add(&al, gcc);
-                al_add(&al, "-std=c99");
+                al_add(&al, "-std=gnu99");
                 al_add(&al, "-O2");
                 al_add(&al, "-w");
                 al_add(&al, tmp_c);
@@ -1522,6 +1522,7 @@ int run_tests(const char *argv0, const char *test_dir) {
                 al_add(&al, "-o");
                 al_add(&al, exe_path);
                 if (lp_target_needs_pthread(cg.uses_thread, NULL)) al_add(&al, "-pthread");
+                al_add(&al, "-fopenmp");
                 al_add(&al, "-lm");
                 al_add(&al, LP_LWINHTTP);
                 al_add(&al, sqlite_obj);
