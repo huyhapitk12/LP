@@ -36,46 +36,91 @@ static void skip_newline_chars(Lexer *lex) {
 
 /* Check if identifier is a keyword */
 static TokenType check_keyword(const char *s, int len) {
-    typedef struct { const char *kw; int kw_len; TokenType type; } KW;
-    static const KW keywords[] = {
-        {"def", 3, TOK_DEF}, {"class", 5, TOK_CLASS},
-        {"if", 2, TOK_IF}, {"elif", 4, TOK_ELIF}, {"else", 4, TOK_ELSE},
-        {"for", 3, TOK_FOR}, {"while", 5, TOK_WHILE}, {"return", 6, TOK_RETURN},
-        {"import", 6, TOK_IMPORT}, {"from", 4, TOK_FROM}, {"as", 2, TOK_AS},
-        {"and", 3, TOK_AND}, {"or", 2, TOK_OR}, {"not", 3, TOK_NOT},
-        {"in", 2, TOK_IN}, {"is", 2, TOK_IS},
-        {"True", 4, TOK_TRUE}, {"False", 5, TOK_FALSE}, {"None", 4, TOK_NONE},
-        {"true", 4, TOK_TRUE}, {"false", 5, TOK_FALSE}, {"none", 4, TOK_NONE},
-        {"pass", 4, TOK_PASS}, {"break", 5, TOK_BREAK}, {"continue", 8, TOK_CONTINUE},
-        {"const", 5, TOK_CONST}, {"struct", 6, TOK_STRUCT},
-        {"async", 5, TOK_ASYNC}, {"await", 5, TOK_AWAIT},
-        {"with", 4, TOK_WITH},
-        {"try", 3, TOK_TRY}, {"except", 6, TOK_EXCEPT},
-        {"finally", 7, TOK_FINALLY}, {"raise", 5, TOK_RAISE},
-        {"lambda", 6, TOK_LAMBDA}, {"yield", 5, TOK_YIELD},
-        {"parallel", 8, TOK_PARALLEL},
-        {"private", 7, TOK_PRIVATE}, {"protected", 9, TOK_PROTECTED},
-        /* Pattern Matching */
-        {"match", 5, TOK_MATCH}, {"case", 4, TOK_CASE},
-        /* Settings/Pragma keywords */
-        {"settings", 8, TOK_SETTINGS}, {"gpu", 3, TOK_GPU}, {"cpu", 3, TOK_CPU},
-        {"device", 6, TOK_DEVICE}, {"threads", 7, TOK_THREADS},
-        {"schedule", 8, TOK_SCHEDULE}, {"chunk", 5, TOK_CHUNK},
-        {"unified", 7, TOK_UNIFIED},
-        /* Security keywords */
-        {"security", 8, TOK_SECURITY}, {"level", 5, TOK_LEVEL},
-        {"auth", 4, TOK_AUTH}, {"rate", 4, TOK_RATE}, {"limit", 5, TOK_LIMIT},
-        {"validate", 8, TOK_VALIDATE}, {"sanitize", 8, TOK_SANITIZE},
-        {"encrypt", 7, TOK_ENCRYPT}, {"hash", 4, TOK_HASH},
-        {"injection", 9, TOK_INJECTION}, {"xss", 3, TOK_XSS},
-        {"csrf", 4, TOK_CSRF}, {"cors", 4, TOK_CORS}, {"headers", 7, TOK_HEADERS},
-        {"readonly", 8, TOK_READONLY}, {"write", 5, TOK_WRITE},
-        {"admin", 5, TOK_ADMIN}, {"user", 4, TOK_USER}, {"guest", 5, TOK_GUEST},
-        {"", 0, TOK_ERROR}
-    };
-    for (int i = 0; keywords[i].kw_len > 0; i++) {
-        if (keywords[i].kw_len == len && memcmp(s, keywords[i].kw, len) == 0)
-            return keywords[i].type;
+    switch (len) {
+        case 2:
+            if (s[0] == 'i' && s[1] == 'f') return TOK_IF;
+            if (s[0] == 'i' && s[1] == 'n') return TOK_IN;
+            if (s[0] == 'i' && s[1] == 's') return TOK_IS;
+            if (s[0] == 'o' && s[1] == 'r') return TOK_OR;
+            if (s[0] == 'a' && s[1] == 's') return TOK_AS;
+            break;
+        case 3:
+            if (memcmp(s, "def", 3) == 0) return TOK_DEF;
+            if (memcmp(s, "for", 3) == 0) return TOK_FOR;
+            if (memcmp(s, "and", 3) == 0) return TOK_AND;
+            if (memcmp(s, "not", 3) == 0) return TOK_NOT;
+            if (memcmp(s, "try", 3) == 0) return TOK_TRY;
+            if (memcmp(s, "gpu", 3) == 0) return TOK_GPU;
+            if (memcmp(s, "cpu", 3) == 0) return TOK_CPU;
+            if (memcmp(s, "xss", 3) == 0) return TOK_XSS;
+            break;
+        case 4:
+            if (memcmp(s, "elif", 4) == 0) return TOK_ELIF;
+            if (memcmp(s, "else", 4) == 0) return TOK_ELSE;
+            if (memcmp(s, "from", 4) == 0) return TOK_FROM;
+            if (memcmp(s, "True", 4) == 0) return TOK_TRUE;
+            if (memcmp(s, "true", 4) == 0) return TOK_TRUE;
+            if (memcmp(s, "None", 4) == 0) return TOK_NONE;
+            if (memcmp(s, "none", 4) == 0) return TOK_NONE;
+            if (memcmp(s, "pass", 4) == 0) return TOK_PASS;
+            if (memcmp(s, "with", 4) == 0) return TOK_WITH;
+            if (memcmp(s, "case", 4) == 0) return TOK_CASE;
+            if (memcmp(s, "auth", 4) == 0) return TOK_AUTH;
+            if (memcmp(s, "rate", 4) == 0) return TOK_RATE;
+            if (memcmp(s, "hash", 4) == 0) return TOK_HASH;
+            if (memcmp(s, "csrf", 4) == 0) return TOK_CSRF;
+            if (memcmp(s, "cors", 4) == 0) return TOK_CORS;
+            if (memcmp(s, "user", 4) == 0) return TOK_USER;
+            break;
+        case 5:
+            if (memcmp(s, "class", 5) == 0) return TOK_CLASS;
+            if (memcmp(s, "while", 5) == 0) return TOK_WHILE;
+            if (memcmp(s, "False", 5) == 0) return TOK_FALSE;
+            if (memcmp(s, "false", 5) == 0) return TOK_FALSE;
+            if (memcmp(s, "break", 5) == 0) return TOK_BREAK;
+            if (memcmp(s, "const", 5) == 0) return TOK_CONST;
+            if (memcmp(s, "async", 5) == 0) return TOK_ASYNC;
+            if (memcmp(s, "await", 5) == 0) return TOK_AWAIT;
+            if (memcmp(s, "raise", 5) == 0) return TOK_RAISE;
+            if (memcmp(s, "yield", 5) == 0) return TOK_YIELD;
+            if (memcmp(s, "match", 5) == 0) return TOK_MATCH;
+            if (memcmp(s, "chunk", 5) == 0) return TOK_CHUNK;
+            if (memcmp(s, "level", 5) == 0) return TOK_LEVEL;
+            if (memcmp(s, "limit", 5) == 0) return TOK_LIMIT;
+            if (memcmp(s, "write", 5) == 0) return TOK_WRITE;
+            if (memcmp(s, "admin", 5) == 0) return TOK_ADMIN;
+            if (memcmp(s, "guest", 5) == 0) return TOK_GUEST;
+            break;
+        case 6:
+            if (memcmp(s, "return", 6) == 0) return TOK_RETURN;
+            if (memcmp(s, "import", 6) == 0) return TOK_IMPORT;
+            if (memcmp(s, "struct", 6) == 0) return TOK_STRUCT;
+            if (memcmp(s, "except", 6) == 0) return TOK_EXCEPT;
+            if (memcmp(s, "lambda", 6) == 0) return TOK_LAMBDA;
+            if (memcmp(s, "device", 6) == 0) return TOK_DEVICE;
+            break;
+        case 7:
+            if (memcmp(s, "finally", 7) == 0) return TOK_FINALLY;
+            if (memcmp(s, "private", 7) == 0) return TOK_PRIVATE;
+            if (memcmp(s, "threads", 7) == 0) return TOK_THREADS;
+            if (memcmp(s, "unified", 7) == 0) return TOK_UNIFIED;
+            if (memcmp(s, "encrypt", 7) == 0) return TOK_ENCRYPT;
+            if (memcmp(s, "headers", 7) == 0) return TOK_HEADERS;
+            break;
+        case 8:
+            if (memcmp(s, "continue", 8) == 0) return TOK_CONTINUE;
+            if (memcmp(s, "parallel", 8) == 0) return TOK_PARALLEL;
+            if (memcmp(s, "settings", 8) == 0) return TOK_SETTINGS;
+            if (memcmp(s, "schedule", 8) == 0) return TOK_SCHEDULE;
+            if (memcmp(s, "security", 8) == 0) return TOK_SECURITY;
+            if (memcmp(s, "validate", 8) == 0) return TOK_VALIDATE;
+            if (memcmp(s, "sanitize", 8) == 0) return TOK_SANITIZE;
+            if (memcmp(s, "readonly", 8) == 0) return TOK_READONLY;
+            break;
+        case 9:
+            if (memcmp(s, "protected", 9) == 0) return TOK_PROTECTED;
+            if (memcmp(s, "injection", 9) == 0) return TOK_INJECTION;
+            break;
     }
     return TOK_IDENTIFIER;
 }
