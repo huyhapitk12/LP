@@ -131,14 +131,14 @@ def or_opt_1(t: int[], pos: int[], N: int, D: float[], NN: int[], NK: int) -> in
                 continue
             seg0: int = t[i]
             if best_j > i:
-                for pp in range(i, best_j):
-                    t[pp] = t[pp + 1]
+                # memmove: shift t[i+1..best_j] left by 1 (SIMD-accelerated)
+                dsa.memmove_left1(t, i + 1, best_j + 1)
                 t[best_j] = seg0
                 for pp in range(i, best_j + 1):
                     pos[t[pp]] = pp
             else:
-                for pp in range(i - 1, best_j, -1):
-                    t[pp + 1] = t[pp]
+                # memmove: shift t[best_j+1..i] right by 1
+                dsa.memmove_right1(t, best_j + 1, i)
                 t[best_j + 1] = seg0
                 for pp in range(best_j + 1, i + 1):
                     pos[t[pp]] = pp
