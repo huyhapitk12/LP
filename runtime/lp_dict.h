@@ -457,4 +457,70 @@ static inline void lp_int_array2d_set(LpIntArray2D *arr, int64_t r, int64_t c, i
     arr->data[r * arr->cols + c] = val;
 }
 
+/* ========================================
+ * Zero-overhead raw double (float64) arrays
+ * ======================================== */
+
+typedef struct {
+    double  *data;
+    int64_t  len;
+} LpFloatArray;
+
+static inline LpFloatArray* lp_float_array_new(int64_t size) {
+    LpFloatArray *arr = (LpFloatArray*)malloc(sizeof(LpFloatArray));
+    if (!arr) return NULL;
+    arr->data = (double*)calloc(size, sizeof(double));
+    if (!arr->data) { free(arr); return NULL; }
+    arr->len = size;
+    return arr;
+}
+
+static inline void lp_float_array_free(LpFloatArray *arr) {
+    if (arr) { free(arr->data); free(arr); }
+}
+
+static inline double lp_float_array_get(LpFloatArray *arr, int64_t idx) {
+    return arr->data[idx];
+}
+
+static inline void lp_float_array_set(LpFloatArray *arr, int64_t idx, double val) {
+    arr->data[idx] = val;
+}
+
+static inline LpFloatArray* lp_float_array_repeat(double val, int64_t count) {
+    LpFloatArray *arr = lp_float_array_new(count);
+    if (!arr) return NULL;
+    for (int64_t i = 0; i < count; i++) arr->data[i] = val;
+    return arr;
+}
+
+/* 2D float array as 1D with row-major indexing */
+typedef struct {
+    double  *data;
+    int64_t  rows;
+    int64_t  cols;
+} LpFloatArray2D;
+
+static inline LpFloatArray2D* lp_float_array2d_new(int64_t rows, int64_t cols) {
+    LpFloatArray2D *arr = (LpFloatArray2D*)malloc(sizeof(LpFloatArray2D));
+    if (!arr) return NULL;
+    arr->data = (double*)calloc(rows * cols, sizeof(double));
+    if (!arr->data) { free(arr); return NULL; }
+    arr->rows = rows;
+    arr->cols = cols;
+    return arr;
+}
+
+static inline void lp_float_array2d_free(LpFloatArray2D *arr) {
+    if (arr) { free(arr->data); free(arr); }
+}
+
+static inline double lp_float_array2d_get(LpFloatArray2D *arr, int64_t r, int64_t c) {
+    return arr->data[r * arr->cols + c];
+}
+
+static inline void lp_float_array2d_set(LpFloatArray2D *arr, int64_t r, int64_t c, double val) {
+    arr->data[r * arr->cols + c] = val;
+}
+
 #endif /* LP_DICT_H */
