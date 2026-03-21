@@ -234,7 +234,11 @@ db = sqlite.connect("mydb.db")
 results = sqlite.query(db, "SELECT * FROM users")
 
 # Threading
-t = thread.spawn(worker_function, 42)
+# Worker must be a named function with 0 args, returning int or void
+def worker_function() -> int:
+    return 42
+
+t = thread.spawn(worker_function)
 result = thread.join(t)
 
 # Memory Management

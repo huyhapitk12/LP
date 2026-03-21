@@ -179,6 +179,22 @@ static inline void lp_io_write_float_ln(double x) {
     lp_io_write_char('\n');
 }
 
+/* Write float with custom precision: dsa.write_float_prec(x, digits) */
+static inline void lp_io_write_float_prec(double x, int64_t digits) {
+    char fmt[16], buf[64];
+    if (digits < 0) digits = 0;
+    if (digits > 17) digits = 17;
+    snprintf(fmt, sizeof(fmt), "%%.%dlf", (int)digits);
+    snprintf(buf, sizeof(buf), fmt, x);
+    lp_io_write_str(buf);
+}
+
+/* Write float with custom precision + newline */
+static inline void lp_io_write_float_prec_ln(double x, int64_t digits) {
+    lp_io_write_float_prec(x, digits);
+    lp_io_write_char('\n');
+}
+
 static inline void lp_io_write_str_ln(const char* s) {
     lp_io_write_str(s);
     lp_io_write_char('\n');
