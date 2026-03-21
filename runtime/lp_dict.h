@@ -523,4 +523,21 @@ static inline void lp_float_array2d_set(LpFloatArray2D *arr, int64_t r, int64_t 
     arr->data[r * arr->cols + c] = val;
 }
 
+/* ========================================
+ * Shift helpers using memmove (SIMD-optimized by libc)
+ * Used by OR-opt to avoid slow element-by-element loops
+ * ======================================== */
+
+/* Shift elements [from..to) right by 1: arr[from+1..to+1] = arr[from..to] */
+static inline void lp_int_array_shift_right1(LpIntArray *arr, int64_t from, int64_t to) {
+    if (to <= from || !arr || !arr->data) return;
+    memmove(arr->data + from + 1, arr->data + from, (size_t)(to - from) * sizeof(int64_t));
+}
+
+/* Shift elements [from..to) left by 1: arr[from-1..to-1] = arr[from..to] */
+static inline void lp_int_array_shift_left1(LpIntArray *arr, int64_t from, int64_t to) {
+    if (to <= from || !arr || !arr->data) return;
+    memmove(arr->data + from - 1, arr->data + from, (size_t)(to - from) * sizeof(int64_t));
+}
+
 #endif /* LP_DICT_H */
