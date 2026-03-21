@@ -23,7 +23,8 @@ typedef enum {
     LP_DICT, LP_SET, LP_TUPLE, LP_FILE, LP_CLASS, LP_OBJECT, LP_VAL, LP_SQLITE_DB,
     LP_THREAD, LP_LOCK, LP_ARENA, LP_POOL, LP_PTR, LP_UNKNOWN,
     /* Native arrays for competitive programming - zero overhead */
-    LP_NATIVE_ARRAY_1D, LP_NATIVE_ARRAY_2D
+    LP_NATIVE_ARRAY_1D, LP_NATIVE_ARRAY_2D,
+    LP_NATIVE_ARRAY_FLOAT_1D, LP_NATIVE_ARRAY_FLOAT_2D
 } LpType;
 
 /* Module import tracking */
