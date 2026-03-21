@@ -316,7 +316,127 @@ static inline int lp_val_gte(LpVal a, LpVal b) {
     return 0; 
 }
 
-/* Sorting and searching helpers */
+/* ================================================================
+ * TIMSORT for LpVal arrays - O(n) best case, O(n log n) worst case
+ * Stable sort, optimized for partially ordered data
+ * ================================================================ */
+
+#define LP_VAL_TIMSORT_MIN_RUN 32
+
+/* Insertion sort for small runs of LpVal */
+static inline void _lp_val_timsort_insertion_sort(LpVal *arr, int64_t left, int64_t right) {
+    for (int64_t i = left + 1; i <= right; i++) {
+        LpVal key = arr[i];
+        int64_t j = i - 1;
+        while (j >= left && lp_val_gt(arr[j], key)) {
+            arr[j + 1] = arr[j];
+            j--;
+        }
+        arr[j + 1] = key;
+    }
+}
+
+/* Merge two sorted runs of LpVal */
+static inline void _lp_val_timsort_merge(LpVal *arr, int64_t l, int64_t m, int64_t r, LpVal *temp) {
+    int64_t len1 = m - l + 1;
+    int64_t len2 = r - m;
+    
+    /* Copy to temp array */
+    for (int64_t i = 0; i < len1; i++)
+        temp[i] = arr[l + i];
+    for (int64_t i = 0; i < len2; i++)
+        temp[len1 + i] = arr[m + 1 + i];
+    
+    int64_t i = 0, j = 0, k = l;
+    
+    /* Stable merge: use <= to maintain stability */
+    while (i < len1 && j < len2) {
+        if (lp_val_lte(temp[i], temp[j])) {
+            arr[k++] = temp[i++];
+        } else {
+            arr[k++] = temp[j++];
+        }
+    }
+    
+    while (i < len1)
+        arr[k++] = temp[i++];
+    while (j < len2)
+        arr[k++] = temp[j++];
+}
+
+/* Calculate minimum run length */
+static inline int64_t _lp_val_timsort_min_run_length(int64_t n) {
+    int64_t r = 0;
+    while (n >= LP_VAL_TIMSORT_MIN_RUN) {
+        r |= (n & 1);
+        n >>= 1;
+    }
+    return n + r;
+}
+
+/* Find natural run in LpVal array */
+static inline int64_t _lp_val_timsort_count_run(LpVal *arr, int64_t left, int64_t right) {
+    if (left >= right) return 1;
+    
+    int64_t run_len = 1;
+    
+    /* Check if descending */
+    if (lp_val_gt(arr[left], arr[left + 1])) {
+        /* Descending run - find end and reverse */
+        while (left + run_len < right && lp_val_gt(arr[left + run_len], arr[left + run_len + 1])) {
+            run_len++;
+        }
+        /* Reverse */
+        for (int64_t i = 0; i < (run_len + 1) / 2; i++) {
+            LpVal tmp = arr[left + i];
+            arr[left + i] = arr[left + run_len - i];
+            arr[left + run_len - i] = tmp;
+        }
+        return run_len + 1;
+    } else {
+        /* Ascending run */
+        while (left + run_len < right && lp_val_lte(arr[left + run_len], arr[left + run_len + 1])) {
+            run_len++;
+        }
+        return run_len + 1;
+    }
+}
+
+/* Main TimSort for LpVal array */
+static inline void _lp_val_timsort(LpVal *arr, int64_t n, LpVal *temp) {
+    if (n < 2) return;
+    
+    int64_t min_run = _lp_val_timsort_min_run_length(n);
+    
+    /* Sort individual runs */
+    int64_t left = 0;
+    while (left < n) {
+        int64_t run_len = _lp_val_timsort_count_run(arr, left, n - 1);
+        int64_t right = left + run_len - 1;
+        
+        if (run_len < min_run) {
+            int64_t extend = (left + min_run - 1) < (n - 1) ? (left + min_run - 1) : (n - 1);
+            _lp_val_timsort_insertion_sort(arr, left, extend);
+            right = extend;
+        }
+        
+        left = right + 1;
+    }
+    
+    /* Merge runs bottom-up */
+    for (int64_t size = min_run; size < n; size = 2 * size) {
+        for (int64_t l = 0; l < n; l += 2 * size) {
+            int64_t m = l + size - 1;
+            int64_t r = (l + 2 * size - 1) < (n - 1) ? (l + 2 * size - 1) : (n - 1);
+            
+            if (m < r) {
+                _lp_val_timsort_merge(arr, l, m, r, temp);
+            }
+        }
+    }
+}
+
+/* Comparison function for qsort fallback */
 static inline int lp_val_cmp(const void *a, const void *b) {
     LpVal *va = (LpVal*)a;
     LpVal *vb = (LpVal*)b;
@@ -325,8 +445,17 @@ static inline int lp_val_cmp(const void *a, const void *b) {
     return 0;
 }
 
+/* TimSort wrapper for LpList */
 static inline void lp_list_sort(LpList *l) {
-    if (l && l->items && l->len > 1) {
+    if (!l || !l->items || l->len <= 1) return;
+    
+    /* Allocate temp buffer */
+    LpVal *temp = (LpVal*)malloc(l->len * sizeof(LpVal));
+    if (temp) {
+        _lp_val_timsort(l->items, l->len, temp);
+        free(temp);
+    } else {
+        /* Fallback to qsort if allocation fails */
         qsort(l->items, l->len, sizeof(LpVal), lp_val_cmp);
     }
 }

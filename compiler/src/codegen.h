@@ -100,6 +100,7 @@ typedef struct {
     int uses_security;/* needs lp_security.h */
     int uses_dsa;     /* needs lp_dsa.h (competitive programming / DSA) */
     int has_main;     /* True if main() function was defined by user */
+    LpType main_return_type; /* Return type of main() function */
     int thread_adapter_count;
 } CodeGen;
 
