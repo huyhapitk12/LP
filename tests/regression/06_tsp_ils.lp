@@ -1,14 +1,20 @@
 import math
 import time
-import random
 import dsa
+import random
 
-# ---------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------
-def copy_arr(src: int[], dest: int[], n: int):
+# ================================================================
+# RNG via random module (seeded for reproducibility)
+# ================================================================
+def rng_mod(m: int) -> int:
+    return random.randint(0, m - 1)
+
+# ================================================================
+# Utility
+# ================================================================
+def copy_arr(src: int[], dst: int[], n: int):
     for i in range(n):
-        dest[i] = src[i]
+        dst[i] = src[i]
 
 def rebuild_pos(t: int[], pos: int[], N: int):
     for i in range(N):
@@ -17,12 +23,15 @@ def rebuild_pos(t: int[], pos: int[], N: int):
 def tour_len(t: int[], N: int, D: float[]) -> float:
     s: float = 0.0
     for i in range(N):
-        s = s + D[t[i] * N + t[(i + 1) % N]]
+        nxt: int = i + 1
+        if nxt == N:
+            nxt = 0
+        s = s + D[t[i] * N + t[nxt]]
     return s
 
-# ---------------------------------------------------------------
-# 2-opt with NN list + DLB + pos array
-# ---------------------------------------------------------------
+# ================================================================
+# 2-opt with NN list + DLB + pos[]
+# ================================================================
 def two_opt(t: int[], pos: int[], N: int, D: float[], NN: int[], NK: int, dlb: int[]) -> int:
     improved: int = 0
     any_imp: int = 1
@@ -33,7 +42,9 @@ def two_opt(t: int[], pos: int[], N: int, D: float[], NN: int[], NK: int, dlb: i
             if dlb[t1] == 1:
                 continue
             i: int = pos[t1]
-            i1: int = (i + 1) % N
+            i1: int = i + 1
+            if i1 == N:
+                i1 = 0
             t2: int = t[i1]
             d12: float = D[t1 * N + t2]
             found: int = 0
@@ -42,7 +53,9 @@ def two_opt(t: int[], pos: int[], N: int, D: float[], NN: int[], NK: int, dlb: i
                 if D[t1 * N + t3] >= d12:
                     break
                 j: int = pos[t3]
-                j1: int = (j + 1) % N
+                j1: int = j + 1
+                if j1 == N:
+                    j1 = 0
                 t4: int = t[j1]
                 if t4 == t1:
                     continue
@@ -69,7 +82,9 @@ def two_opt(t: int[], pos: int[], N: int, D: float[], NN: int[], NK: int, dlb: i
                     improved = 1
                     found = 1
                     i = pos[t1]
-                    i1 = (i + 1) % N
+                    i1 = i + 1
+                    if i1 == N:
+                        i1 = 0
                     t2 = t[i1]
                     d12 = D[t1 * N + t2]
                     break
@@ -77,17 +92,21 @@ def two_opt(t: int[], pos: int[], N: int, D: float[], NN: int[], NK: int, dlb: i
                 dlb[t1] = 1
     return improved
 
-# ---------------------------------------------------------------
-# OR-opt-1 (relocate single node) with NN list
-# ---------------------------------------------------------------
+# ================================================================
+# OR-opt-1: single node relocation with NN list
+# ================================================================
 def or_opt_1(t: int[], pos: int[], N: int, D: float[], NN: int[], NK: int) -> int:
     improved: int = 0
     any_imp: int = 1
     while any_imp == 1:
         any_imp = 0
         for i in range(N):
-            ip: int = (i - 1 + N) % N
-            in_: int = (i + 1) % N
+            ip: int = i - 1
+            if ip < 0:
+                ip = N - 1
+            in_: int = i + 1
+            if in_ == N:
+                in_ = 0
             node: int = t[i]
             pn: int = t[ip]
             nx: int = t[in_]
@@ -99,7 +118,9 @@ def or_opt_1(t: int[], pos: int[], N: int, D: float[], NN: int[], NK: int) -> in
                 j: int = pos[t3]
                 if j == ip or j == i or j == in_:
                     continue
-                j1: int = (j + 1) % N
+                j1: int = j + 1
+                if j1 == N:
+                    j1 = 0
                 if j1 == i:
                     continue
                 gain: float = rm + D[t[j] * N + t[j1]] - D[t[j] * N + node] - D[node * N + t[j1]]
@@ -110,16 +131,14 @@ def or_opt_1(t: int[], pos: int[], N: int, D: float[], NN: int[], NK: int) -> in
                 continue
             seg0: int = t[i]
             if best_j > i:
-                shift: int = best_j - i
-                for pp in range(shift):
-                    t[i + pp] = t[i + 1 + pp]
+                for pp in range(i, best_j):
+                    t[pp] = t[pp + 1]
                 t[best_j] = seg0
                 for pp in range(i, best_j + 1):
                     pos[t[pp]] = pp
             else:
-                shift2: int = i - best_j - 1
-                for pp in range(shift2 - 1, -1, -1):
-                    t[best_j + 2 + pp] = t[best_j + 1 + pp]
+                for pp in range(i - 1, best_j, -1):
+                    t[pp + 1] = t[pp]
                 t[best_j + 1] = seg0
                 for pp in range(best_j + 1, i + 1):
                     pos[t[pp]] = pp
@@ -127,9 +146,9 @@ def or_opt_1(t: int[], pos: int[], N: int, D: float[], NN: int[], NK: int) -> in
             improved = 1
     return improved
 
-# ---------------------------------------------------------------
-# OR-opt-2 (relocate 2-node segment)
-# ---------------------------------------------------------------
+# ================================================================
+# OR-opt-2: 2-node segment relocation
+# ================================================================
 def or_opt_2(t: int[], pos: int[], N: int, D: float[], NN: int[], NK: int) -> int:
     improved: int = 0
     any_imp: int = 1
@@ -137,22 +156,28 @@ def or_opt_2(t: int[], pos: int[], N: int, D: float[], NN: int[], NK: int) -> in
         any_imp = 0
         for i in range(N - 1):
             ie: int = i + 1
-            t_front: int = t[i]
-            t_back: int = t[ie]
-            ip: int = (i - 1 + N) % N
-            in_: int = (ie + 1) % N
-            rm: float = D[t[ip] * N + t_front] + D[t_back * N + t[in_]] - D[t[ip] * N + t[in_]]
+            tf: int = t[i]
+            tb: int = t[ie]
+            ip: int = i - 1
+            if ip < 0:
+                ip = N - 1
+            in_: int = ie + 1
+            if in_ == N:
+                in_ = 0
+            rm: float = D[t[ip] * N + tf] + D[tb * N + t[in_]] - D[t[ip] * N + t[in_]]
             best_j: int = -1
             best_gain: float = 0.000001
             for k in range(NK):
-                t3: int = NN[t_front * NK + k]
+                t3: int = NN[tf * NK + k]
                 j: int = pos[t3]
                 if j >= i and j <= ie:
                     continue
-                j1: int = (j + 1) % N
+                j1: int = j + 1
+                if j1 == N:
+                    j1 = 0
                 if j1 >= i and j1 <= ie:
                     continue
-                gain: float = rm + D[t[j] * N + t[j1]] - D[t[j] * N + t_front] - D[t_back * N + t[j1]]
+                gain: float = rm + D[t[j] * N + t[j1]] - D[t[j] * N + tf] - D[tb * N + t[j1]]
                 if gain > best_gain:
                     best_gain = gain
                     best_j = j
@@ -161,17 +186,15 @@ def or_opt_2(t: int[], pos: int[], N: int, D: float[], NN: int[], NK: int) -> in
             s0: int = t[i]
             s1: int = t[ie]
             if i < best_j:
-                shift: int = best_j - ie
-                for pp in range(shift):
-                    t[i + pp] = t[ie + 1 + pp]
+                for pp in range(i, best_j - 1):
+                    t[pp] = t[pp + 2]
                 t[best_j - 1] = s0
                 t[best_j] = s1
                 for pp in range(i, best_j + 1):
                     pos[t[pp]] = pp
             else:
-                shift2: int = i - best_j - 1
-                for pp in range(shift2 - 1, -1, -1):
-                    t[best_j + 3 + pp] = t[best_j + 1 + pp]
+                for pp in range(i + 1, best_j + 1, -1):
+                    t[pp] = t[pp - 2]
                 t[best_j + 1] = s0
                 t[best_j + 2] = s1
                 for pp in range(best_j + 1, ie + 1):
@@ -180,19 +203,22 @@ def or_opt_2(t: int[], pos: int[], N: int, D: float[], NN: int[], NK: int) -> in
             improved = 1
     return improved
 
-# ---------------------------------------------------------------
-# Double Bridge (true 4-cut)
-# ---------------------------------------------------------------
+# ================================================================
+# Double Bridge — true 4-cut reconnection
+# Uses xorshift rng, no malloc
+# ================================================================
 def double_bridge(t: int[], tmp: int[], N: int):
-    if N < 4:
+    if N < 8:
         return
-    a: int = 1 + random.randint(0, N - 2)
-    b: int = 1 + random.randint(0, N - 2)
-    c: int = 1 + random.randint(0, N - 2)
+    # Generate distinct a < b < c in [1, N-1)
+    a: int = 1 + rng_mod(N - 2)
+    b: int = 1 + rng_mod(N - 2)
+    c: int = 1 + rng_mod(N - 2)
     while a == b or b == c or a == c:
-        a = 1 + random.randint(0, N - 2)
-        b = 1 + random.randint(0, N - 2)
-        c = 1 + random.randint(0, N - 2)
+        a = 1 + rng_mod(N - 2)
+        b = 1 + rng_mod(N - 2)
+        c = 1 + rng_mod(N - 2)
+    # Sort a < b < c
     if a > b:
         sv: int = a
         a = b
@@ -205,6 +231,7 @@ def double_bridge(t: int[], tmp: int[], N: int):
         sv = a
         a = b
         b = sv
+    # Reconnect: [0..a) + [c..N) + [b..c) + [a..b)
     idx: int = 0
     for i in range(0, a):
         tmp[idx] = t[i]
@@ -221,13 +248,25 @@ def double_bridge(t: int[], tmp: int[], N: int):
     for i in range(N):
         t[i] = tmp[i]
 
-# ---------------------------------------------------------------
+# ================================================================
+# Local search: 2-opt + or-opt-1 + or-opt-2 until no improvement
+# ================================================================
+def local_search(t: int[], pos: int[], N: int, D: float[], NN: int[], NK: int, dlb: int[]):
+    imp: int = 1
+    while imp == 1:
+        imp = two_opt(t, pos, N, D, NN, NK, dlb)
+        imp = imp | or_opt_1(t, pos, N, D, NN, NK)
+        imp = imp | or_opt_2(t, pos, N, D, NN, NK)
+
+# ================================================================
 # Main
-# ---------------------------------------------------------------
+# ================================================================
 def main():
+    random.seed(123456789)
     start_time: float = time.time()
     N: int = dsa.read_int()
     NK: int = 20
+
     if N == 1:
         dsa.write_str_ln("0.0000")
         dsa.write_int_ln(1)
@@ -240,6 +279,7 @@ def main():
         X[i] = dsa.read_float()
         Y[i] = dsa.read_float()
 
+    # Distance matrix — LpFloatArray, direct double* access
     D = [0.0] * (N * N)
     for i in range(N):
         for j in range(N):
@@ -247,7 +287,7 @@ def main():
             dy: float = Y[i] - Y[j]
             D[i * N + j] = math.sqrt(dx * dx + dy * dy)
 
-    # Nearest-neighbor list — partial selection sort O(N*NK) per row
+    # NN list — partial selection sort, reuse `used` array (no malloc in loop)
     NN = [0] * (N * NK)
     used = [0] * N
     for i in range(N):
@@ -270,30 +310,30 @@ def main():
     tmp_arr = [0] * N
     best: float = 999999999.0
 
-    # Greedy nearest-neighbour init (all N starts)
+    # Greedy all-starts — reuse `used` (reset manually, no alloc per iteration)
     for s in range(N):
-        vis = [0] * N
+        for j in range(N):
+            used[j] = 0
         tmp_arr[0] = s
-        vis[s] = 1
+        used[s] = 1
         cur: float = 0.0
         for i in range(1, N):
             last: int = tmp_arr[i - 1]
             nxt: int = -1
             mn: float = 999999999.0
-            # Try NN first
             for k in range(NK):
                 nb: int = NN[last * NK + k]
-                if vis[nb] == 0:
+                if used[nb] == 0:
                     nxt = nb
                     mn = D[last * N + nb]
                     break
             if nxt == -1:
                 for j in range(N):
-                    if vis[j] == 0 and D[last * N + j] < mn:
+                    if used[j] == 0 and D[last * N + j] < mn:
                         mn = D[last * N + j]
                         nxt = j
             tmp_arr[i] = nxt
-            vis[nxt] = 1
+            used[nxt] = 1
             cur = cur + mn
         cur = cur + D[tmp_arr[N - 1] * N + tmp_arr[0]]
         if cur < best:
@@ -301,30 +341,22 @@ def main():
             copy_arr(tmp_arr, best_t, N)
 
     t_arr = [0] * N
-    pos = [0] * N
-    dlb = [0] * N
+    pos   = [0] * N
+    dlb   = [0] * N
     copy_arr(best_t, t_arr, N)
     rebuild_pos(t_arr, pos, N)
     for i in range(N):
         dlb[i] = 0
-
-    # Initial local search
-    imp: int = 1
-    while imp == 1:
-        imp = two_opt(t_arr, pos, N, D, NN, NK, dlb)
-        imp = imp | or_opt_1(t_arr, pos, N, D, NN, NK)
-        imp = imp | or_opt_2(t_arr, pos, N, D, NN, NK)
-
+    local_search(t_arr, pos, N, D, NN, NK, dlb)
     best = tour_len(t_arr, N, D)
     copy_arr(t_arr, best_t, N)
 
-    # ILS: check time every 16 iterations to minimize syscall overhead
+    # ILS — check time every 16 iters to minimise syscall overhead
     iter_count: int = 0
     while True:
         iter_count = iter_count + 1
-        # Check time every 16 iterations
         if iter_count % 16 == 0:
-            if (time.time() - start_time) > 0.85:
+            if time.time() - start_time > 0.85:
                 break
 
         copy_arr(best_t, t_arr, N)
@@ -332,12 +364,7 @@ def main():
         rebuild_pos(t_arr, pos, N)
         for i in range(N):
             dlb[i] = 0
-        imp = 1
-        while imp == 1:
-            imp = two_opt(t_arr, pos, N, D, NN, NK, dlb)
-            imp = imp | or_opt_1(t_arr, pos, N, D, NN, NK)
-            imp = imp | or_opt_2(t_arr, pos, N, D, NN, NK)
-
+        local_search(t_arr, pos, N, D, NN, NK, dlb)
         cur_len: float = tour_len(t_arr, N, D)
         if cur_len < best:
             best = cur_len
