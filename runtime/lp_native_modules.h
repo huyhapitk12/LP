@@ -351,16 +351,152 @@ static inline LpArray lp_np_log_arr(LpArray a) {
     return r;
 }
 
-/* Sorting (in-place) */
+/* ================================================================
+ * TIMSORT for double arrays - O(n) best case, O(n log n) worst case
+ * Stable sort, optimized for partially ordered data
+ * ================================================================ */
+
+#define LP_TIMSORT_MIN_RUN 32
+
+/* Comparison function for qsort fallback */
 static int _lp_np_cmp_asc(const void *a, const void *b) {
     double da = *(const double *)a, db = *(const double *)b;
     return (da > db) - (da < db);
 }
 
+/* Insertion sort for small runs */
+static inline void _lp_timsort_insertion_sort(double *arr, int64_t left, int64_t right) {
+    for (int64_t i = left + 1; i <= right; i++) {
+        double key = arr[i];
+        int64_t j = i - 1;
+        while (j >= left && arr[j] > key) {
+            arr[j + 1] = arr[j];
+            j--;
+        }
+        arr[j + 1] = key;
+    }
+}
+
+/* Merge two sorted runs */
+static inline void _lp_timsort_merge(double *arr, int64_t l, int64_t m, int64_t r, double *temp) {
+    int64_t len1 = m - l + 1;
+    int64_t len2 = r - m;
+    
+    /* Copy to temp array */
+    for (int64_t i = 0; i < len1; i++)
+        temp[i] = arr[l + i];
+    for (int64_t i = 0; i < len2; i++)
+        temp[len1 + i] = arr[m + 1 + i];
+    
+    int64_t i = 0, j = 0, k = l;
+    
+    /* Merge with galloping optimization for equal elements */
+    while (i < len1 && j < len2) {
+        if (temp[i] <= temp[j]) {
+            arr[k++] = temp[i++];
+        } else {
+            arr[k++] = temp[j++];
+        }
+    }
+    
+    while (i < len1)
+        arr[k++] = temp[i++];
+    while (j < len2)
+        arr[k++] = temp[j++];
+}
+
+/* Calculate minimum run length (power of 2 between 32 and 64) */
+static inline int64_t _lp_timsort_min_run_length(int64_t n) {
+    int64_t r = 0;
+    while (n >= LP_TIMSORT_MIN_RUN) {
+        r |= (n & 1);
+        n >>= 1;
+    }
+    return n + r;
+}
+
+/* Find start of next run (ascending or descending) */
+static inline int64_t _lp_timsort_count_run(double *arr, int64_t left, int64_t right) {
+    if (left >= right) return 1;
+    
+    int64_t run_len = 1;
+    
+    /* Check if descending - if so, reverse */
+    if (arr[left] > arr[left + 1]) {
+        /* Descending run - find end and reverse */
+        while (left + run_len < right && arr[left + run_len] > arr[left + run_len + 1]) {
+            run_len++;
+        }
+        /* Reverse the descending run */
+        for (int64_t i = 0; i < (run_len + 1) / 2; i++) {
+            double tmp = arr[left + i];
+            arr[left + i] = arr[left + run_len - i];
+            arr[left + run_len - i] = tmp;
+        }
+        return run_len + 1;
+    } else {
+        /* Ascending run - find end */
+        while (left + run_len < right && arr[left + run_len] <= arr[left + run_len + 1]) {
+            run_len++;
+        }
+        return run_len + 1;
+    }
+}
+
+/* Main TimSort implementation */
+static inline void _lp_timsort(double *arr, int64_t n, double *temp) {
+    if (n < 2) return;
+    
+    int64_t min_run = _lp_timsort_min_run_length(n);
+    
+    /* Sort individual runs with insertion sort */
+    int64_t left = 0;
+    while (left < n) {
+        int64_t right = left;
+        
+        /* Find natural run */
+        int64_t run_len = _lp_timsort_count_run(arr, left, n - 1);
+        right = left + run_len - 1;
+        
+        /* Extend to minimum run length if needed */
+        if (run_len < min_run) {
+            int64_t extend = (left + min_run - 1) < (n - 1) ? (left + min_run - 1) : (n - 1);
+            _lp_timsort_insertion_sort(arr, left, extend);
+            right = extend;
+        }
+        
+        left = right + 1;
+    }
+    
+    /* Merge runs from bottom up */
+    for (int64_t size = min_run; size < n; size = 2 * size) {
+        for (int64_t l = 0; l < n; l += 2 * size) {
+            int64_t m = l + size - 1;
+            int64_t r = (l + 2 * size - 1) < (n - 1) ? (l + 2 * size - 1) : (n - 1);
+            
+            if (m < r) {
+                _lp_timsort_merge(arr, l, m, r, temp);
+            }
+        }
+    }
+}
+
+/* TimSort wrapper for LpArray */
 static inline LpArray lp_np_sort(LpArray a) {
     LpArray r = lp_np_zeros(a.len);
     memcpy(r.data, a.data, a.len * sizeof(double));
-    qsort(r.data, r.len, sizeof(double), _lp_np_cmp_asc);
+    
+    if (a.len > 1) {
+        /* Allocate temp buffer for merge operations */
+        double *temp = (double*)malloc(a.len * sizeof(double));
+        if (temp) {
+            _lp_timsort(r.data, r.len, temp);
+            free(temp);
+        } else {
+            /* Fallback to qsort if allocation fails */
+            qsort(r.data, r.len, sizeof(double), _lp_np_cmp_asc);
+        }
+    }
     return r;
 }
 
