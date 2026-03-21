@@ -1738,6 +1738,10 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             buf_write(buf, "lp_io_write_float_prec(");
                         } else if (strcmp(func_name, "write_float_prec_ln") == 0) {
                             buf_write(buf, "lp_io_write_float_prec_ln(");
+                        } else if (strcmp(func_name, "memmove_left1") == 0) {
+                            buf_write(buf, "lp_dsa_memmove_left1(");
+                        } else if (strcmp(func_name, "memmove_right1") == 0) {
+                            buf_write(buf, "lp_dsa_memmove_right1(");
                         } else if (strcmp(func_name, "flush") == 0) {
                             buf_write(buf, "lp_io_flush(");
                         }
@@ -2671,12 +2675,22 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 buf_write(buf, ", 0");  /* Default column for 1D-style access */
                 buf_write(buf, ")");
             } else if (obj_type == LP_NATIVE_ARRAY_FLOAT_1D) {
-                /* LpFloatArray* -> direct data access for hot loops */
-                buf_write(buf, "((");
-                gen_expr(cg, buf, node->subscript.obj);
-                buf_write(buf, ")->data[");
-                gen_expr(cg, buf, node->subscript.index);
-                buf_write(buf, "])");
+                /* LpFloatArray* -> use _raw_ unwrapped pointer when available */
+                if (node->subscript.obj->type == NODE_NAME) {
+                    const char *vn = node->subscript.obj->name_expr.name;
+                    Symbol *s = scope_lookup(cg->scope, vn);
+                    if (s && s->type == LP_NATIVE_ARRAY_FLOAT_1D) {
+                        buf_printf(buf, "(_raw_%s[", vn);
+                        gen_expr(cg, buf, node->subscript.index);
+                        buf_write(buf, "])");
+                    } else {
+                        buf_write(buf, "(("); gen_expr(cg, buf, node->subscript.obj);
+                        buf_write(buf, ")->data["); gen_expr(cg, buf, node->subscript.index); buf_write(buf, "])");
+                    }
+                } else {
+                    buf_write(buf, "(("); gen_expr(cg, buf, node->subscript.obj);
+                    buf_write(buf, ")->data["); gen_expr(cg, buf, node->subscript.index); buf_write(buf, "])");
+                }
             } else if (obj_type == LP_NATIVE_ARRAY_FLOAT_2D) {
                 /* LpFloatArray2D* -> lp_float_array2d_get(arr, row, col) */
                 buf_write(buf, "lp_float_array2d_get(");
@@ -2904,6 +2918,18 @@ static void emit_native_int_array_init_expr(CodeGen *cg, Buffer *buf, AstNode *e
 }
 
 static void emit_native_int_array_access(CodeGen *cg, Buffer *buf, AstNode *obj_expr, AstNode *index_expr) {
+    /* If obj is a simple name and we have a _raw_ unwrap, use it directly: _raw_arr[i] */
+    if (obj_expr && obj_expr->type == NODE_NAME) {
+        const char *vname = obj_expr->name_expr.name;
+        Symbol *sym = scope_lookup(cg->scope, vname);
+        if (sym && (sym->type == LP_NATIVE_ARRAY_1D || sym->type == LP_NATIVE_ARRAY_2D)) {
+            buf_printf(buf, "(_raw_%s[", vname);
+            gen_expr(cg, buf, index_expr);
+            buf_write(buf, "])");
+            return;
+        }
+    }
+    /* Fallback: standard pointer dereference */
     buf_write(buf, "((");
     gen_expr(cg, buf, obj_expr);
     buf_write(buf, ")->data[");
@@ -3411,7 +3437,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     buf_write(buf, ");\n");
                 }
             } else if (obj_type == LP_NATIVE_ARRAY_FLOAT_1D) {
-                /* Native float 1D array: direct raw store */
+                /* Native float 1D array: use _raw_ unwrapped pointer when available */
                 const char *op_str = "+=";
                 switch (node->subscript_assign.op) {
                     case TOK_PLUS_ASSIGN:  op_str = "+="; break;
@@ -3420,20 +3446,24 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     case TOK_SLASH_ASSIGN: op_str = "/="; break;
                     default: break;
                 }
+                /* Check if we can use _raw_ pointer */
+                int use_raw = 0;
+                const char *raw_name = NULL;
+                if (node->subscript_assign.obj->type == NODE_NAME) {
+                    const char *vn = node->subscript_assign.obj->name_expr.name;
+                    Symbol *s = scope_lookup(cg->scope, vn);
+                    if (s && s->type == LP_NATIVE_ARRAY_FLOAT_1D) { use_raw = 1; raw_name = vn; }
+                }
                 if (node->subscript_assign.op != TOK_ASSIGN) {
-                    buf_write(buf, "((");
-                    gen_expr(cg, buf, node->subscript_assign.obj);
-                    buf_write(buf, ")->data[");
+                    if (use_raw) { buf_printf(buf, "(_raw_%s[", raw_name); }
+                    else { buf_write(buf, "(("); gen_expr(cg, buf, node->subscript_assign.obj); buf_write(buf, ")->data["); }
                     gen_expr(cg, buf, node->subscript_assign.index);
-                    buf_write(buf, "]) ");
-                    buf_write(buf, op_str);
-                    buf_write(buf, " (double)(");
+                    buf_printf(buf, "]) %s (double)(", op_str);
                     gen_expr(cg, buf, node->subscript_assign.value);
                     buf_write(buf, ");\n");
                 } else {
-                    buf_write(buf, "((");
-                    gen_expr(cg, buf, node->subscript_assign.obj);
-                    buf_write(buf, ")->data[");
+                    if (use_raw) { buf_printf(buf, "(_raw_%s[", raw_name); }
+                    else { buf_write(buf, "(("); gen_expr(cg, buf, node->subscript_assign.obj); buf_write(buf, ")->data["); }
                     gen_expr(cg, buf, node->subscript_assign.index);
                     buf_write(buf, "]) = (double)(");
                     gen_expr(cg, buf, node->subscript_assign.value);
@@ -4273,7 +4303,7 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
     populate_function_symbol(cg, func_sym, node, class_name);
     ret = func_sym ? func_sym->type : infer_function_return_type(cg, node);
 
-    buf_printf(&cg->header, "%s lp_%s(", lp_type_to_c(ret), node->func_def.name);
+    buf_printf(&cg->header, "static inline %s lp_%s(", lp_type_to_c(ret), node->func_def.name);
     for (int i = 0; i < node->func_def.params.count; i++) {
         Param *p = &node->func_def.params.items[i];
         if (i > 0) buf_write(&cg->header, ", ");
@@ -4303,7 +4333,7 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
     cg->scope = func_scope;
 
     /* Signature */
-    buf_write(&cg->funcs, "__attribute__((hot, optimize(\"O3,unroll-loops,strict-aliasing,omit-frame-pointer\"))) ");
+    buf_write(&cg->funcs, "static inline __attribute__((hot, optimize(\"O3,unroll-loops,strict-aliasing,omit-frame-pointer\"),flatten)) ");
     buf_printf(&cg->funcs, "%s lp_%s(", lp_type_to_c(ret), node->func_def.name);
     for (int i = 0; i < node->func_def.params.count; i++) {
         if (i > 0) buf_write(&cg->funcs, ", ");
@@ -4327,6 +4357,12 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
                 buf_printf(&cg->funcs, "LpObj_%s* lp_%s", p->type_ann, p->name);
                 Symbol *sym = scope_define_obj(func_scope, p->name, pt, p->type_ann);
                 if (sym) sym->declared = 1;
+            } else if (pt == LP_NATIVE_ARRAY_1D || pt == LP_NATIVE_ARRAY_2D ||
+                       pt == LP_NATIVE_ARRAY_FLOAT_1D || pt == LP_NATIVE_ARRAY_FLOAT_2D) {
+                /* __restrict__: no aliasing between native array params -> enables vectorization */
+                buf_printf(&cg->funcs, "%s __restrict__ lp_%s", lp_type_to_c(pt), p->name);
+                Symbol *sym = scope_define(func_scope, p->name, pt);
+                if (sym) sym->declared = 1;
             } else {
                 buf_printf(&cg->funcs, "%s lp_%s", lp_type_to_c(pt), p->name);
                 Symbol *sym = scope_define(func_scope, p->name, pt);
@@ -4338,7 +4374,26 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
 
     /* Scan body for local variable declarations and emit them at the top */
     scan_declarations(cg, &node->func_def.body);
+
+    /* NOTE: _raw_ pointer unwraps are emitted per-function after local var declarations */
+    /* See emit_raw_pointer_unwraps() called after emit_local_declarations */
     emit_local_declarations(cg, &cg->funcs, func_scope, 1);
+
+    /* Define _raw_ accessor macros for native arrays: single-dereference access
+     * These are expression macros, not pointer variables, so no init-order issue */
+    {
+        buf_write(&cg->funcs, "    /* --- raw array access macros --- */\n");
+        for (int _si = 0; _si < func_scope->count; _si++) {
+            Symbol *_sym = &func_scope->symbols[_si];
+            if (_sym->is_function) continue;
+            LpType _pt = _sym->type;
+            if (_pt == LP_NATIVE_ARRAY_1D || _pt == LP_NATIVE_ARRAY_2D ||
+                _pt == LP_NATIVE_ARRAY_FLOAT_1D || _pt == LP_NATIVE_ARRAY_FLOAT_2D) {
+                buf_printf(&cg->funcs, "    #define _raw_%s (lp_%s->data)\n",
+                           _sym->name, _sym->name);
+            }
+        }
+    }
 
     /* Process decorators for @settings (parallel/GPU configuration) */
     for (int d = 0; d < node->func_def.decorators.count; d++) {
