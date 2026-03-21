@@ -246,7 +246,20 @@ static int is_native_array_type(const char *ann) {
     if (strncmp(ann, "i64[", 4) == 0) return 1;
     if (strncmp(ann, "float[", 6) == 0) return 1;
     if (strncmp(ann, "f64[", 4) == 0) return 1;
+    /* Unsized variants used as function param annotations: int[], float[] */
+    if (strcmp(ann, "int[]") == 0) return 1;
+    if (strcmp(ann, "i64[]") == 0) return 1;
+    if (strcmp(ann, "float[]") == 0) return 1;
+    if (strcmp(ann, "f64[]") == 0) return 1;
     return 0;
+}
+
+static int is_float_array_annotation(const char *ann) {
+    if (!ann) return 0;
+    return (strncmp(ann, "float[", 6) == 0 ||
+            strncmp(ann, "f64[",   4) == 0 ||
+            strcmp(ann,  "float[]")   == 0 ||
+            strcmp(ann,  "f64[]")     == 0);
 }
 
 /* Parse native array dimensions from type annotation like "int[n+2][m+2]" 
@@ -354,16 +367,23 @@ static LpType type_from_annotation(CodeGen *cg, const char *ann) {
         return LP_VAL;
     }
     
-    /* Check for native arrays: int[expr] or int[expr][expr] */
+    /* Check for native arrays: int[expr] or int[expr][expr] or float[expr] etc */
     if (is_native_array_type(ann)) {
-        /* Count dimensions to return appropriate type */
+        int is_float = is_float_array_annotation(ann);
+        /* Unsized param annotations: int[], float[] -> 1D */
+        if (strcmp(ann, "int[]") == 0 || strcmp(ann, "i64[]") == 0)
+            return LP_NATIVE_ARRAY_1D;
+        if (strcmp(ann, "float[]") == 0 || strcmp(ann, "f64[]") == 0)
+            return LP_NATIVE_ARRAY_FLOAT_1D;
+        /* Sized: count dimensions */
         char *sizes[4] = {NULL, NULL, NULL, NULL};
         int dims = parse_native_array_dims(ann, sizes);
-        /* Free the size strings (caller will re-parse if needed) */
         for (int i = 0; i < dims; i++) {
             if (sizes[i]) free(sizes[i]);
         }
-        return (dims == 1) ? LP_NATIVE_ARRAY_1D : LP_NATIVE_ARRAY_2D;
+        if (is_float)
+            return (dims == 1) ? LP_NATIVE_ARRAY_FLOAT_1D : LP_NATIVE_ARRAY_FLOAT_2D;
+        return (dims == 2) ? LP_NATIVE_ARRAY_2D : LP_NATIVE_ARRAY_1D;
     }
     
     if (strcmp(ann, "int") == 0 || strcmp(ann, "i64") == 0) return LP_INT;
@@ -3072,13 +3092,11 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                             int dims = parse_native_array_dims(node->assign.type_ann, sizes);
                             
                             if (dims == 1) {
-                                /* 1D array: LpIntArray* lp_arr = lp_int_array_new(size) */
                                 char *c_size = convert_size_expr_to_c(sizes[0]);
                                 buf_printf(assign_buf, "LpIntArray* lp_%s = lp_int_array_new(%s);", 
                                           node->assign.name, c_size ? c_size : "1");
                                 if (c_size) free(c_size);
                             } else if (dims >= 2) {
-                                /* 2D array: LpIntArray2D* lp_arr = lp_int_array2d_new(rows, cols) */
                                 char *c_size0 = convert_size_expr_to_c(sizes[0]);
                                 char *c_size1 = convert_size_expr_to_c(sizes[1]);
                                 buf_printf(assign_buf, "LpIntArray2D* lp_%s = lp_int_array2d_new(%s, %s);", 
@@ -3086,8 +3104,6 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                                 if (c_size0) free(c_size0);
                                 if (c_size1) free(c_size1);
                             }
-                            
-                            /* Free size strings */
                             for (int i = 0; i < dims; i++) {
                                 if (sizes[i]) free(sizes[i]);
                             }
@@ -3099,6 +3115,46 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                             buf_printf(assign_buf, "LpIntArray2D* lp_%s = NULL;", node->assign.name);
                         } else {
                             buf_printf(assign_buf, "LpIntArray* lp_%s = NULL;", node->assign.name);
+                        }
+                        buf_write(assign_buf, "\n");
+                    } else if (t == LP_NATIVE_ARRAY_FLOAT_1D || t == LP_NATIVE_ARRAY_FLOAT_2D) {
+                        /* Float array: float[n] annotation or [0.0]*N pattern */
+                        write_indent(assign_buf, assign_indent);
+                        if (node->assign.type_ann && is_float_array_annotation(node->assign.type_ann)) {
+                            char *sizes[4] = {NULL, NULL, NULL, NULL};
+                            int dims = parse_native_array_dims(node->assign.type_ann, sizes);
+                            if (dims == 1) {
+                                char *c_size = convert_size_expr_to_c(sizes[0]);
+                                buf_printf(assign_buf, "LpFloatArray* lp_%s = lp_float_array_new(%s);",
+                                          node->assign.name, c_size ? c_size : "1");
+                                if (c_size) free(c_size);
+                            } else if (dims >= 2) {
+                                char *c_size0 = convert_size_expr_to_c(sizes[0]);
+                                char *c_size1 = convert_size_expr_to_c(sizes[1]);
+                                buf_printf(assign_buf, "LpFloatArray2D* lp_%s = lp_float_array2d_new(%s, %s);",
+                                          node->assign.name, c_size0 ? c_size0 : "1", c_size1 ? c_size1 : "1");
+                                if (c_size0) free(c_size0);
+                                if (c_size1) free(c_size1);
+                            }
+                            for (int i = 0; i < dims; i++) {
+                                if (sizes[i]) free(sizes[i]);
+                            }
+                        } else if (t == LP_NATIVE_ARRAY_FLOAT_1D && auto_array_elem && auto_array_count) {
+                            int is_zero = (auto_array_elem->type == NODE_FLOAT_LIT &&
+                                          auto_array_elem->float_lit.value == 0.0);
+                            if (is_zero) {
+                                buf_printf(assign_buf, "LpFloatArray* lp_%s = lp_float_array_new(", node->assign.name);
+                                gen_expr(cg, assign_buf, auto_array_count);
+                                buf_write(assign_buf, ");");
+                            } else {
+                                buf_printf(assign_buf, "LpFloatArray* lp_%s = lp_float_array_repeat(", node->assign.name);
+                                gen_expr(cg, assign_buf, auto_array_elem);
+                                buf_write(assign_buf, ", ");
+                                gen_expr(cg, assign_buf, auto_array_count);
+                                buf_write(assign_buf, ");");
+                            }
+                        } else {
+                            buf_printf(assign_buf, "LpFloatArray* lp_%s = NULL;", node->assign.name);
                         }
                         buf_write(assign_buf, "\n");
                     } else if (t == LP_NATIVE_ARRAY_FLOAT_1D || t == LP_NATIVE_ARRAY_FLOAT_2D) {
@@ -4816,7 +4872,20 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
         } else if (stmt->type == NODE_IMPORT) {
             /* Imports are handled in first pass, skip in code gen */
         } else {
-            gen_stmt(cg, &cg->main_body, stmt, 1);
+            /* Skip bare top-level main() call: codegen already emits lp_main() in C main() */
+            int skip = 0;
+            if (cg->has_main && stmt->type == NODE_EXPR_STMT) {
+                AstNode *expr = stmt->expr_stmt.expr;
+                if (expr && expr->type == NODE_CALL &&
+                    expr->call.func && expr->call.func->type == NODE_NAME &&
+                    strcmp(expr->call.func->name_expr.name, "main") == 0 &&
+                    expr->call.args.count == 0) {
+                    skip = 1;
+                }
+            }
+            if (!skip) {
+                gen_stmt(cg, &cg->main_body, stmt, 1);
+            }
         }
     }
 }
