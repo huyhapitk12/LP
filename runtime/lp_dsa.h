@@ -1381,3 +1381,22 @@ static inline bool lp_point_in_polygon(LpPoint* points, int64_t n, LpPoint p) {
 }
 
 #endif /* LP_DSA_H */
+
+/* ================================================================
+ * Array memory operations — SIMD-accelerated via libc memmove
+ * ================================================================ */
+
+/* Shift elements arr[from..to) LEFT by 1 position: arr[from-1..to-1] = arr[from..to)
+ * Equivalent to: for (i=from; i<to; i++) arr[i-1] = arr[i]
+ * Uses memmove internally -> SIMD-optimized on all platforms */
+static inline void lp_dsa_memmove_left1(LpIntArray *arr, int64_t from, int64_t to) {
+    if (!arr || to <= from || from < 1) return;
+    memmove(arr->data + from - 1, arr->data + from, (size_t)(to - from) * sizeof(int64_t));
+}
+
+/* Shift elements arr[from..to) RIGHT by 1 position: arr[from+1..to+1] = arr[from..to)
+ * Equivalent to: for (i=to-1; i>=from; i--) arr[i+1] = arr[i] */
+static inline void lp_dsa_memmove_right1(LpIntArray *arr, int64_t from, int64_t to) {
+    if (!arr || to <= from) return;
+    memmove(arr->data + from + 1, arr->data + from, (size_t)(to - from) * sizeof(int64_t));
+}
