@@ -411,6 +411,8 @@ static const char *lp_type_to_c(LpType t) {
         /* Native arrays for competitive programming */
         case LP_NATIVE_ARRAY_1D: return "LpIntArray*";
         case LP_NATIVE_ARRAY_2D: return "LpIntArray2D*";
+        case LP_NATIVE_ARRAY_FLOAT_1D: return "LpFloatArray*";
+        case LP_NATIVE_ARRAY_FLOAT_2D: return "LpFloatArray2D*";
         default:        return "int64_t";
     }
 }
@@ -473,6 +475,47 @@ static int is_single_int_repeat_list(CodeGen *cg, AstNode *node, AstNode **elem_
     }
 
     if (elem_out) *elem_out = elem;
+    return 1;
+}
+
+/* Same as above but for float literals: [0.0] * N -> LpFloatArray */
+static int is_single_float_repeat_list(CodeGen *cg, AstNode *node, AstNode **elem_out) {
+    AstNode *elem;
+
+    if (!node || node->type != NODE_LIST_EXPR || node->list_expr.elems.count != 1) {
+        return 0;
+    }
+
+    elem = node->list_expr.elems.items[0];
+    if (!elem || infer_type(cg, elem) != LP_FLOAT) {
+        return 0;
+    }
+
+    if (elem_out) *elem_out = elem;
+    return 1;
+}
+
+static int match_native_float_repeat_expr(CodeGen *cg, AstNode *node, AstNode **elem_out, AstNode **count_out) {
+    AstNode *elem = NULL;
+    AstNode *count = NULL;
+
+    if (!node || node->type != NODE_BIN_OP || node->bin_op.op != TOK_STAR) {
+        return 0;
+    }
+
+    LpType right_t = infer_type(cg, node->bin_op.right);
+    LpType left_t  = infer_type(cg, node->bin_op.left);
+
+    if (is_single_float_repeat_list(cg, node->bin_op.left, &elem) && (right_t == LP_INT || right_t == LP_FLOAT)) {
+        count = node->bin_op.right;
+    } else if (is_single_float_repeat_list(cg, node->bin_op.right, &elem) && (left_t == LP_INT || left_t == LP_FLOAT)) {
+        count = node->bin_op.left;
+    } else {
+        return 0;
+    }
+
+    if (elem_out) *elem_out = elem;
+    if (count_out) *count_out = count;
     return 1;
 }
 
@@ -831,9 +874,12 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
                 return LP_FLOAT;
             if (obj_type == LP_STR_ARRAY || obj_type == LP_STRING)
                 return LP_STRING;
-            /* Native arrays contain int64_t */
+            /* Native int arrays contain int64_t */
             if (obj_type == LP_NATIVE_ARRAY_1D || obj_type == LP_NATIVE_ARRAY_2D)
                 return LP_INT;
+            /* Native float arrays contain double */
+            if (obj_type == LP_NATIVE_ARRAY_FLOAT_1D || obj_type == LP_NATIVE_ARRAY_FLOAT_2D)
+                return LP_FLOAT;
             return LP_UNKNOWN;
         }
         case NODE_KWARG:
@@ -2604,6 +2650,20 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 gen_expr(cg, buf, node->subscript.index);
                 buf_write(buf, ", 0");  /* Default column for 1D-style access */
                 buf_write(buf, ")");
+            } else if (obj_type == LP_NATIVE_ARRAY_FLOAT_1D) {
+                /* LpFloatArray* -> direct data access for hot loops */
+                buf_write(buf, "((");
+                gen_expr(cg, buf, node->subscript.obj);
+                buf_write(buf, ")->data[");
+                gen_expr(cg, buf, node->subscript.index);
+                buf_write(buf, "])");
+            } else if (obj_type == LP_NATIVE_ARRAY_FLOAT_2D) {
+                /* LpFloatArray2D* -> lp_float_array2d_get(arr, row, col) */
+                buf_write(buf, "lp_float_array2d_get(");
+                gen_expr(cg, buf, node->subscript.obj);
+                buf_write(buf, ", ");
+                gen_expr(cg, buf, node->subscript.index);
+                buf_write(buf, ", 0)");
             } else {
                 gen_expr(cg, buf, node->subscript.obj);
                 buf_write(buf, "[");
@@ -2923,9 +2983,14 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 t = type_from_annotation(cg, node->assign.type_ann);
             else if (node->assign.value)
                 t = infer_type(cg, node->assign.value);
-            if ((t == LP_LIST || t == LP_UNKNOWN) && node->assign.value &&
+            if ((t == LP_LIST || t == LP_UNKNOWN || t == LP_VAL) && node->assign.value &&
                 match_native_int_repeat_expr(cg, node->assign.value, &auto_array_elem, &auto_array_count)) {
                 t = LP_NATIVE_ARRAY_1D;
+            }
+            /* Detect [0.0] * N -> LpFloatArray (zero-overhead float array) */
+            if ((t == LP_LIST || t == LP_UNKNOWN || t == LP_VAL) && node->assign.value &&
+                match_native_float_repeat_expr(cg, node->assign.value, &auto_array_elem, &auto_array_count)) {
+                t = LP_NATIVE_ARRAY_FLOAT_1D;
             }
             if (t == LP_UNKNOWN) t = LP_INT;
 
@@ -3036,6 +3101,31 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                             buf_printf(assign_buf, "LpIntArray* lp_%s = NULL;", node->assign.name);
                         }
                         buf_write(assign_buf, "\n");
+                    } else if (t == LP_NATIVE_ARRAY_FLOAT_1D || t == LP_NATIVE_ARRAY_FLOAT_2D) {
+                        /* Float native array: [0.0] * N -> LpFloatArray* */
+                        write_indent(assign_buf, assign_indent);
+                        if (t == LP_NATIVE_ARRAY_FLOAT_1D && auto_array_elem && auto_array_count) {
+                            /* [val] * count form */
+                            double fval = 0.0;
+                            int is_zero = (auto_array_elem->type == NODE_FLOAT_LIT && auto_array_elem->float_lit.value == 0.0);
+                            if (is_zero) {
+                                buf_printf(assign_buf, "LpFloatArray* lp_%s = lp_float_array_new(", node->assign.name);
+                                gen_expr(cg, assign_buf, auto_array_count);
+                                buf_write(assign_buf, ");");
+                            } else {
+                                buf_printf(assign_buf, "LpFloatArray* lp_%s = lp_float_array_repeat(", node->assign.name);
+                                gen_expr(cg, assign_buf, auto_array_elem);
+                                buf_write(assign_buf, ", ");
+                                gen_expr(cg, assign_buf, auto_array_count);
+                                buf_write(assign_buf, ");");
+                            }
+                            (void)fval;
+                        } else if (t == LP_NATIVE_ARRAY_FLOAT_2D) {
+                            buf_printf(assign_buf, "LpFloatArray2D* lp_%s = NULL;", node->assign.name);
+                        } else {
+                            buf_printf(assign_buf, "LpFloatArray* lp_%s = NULL;", node->assign.name);
+                        }
+                        buf_write(assign_buf, "\n");
                     } else if (assign_buf == &cg->helpers && node->assign.value && node->assign.value->type == NODE_LAMBDA) {
                         Buffer lambda_expr_buf;
                         buf_init(&lambda_expr_buf);
@@ -3102,6 +3192,25 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                                 buf_printf(assign_buf, "LpIntArray2D* lp_%s = NULL;\n", node->assign.name);
                             } else {
                                 buf_printf(assign_buf, "LpIntArray* lp_%s = NULL;\n", node->assign.name);
+                            }
+                        } else if (existing->type == LP_NATIVE_ARRAY_FLOAT_1D || existing->type == LP_NATIVE_ARRAY_FLOAT_2D) {
+                            /* Float native array first use */
+                            write_indent(assign_buf, assign_indent);
+                            if (existing->type == LP_NATIVE_ARRAY_FLOAT_1D && auto_array_elem && auto_array_count) {
+                                int is_zero = (auto_array_elem->type == NODE_FLOAT_LIT && auto_array_elem->float_lit.value == 0.0);
+                                if (is_zero) {
+                                    buf_printf(assign_buf, "LpFloatArray* lp_%s = lp_float_array_new(", node->assign.name);
+                                    gen_expr(cg, assign_buf, auto_array_count);
+                                    buf_write(assign_buf, ");\n");
+                                } else {
+                                    buf_printf(assign_buf, "LpFloatArray* lp_%s = lp_float_array_repeat(", node->assign.name);
+                                    gen_expr(cg, assign_buf, auto_array_elem);
+                                    buf_write(assign_buf, ", ");
+                                    gen_expr(cg, assign_buf, auto_array_count);
+                                    buf_write(assign_buf, ");\n");
+                                }
+                            } else {
+                                buf_printf(assign_buf, "LpFloatArray* lp_%s = NULL;\n", node->assign.name);
                             }
                         } else if (assign_buf == &cg->helpers && node->assign.value && node->assign.value->type == NODE_LAMBDA) {
                             Buffer lambda_expr_buf;
@@ -3245,8 +3354,67 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     gen_expr(cg, buf, node->subscript_assign.value);
                     buf_write(buf, ");\n");
                 }
+            } else if (obj_type == LP_NATIVE_ARRAY_FLOAT_1D) {
+                /* Native float 1D array: direct raw store */
+                const char *op_str = "+=";
+                switch (node->subscript_assign.op) {
+                    case TOK_PLUS_ASSIGN:  op_str = "+="; break;
+                    case TOK_MINUS_ASSIGN: op_str = "-="; break;
+                    case TOK_STAR_ASSIGN:  op_str = "*="; break;
+                    case TOK_SLASH_ASSIGN: op_str = "/="; break;
+                    default: break;
+                }
+                if (node->subscript_assign.op != TOK_ASSIGN) {
+                    buf_write(buf, "((");
+                    gen_expr(cg, buf, node->subscript_assign.obj);
+                    buf_write(buf, ")->data[");
+                    gen_expr(cg, buf, node->subscript_assign.index);
+                    buf_write(buf, "]) ");
+                    buf_write(buf, op_str);
+                    buf_write(buf, " (double)(");
+                    gen_expr(cg, buf, node->subscript_assign.value);
+                    buf_write(buf, ");\n");
+                } else {
+                    buf_write(buf, "((");
+                    gen_expr(cg, buf, node->subscript_assign.obj);
+                    buf_write(buf, ")->data[");
+                    gen_expr(cg, buf, node->subscript_assign.index);
+                    buf_write(buf, "]) = (double)(");
+                    gen_expr(cg, buf, node->subscript_assign.value);
+                    buf_write(buf, ");\n");
+                }
+            } else if (obj_type == LP_NATIVE_ARRAY_FLOAT_2D) {
+                /* Native float 2D array */
+                if (node->subscript_assign.op != TOK_ASSIGN) {
+                    const char *op_str = "+";
+                    switch (node->subscript_assign.op) {
+                        case TOK_PLUS_ASSIGN:  op_str = "+"; break;
+                        case TOK_MINUS_ASSIGN: op_str = "-"; break;
+                        case TOK_STAR_ASSIGN:  op_str = "*"; break;
+                        case TOK_SLASH_ASSIGN: op_str = "/"; break;
+                        default: break;
+                    }
+                    buf_write(buf, "lp_float_array2d_set(");
+                    gen_expr(cg, buf, node->subscript_assign.obj);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->subscript_assign.index);
+                    buf_write(buf, ", 0, lp_float_array2d_get(");
+                    gen_expr(cg, buf, node->subscript_assign.obj);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->subscript_assign.index);
+                    buf_printf(buf, ", 0) %s (double)(", op_str);
+                    gen_expr(cg, buf, node->subscript_assign.value);
+                    buf_write(buf, "));\n");
+                } else {
+                    buf_write(buf, "lp_float_array2d_set(");
+                    gen_expr(cg, buf, node->subscript_assign.obj);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->subscript_assign.index);
+                    buf_write(buf, ", 0, (double)(");
+                    gen_expr(cg, buf, node->subscript_assign.value);
+                    buf_write(buf, "));\n");
+                }
             } else {
-                /* Regular LpVal handling */
                 /* Handle augmented assignment to a subscript (like arr[0] += 1) vs direct assignment (arr[0] = 1) */
                 if (node->subscript_assign.op != TOK_ASSIGN) {
                     const char *op_func = "lp_val_add";
@@ -3881,9 +4049,14 @@ static void scan_declarations(CodeGen *cg, NodeList *body) {
                 t = type_from_annotation(cg, stmt->assign.type_ann);
             else if (stmt->assign.value)
                 t = infer_type(cg, stmt->assign.value);
-            if ((t == LP_LIST || t == LP_UNKNOWN) && stmt->assign.value &&
+            if ((t == LP_LIST || t == LP_UNKNOWN || t == LP_VAL) && stmt->assign.value &&
                 match_native_int_repeat_expr(cg, stmt->assign.value, &auto_array_elem, &auto_array_count)) {
                 t = LP_NATIVE_ARRAY_1D;
+            }
+            /* Also detect [0.0] * N -> LpFloatArray */
+            if ((t == LP_LIST || t == LP_UNKNOWN || t == LP_VAL) && stmt->assign.value &&
+                match_native_float_repeat_expr(cg, stmt->assign.value, &auto_array_elem, &auto_array_count)) {
+                t = LP_NATIVE_ARRAY_FLOAT_1D;
             }
             if (t == LP_UNKNOWN) t = LP_INT;
 
@@ -3922,6 +4095,7 @@ static void emit_local_declarations(CodeGen *cg, Buffer *buf, Scope *scope, int 
         /* Skip functions, classes, native arrays, and already declared variables (like parameters) */
         if (!sym->is_function && sym->type != LP_CLASS &&
             sym->type != LP_NATIVE_ARRAY_1D && sym->type != LP_NATIVE_ARRAY_2D &&
+            sym->type != LP_NATIVE_ARRAY_FLOAT_1D && sym->type != LP_NATIVE_ARRAY_FLOAT_2D &&
             !sym->declared) {
             /* Emit declaration without initialization */
             write_indent(buf, indent);
