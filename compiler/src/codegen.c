@@ -1664,6 +1664,10 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             break;
                         } else if (strcmp(func_name, "write_str_ln") == 0) {
                             buf_write(buf, "lp_io_write_str_ln(");
+                        } else if (strcmp(func_name, "write_float") == 0) {
+                            buf_write(buf, "lp_io_write_float(");
+                        } else if (strcmp(func_name, "write_float_ln") == 0) {
+                            buf_write(buf, "lp_io_write_float_ln(");
                         } else if (strcmp(func_name, "flush") == 0) {
                             buf_write(buf, "lp_io_flush(");
                         }
@@ -2569,7 +2573,14 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                     buf_write(buf, "lp_val_getitem_int(");
                     emit_lp_val(cg, buf, node->subscript.obj);
                     buf_write(buf, ", ");
-                    gen_expr(cg, buf, node->subscript.index);
+                    /* Convert index to int64_t if needed */
+                    if (key_type == LP_VAL || key_type == LP_LIST) {
+                        buf_write(buf, "lp_int_from_val(");
+                        gen_expr(cg, buf, node->subscript.index);
+                        buf_write(buf, ")");
+                    } else {
+                        gen_expr(cg, buf, node->subscript.index);
+                    }
                     buf_write(buf, ")");
                 }
             } else if (obj_type == LP_STR_ARRAY) {
@@ -4470,6 +4481,7 @@ void codegen_init(CodeGen *cg) {
     cg->uses_security = 0;
     cg->uses_dsa = 0;
     cg->has_main = 0;
+    cg->main_return_type = LP_VOID;
     cg->thread_adapter_count = 0;
 }
 void codegen_generate(CodeGen *cg, AstNode *program) {
@@ -4602,6 +4614,7 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
             /* Track if main() is defined */
             if (strcmp(stmt->func_def.name, "main") == 0) {
                 cg->has_main = 1;
+                cg->main_return_type = func_sym ? func_sym->type : LP_VOID;
             }
         } else if (stmt->type == NODE_ASYNC_DEF) {
             /* Register async functions similarly to regular functions */
@@ -4713,7 +4726,12 @@ char *codegen_get_output(CodeGen *cg) {
     }
 
     if (cg->has_main) {
-        buf_write(&out, "    return (int)lp_main();\n}\n");
+        if (cg->main_return_type == LP_INT) {
+            buf_write(&out, "    return (int)lp_main();\n}\n");
+        } else {
+            /* For void or other return types, just call lp_main() and return 0 */
+            buf_write(&out, "    lp_main();\n    return 0;\n}\n");
+        }
     } else {
         buf_write(&out, "    return 0;\n}\n");
     }

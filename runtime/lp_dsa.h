@@ -168,6 +168,17 @@ static inline void lp_io_write_int_ln(int64_t x) {
     lp_io_write_char('\n');
 }
 
+static inline void lp_io_write_float(double x) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%.4f", x);
+    lp_io_write_str(buf);
+}
+
+static inline void lp_io_write_float_ln(double x) {
+    lp_io_write_float(x);
+    lp_io_write_char('\n');
+}
+
 static inline void lp_io_write_str_ln(const char* s) {
     lp_io_write_str(s);
     lp_io_write_char('\n');
