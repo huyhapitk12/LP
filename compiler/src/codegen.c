@@ -1668,6 +1668,10 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             buf_write(buf, "lp_io_write_float(");
                         } else if (strcmp(func_name, "write_float_ln") == 0) {
                             buf_write(buf, "lp_io_write_float_ln(");
+                        } else if (strcmp(func_name, "write_float_prec") == 0) {
+                            buf_write(buf, "lp_io_write_float_prec(");
+                        } else if (strcmp(func_name, "write_float_prec_ln") == 0) {
+                            buf_write(buf, "lp_io_write_float_prec_ln(");
                         } else if (strcmp(func_name, "flush") == 0) {
                             buf_write(buf, "lp_io_flush(");
                         }
