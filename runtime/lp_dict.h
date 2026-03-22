@@ -429,6 +429,34 @@ static inline LpIntArray* lp_int_array_repeat(int64_t val, int64_t count) {
 }
 
 /* ========================================
+ * LpF32Array — float (32-bit) arrays for distance matrices
+ * 2x memory bandwidth vs double: D[100*100] = 40KB vs 80KB
+ * Use annotation: D: f32[]  (distance matrix)
+ * ======================================== */
+typedef struct {
+    float *data;
+    int32_t len;
+} LpF32Array;
+
+static inline LpF32Array* lp_f32_array_new(int64_t size) {
+    LpF32Array *arr = (LpF32Array*)malloc(sizeof(LpF32Array));
+    if (!arr) return NULL;
+    arr->data = (float*)calloc(size, sizeof(float));
+    if (!arr->data) { free(arr); return NULL; }
+    arr->len = (int32_t)size;
+    return arr;
+}
+static inline void lp_f32_array_free(LpF32Array *arr) {
+    if (arr) { free(arr->data); free(arr); }
+}
+static inline void lp_f32_memcpy(LpF32Array *dst, LpF32Array *src, int64_t n) {
+    if (dst && src && n > 0) memcpy(dst->data, src->data, (size_t)n * sizeof(float));
+}
+static inline void lp_f32_memset_zero(LpF32Array *arr, int64_t n) {
+    if (arr && n > 0) memset(arr->data, 0, (size_t)n * sizeof(float));
+}
+
+/* ========================================
  * LpI32Array — int32_t arrays for index-heavy code
  * 2x denser than LpIntArray: N=100 fits in 400B vs 800B
  * Use annotation: t: i32[]  pos: i32[]  dlb: i32[]  NN: i32[]
