@@ -1742,6 +1742,18 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             buf_write(buf, "lp_dsa_memmove_left1(");
                         } else if (strcmp(func_name, "memmove_right1") == 0) {
                             buf_write(buf, "lp_dsa_memmove_right1(");
+                        } else if (strcmp(func_name, "memcpy_int") == 0) {
+                            buf_write(buf, "lp_dsa_memcpy_int(");
+                        } else if (strcmp(func_name, "memset_zero_int") == 0) {
+                            buf_write(buf, "lp_dsa_memset_zero_int(");
+                        } else if (strcmp(func_name, "memcpy_float") == 0) {
+                            buf_write(buf, "lp_dsa_memcpy_float(");
+                        } else if (strcmp(func_name, "memset_zero_float") == 0) {
+                            buf_write(buf, "lp_dsa_memset_zero_float(");
+                        } else if (strcmp(func_name, "copy_range") == 0) {
+                            buf_write(buf, "lp_dsa_copy_range(");
+                        } else if (strcmp(func_name, "copy_range_f") == 0) {
+                            buf_write(buf, "lp_dsa_copy_range_f(");
                         } else if (strcmp(func_name, "flush") == 0) {
                             buf_write(buf, "lp_io_flush(");
                         }
@@ -3119,8 +3131,9 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                             
                             if (dims == 1) {
                                 char *c_size = convert_size_expr_to_c(sizes[0]);
-                                buf_printf(assign_buf, "LpIntArray* lp_%s = lp_int_array_new(%s);", 
-                                          node->assign.name, c_size ? c_size : "1");
+                                buf_printf(assign_buf, "LpIntArray* lp_%s = lp_int_array_new(%s); _raw_%s = lp_%s->data;", 
+                                          node->assign.name, c_size ? c_size : "1",
+                                          node->assign.name, node->assign.name);
                                 if (c_size) free(c_size);
                             } else if (dims >= 2) {
                                 char *c_size0 = convert_size_expr_to_c(sizes[0]);
@@ -3136,6 +3149,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                         } else if (t == LP_NATIVE_ARRAY_1D && auto_array_elem && auto_array_count) {
                             buf_printf(assign_buf, "LpIntArray* lp_%s = ", node->assign.name);
                             emit_native_int_array_init_expr(cg, assign_buf, auto_array_elem, auto_array_count);
+                            buf_printf(assign_buf, "; _raw_%s = lp_%s->data", node->assign.name, node->assign.name);
                             buf_write(assign_buf, ";");
                         } else if (t == LP_NATIVE_ARRAY_2D) {
                             buf_printf(assign_buf, "LpIntArray2D* lp_%s = NULL;", node->assign.name);
@@ -3151,8 +3165,9 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                             int dims = parse_native_array_dims(node->assign.type_ann, sizes);
                             if (dims == 1) {
                                 char *c_size = convert_size_expr_to_c(sizes[0]);
-                                buf_printf(assign_buf, "LpFloatArray* lp_%s = lp_float_array_new(%s);",
-                                          node->assign.name, c_size ? c_size : "1");
+                                buf_printf(assign_buf, "LpFloatArray* lp_%s = lp_float_array_new(%s); _raw_%s = lp_%s->data;",
+                                          node->assign.name, c_size ? c_size : "1",
+                                          node->assign.name, node->assign.name);
                                 if (c_size) free(c_size);
                             } else if (dims >= 2) {
                                 char *c_size0 = convert_size_expr_to_c(sizes[0]);
@@ -3170,10 +3185,12 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                                           auto_array_elem->float_lit.value == 0.0);
                             if (is_zero) {
                                 buf_printf(assign_buf, "LpFloatArray* lp_%s = lp_float_array_new(", node->assign.name);
+                                buf_printf(assign_buf, "/* _raw_upd_marker_%s */", node->assign.name);
                                 gen_expr(cg, assign_buf, auto_array_count);
                                 buf_write(assign_buf, ");");
                             } else {
                                 buf_printf(assign_buf, "LpFloatArray* lp_%s = lp_float_array_repeat(", node->assign.name);
+                                buf_printf(assign_buf, "/* _raw_upd_marker_%s */", node->assign.name);
                                 gen_expr(cg, assign_buf, auto_array_elem);
                                 buf_write(assign_buf, ", ");
                                 gen_expr(cg, assign_buf, auto_array_count);
@@ -3585,6 +3602,66 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
             buf_write(buf, "}\n");
             break;
         case NODE_FOR: {
+            /* === PEEPHOLE: detect copy/zero loops and emit memcpy/memset === */
+            if (is_range_call(node->for_stmt.iter)) {
+                NodeList *args_peek = &node->for_stmt.iter->call.args;
+                NodeList *body_peek = &node->for_stmt.body;
+                const char *var_peek = node->for_stmt.var;
+
+                /* Check: single-statement body */
+                if (body_peek->count == 1) {
+                    AstNode *stmt_peek = body_peek->items[0];
+
+                    /* Pattern: for i in range(n): dst[i] = src[i]
+                     * -> memcpy(dst->data, src->data, n * sizeof(int64_t)) */
+                    if (stmt_peek->type == NODE_SUBSCRIPT_ASSIGN &&
+                        stmt_peek->subscript_assign.op == TOK_ASSIGN) {
+                        AstNode *lhs = stmt_peek->subscript_assign.obj;
+                        AstNode *lidx = stmt_peek->subscript_assign.index;
+                        AstNode *rhs = stmt_peek->subscript_assign.value;
+                        /* lhs index and rhs index must both be the loop var */
+                        if (lhs && lidx && rhs &&
+                            lidx->type == NODE_NAME &&
+                            strcmp(lidx->name_expr.name, var_peek) == 0) {
+                            /* Check dst is native int array */
+                            LpType lhs_t = (lhs->type == NODE_NAME) ?
+                                ({ Symbol *s = scope_lookup(cg->scope, lhs->name_expr.name); s ? s->type : LP_UNKNOWN; }) :
+                                LP_UNKNOWN;
+                            /* RHS: subscript of native int array with same loop var */
+                            if ((lhs_t == LP_NATIVE_ARRAY_1D) &&
+                                rhs->type == NODE_SUBSCRIPT &&
+                                rhs->subscript.index->type == NODE_NAME &&
+                                strcmp(rhs->subscript.index->name_expr.name, var_peek) == 0) {
+                                Symbol *_rhs_sym = (rhs->subscript.obj->type == NODE_NAME) ? scope_lookup(cg->scope, rhs->subscript.obj->name_expr.name) : NULL;
+                                LpType rhs_t = _rhs_sym ? _rhs_sym->type : LP_UNKNOWN;
+                                if (rhs_t == LP_NATIVE_ARRAY_1D && args_peek->count == 1) {
+                                    write_indent(buf, indent);
+                                    buf_write(buf, "memcpy(");
+                                    gen_expr(cg, buf, lhs);
+                                    buf_write(buf, "->data, ");
+                                    gen_expr(cg, buf, rhs->subscript.obj);
+                                    buf_write(buf, "->data, (size_t)(");
+                                    gen_expr(cg, buf, args_peek->items[0]);
+                                    buf_write(buf, ") * sizeof(int64_t)); /* memcpy peephole */\n");
+                                    break;
+                                }
+                            }
+                            /* Pattern: for i in range(n): arr[i] = 0 -> memset */
+                            if (lhs_t == LP_NATIVE_ARRAY_1D &&
+                                rhs->type == NODE_INT_LIT && rhs->int_lit.value == 0 &&
+                                args_peek->count == 1) {
+                                write_indent(buf, indent);
+                                buf_write(buf, "memset(");
+                                gen_expr(cg, buf, lhs);
+                                buf_write(buf, "->data, 0, (size_t)(");
+                                gen_expr(cg, buf, args_peek->items[0]);
+                                buf_write(buf, ") * sizeof(int64_t)); /* memset peephole */\n");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
             if (is_range_call(node->for_stmt.iter)) {
                 NodeList *args = &node->for_stmt.iter->call.args;
                 /* Define loop var */
@@ -4379,10 +4456,11 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
     /* See emit_raw_pointer_unwraps() called after emit_local_declarations */
     emit_local_declarations(cg, &cg->funcs, func_scope, 1);
 
-    /* Define _raw_ accessor macros for native arrays: single-dereference access
-     * These are expression macros, not pointer variables, so no init-order issue */
+    /* Emit #define macros for all native arrays in scope.
+     * _raw_arr expands to (lp_arr->data) — one extra dereference eliminated.
+     * Macros are always current regardless of allocation order. */
     {
-        buf_write(&cg->funcs, "    /* --- raw array access macros --- */\n");
+        buf_write(&cg->funcs, "    /* --- raw array macros --- */\n");
         for (int _si = 0; _si < func_scope->count; _si++) {
             Symbol *_sym = &func_scope->symbols[_si];
             if (_sym->is_function) continue;
