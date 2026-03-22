@@ -428,6 +428,57 @@ static inline LpIntArray* lp_int_array_repeat(int64_t val, int64_t count) {
     return arr;
 }
 
+/* ========================================
+ * LpI32Array — int32_t arrays for index-heavy code
+ * 2x denser than LpIntArray: N=100 fits in 400B vs 800B
+ * Use annotation: t: i32[]  pos: i32[]  dlb: i32[]  NN: i32[]
+ * ======================================== */
+typedef struct {
+    int32_t *data;
+    int32_t len;
+} LpI32Array;
+
+static inline LpI32Array* lp_i32_array_new(int64_t size) {
+    LpI32Array *arr = (LpI32Array*)malloc(sizeof(LpI32Array));
+    if (!arr) return NULL;
+    arr->data = (int32_t*)calloc(size, sizeof(int32_t));
+    if (!arr->data) { free(arr); return NULL; }
+    arr->len = (int32_t)size;
+    return arr;
+}
+
+static inline void lp_i32_array_free(LpI32Array *arr) {
+    if (arr) { free(arr->data); free(arr); }
+}
+
+static inline LpI32Array* lp_i32_array_repeat(int32_t val, int64_t count) {
+    LpI32Array *arr = lp_i32_array_new(count);
+    if (!arr) return NULL;
+    for (int64_t i = 0; i < count; i++) arr->data[i] = val;
+    return arr;
+}
+
+/* DSA helpers for i32 arrays */
+static inline void lp_i32_memcpy(LpI32Array *dst, LpI32Array *src, int64_t n) {
+    if (dst && src && n > 0) memcpy(dst->data, src->data, (size_t)n * sizeof(int32_t));
+}
+static inline void lp_i32_memset_zero(LpI32Array *arr, int64_t n) {
+    if (arr && n > 0) memset(arr->data, 0, (size_t)n * sizeof(int32_t));
+}
+static inline void lp_i32_copy_range(LpI32Array *dst, int64_t doff,
+                                      LpI32Array *src, int64_t soff, int64_t n) {
+    if (dst && src && n > 0)
+        memcpy(dst->data + doff, src->data + soff, (size_t)n * sizeof(int32_t));
+}
+static inline void lp_i32_memmove_left1(LpI32Array *arr, int64_t from, int64_t to) {
+    if (arr && to > from && from >= 1)
+        memmove(arr->data + from - 1, arr->data + from, (size_t)(to - from) * sizeof(int32_t));
+}
+static inline void lp_i32_memmove_right1(LpI32Array *arr, int64_t from, int64_t to) {
+    if (arr && to > from)
+        memmove(arr->data + from + 1, arr->data + from, (size_t)(to - from) * sizeof(int32_t));
+}
+
 /* 2D array as 1D with row-major indexing */
 typedef struct {
     int64_t *data;

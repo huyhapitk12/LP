@@ -24,7 +24,9 @@ typedef enum {
     LP_THREAD, LP_LOCK, LP_ARENA, LP_POOL, LP_PTR, LP_UNKNOWN,
     /* Native arrays for competitive programming - zero overhead */
     LP_NATIVE_ARRAY_1D, LP_NATIVE_ARRAY_2D,
-    LP_NATIVE_ARRAY_FLOAT_1D, LP_NATIVE_ARRAY_FLOAT_2D
+    LP_NATIVE_ARRAY_FLOAT_1D, LP_NATIVE_ARRAY_FLOAT_2D,
+    /* int32 arrays: i32[] annotation - 2x denser than int64, fits L1 cache */
+    LP_NATIVE_ARRAY_I32_1D, LP_NATIVE_ARRAY_I32_2D
 } LpType;
 
 /* Module import tracking */
