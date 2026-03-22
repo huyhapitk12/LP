@@ -1,6 +1,15 @@
 #ifndef LP_RUNTIME_H
 #define LP_RUNTIME_H
 
+/* Feature-test macros must appear before any system header to expose
+ * C11/POSIX extensions like aligned_alloc on glibc */
+#ifndef _DEFAULT_SOURCE
+#  define _DEFAULT_SOURCE
+#endif
+#ifndef _ISOC11_SOURCE
+#  define _ISOC11_SOURCE
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
