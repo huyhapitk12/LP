@@ -606,6 +606,7 @@ int main(int argc, char **argv) {
             if (!target_os) al_add(&al, "-march=native");
             al_add(&al, "-fstrict-aliasing");
             al_add(&al, "-funroll-loops");
+            al_add(&al, "-ffast-math");
         } else {
             al_add(&al, "-O2");
         }
