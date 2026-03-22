@@ -1400,3 +1400,50 @@ static inline void lp_dsa_memmove_right1(LpIntArray *arr, int64_t from, int64_t 
     if (!arr || to <= from) return;
     memmove(arr->data + from + 1, arr->data + from, (size_t)(to - from) * sizeof(int64_t));
 }
+
+/* ================================================================
+ * Fast bulk operations — use memcpy/memset (SIMD via libc)
+ * ================================================================ */
+
+/* Copy n elements from src to dst */
+static inline void lp_dsa_memcpy_int(LpIntArray *dst, LpIntArray *src, int64_t n) {
+    if (!dst || !src || n <= 0) return;
+    memcpy(dst->data, src->data, (size_t)n * sizeof(int64_t));
+}
+
+/* Set n elements to 0 */
+static inline void lp_dsa_memset_zero_int(LpIntArray *arr, int64_t n) {
+    if (!arr || n <= 0) return;
+    memset(arr->data, 0, (size_t)n * sizeof(int64_t));
+}
+
+/* Set n float elements to 0.0 */
+static inline void lp_dsa_memset_zero_float(LpFloatArray *arr, int64_t n) {
+    if (!arr || n <= 0) return;
+    memset(arr->data, 0, (size_t)n * sizeof(double));
+}
+
+/* Copy n float elements */
+static inline void lp_dsa_memcpy_float(LpFloatArray *dst, LpFloatArray *src, int64_t n) {
+    if (!dst || !src || n <= 0) return;
+    memcpy(dst->data, src->data, (size_t)n * sizeof(double));
+}
+
+/* ================================================================
+ * Segmented copy — used by double_bridge and similar operations
+ * dst[dst_off..dst_off+n) = src[src_off..src_off+n)
+ * Uses memcpy internally (SIMD-accelerated)
+ * ================================================================ */
+static inline void lp_dsa_copy_range(LpIntArray *dst, int64_t dst_off,
+                                      LpIntArray *src, int64_t src_off,
+                                      int64_t n) {
+    if (!dst || !src || n <= 0) return;
+    memcpy(dst->data + dst_off, src->data + src_off, (size_t)n * sizeof(int64_t));
+}
+
+static inline void lp_dsa_copy_range_f(LpFloatArray *dst, int64_t dst_off,
+                                         LpFloatArray *src, int64_t src_off,
+                                         int64_t n) {
+    if (!dst || !src || n <= 0) return;
+    memcpy(dst->data + dst_off, src->data + src_off, (size_t)n * sizeof(double));
+}
