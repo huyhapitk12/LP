@@ -1750,6 +1750,10 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             buf_write(buf, "lp_dsa_memcpy_float(");
                         } else if (strcmp(func_name, "memset_zero_float") == 0) {
                             buf_write(buf, "lp_dsa_memset_zero_float(");
+                        } else if (strcmp(func_name, "copy_range") == 0) {
+                            buf_write(buf, "lp_dsa_copy_range(");
+                        } else if (strcmp(func_name, "copy_range_f") == 0) {
+                            buf_write(buf, "lp_dsa_copy_range_f(");
                         } else if (strcmp(func_name, "flush") == 0) {
                             buf_write(buf, "lp_io_flush(");
                         }
