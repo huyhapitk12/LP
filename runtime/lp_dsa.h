@@ -1400,3 +1400,31 @@ static inline void lp_dsa_memmove_right1(LpIntArray *arr, int64_t from, int64_t 
     if (!arr || to <= from) return;
     memmove(arr->data + from + 1, arr->data + from, (size_t)(to - from) * sizeof(int64_t));
 }
+
+/* ================================================================
+ * Fast bulk operations — use memcpy/memset (SIMD via libc)
+ * ================================================================ */
+
+/* Copy n elements from src to dst */
+static inline void lp_dsa_memcpy_int(LpIntArray *dst, LpIntArray *src, int64_t n) {
+    if (!dst || !src || n <= 0) return;
+    memcpy(dst->data, src->data, (size_t)n * sizeof(int64_t));
+}
+
+/* Set n elements to 0 */
+static inline void lp_dsa_memset_zero_int(LpIntArray *arr, int64_t n) {
+    if (!arr || n <= 0) return;
+    memset(arr->data, 0, (size_t)n * sizeof(int64_t));
+}
+
+/* Set n float elements to 0.0 */
+static inline void lp_dsa_memset_zero_float(LpFloatArray *arr, int64_t n) {
+    if (!arr || n <= 0) return;
+    memset(arr->data, 0, (size_t)n * sizeof(double));
+}
+
+/* Copy n float elements */
+static inline void lp_dsa_memcpy_float(LpFloatArray *dst, LpFloatArray *src, int64_t n) {
+    if (!dst || !src || n <= 0) return;
+    memcpy(dst->data, src->data, (size_t)n * sizeof(double));
+}
