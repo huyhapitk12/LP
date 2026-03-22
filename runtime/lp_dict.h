@@ -7,6 +7,14 @@
 #ifndef LP_DICT_H
 #define LP_DICT_H
 
+/* Needed for aligned_alloc on glibc (C11 extension exposed via _DEFAULT_SOURCE) */
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+#ifndef _ISOC11_SOURCE
+#define _ISOC11_SOURCE
+#endif
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -430,6 +438,57 @@ static inline LpIntArray* lp_int_array_repeat(int64_t val, int64_t count) {
     if (!arr) return NULL;
     for (int64_t i = 0; i < count; i++) arr->data[i] = val;
     return arr;
+}
+
+/* ========================================
+ * lp_int_array_to_list — converts LpIntArray* to LpList* (for function-call coercion)
+ * Used when a list param receives an LpIntArray* argument.
+ * ======================================== */
+static inline LpList* lp_int_array_to_list(LpIntArray *arr) {
+    if (!arr) return lp_list_new();
+    LpList *l = lp_list_new();
+    for (int64_t i = 0; i < arr->len; i++)
+        lp_list_append(l, lp_val_int(arr->data[i]));
+    return l;
+}
+
+/* ========================================
+ * LpI8Array — int8_t (byte) arrays for boolean/flag tables
+ * 8x denser than LpIntArray (int64_t): sieve[5M] = 5MB vs 40MB
+ * Cache-friendly: fits L2/L3 where int64_t spills to RAM
+ * Use annotation:  sieve: i8[]  visited: i8[]  color: i8[]
+ * ======================================== */
+typedef struct {
+    int8_t *data;
+    int64_t len;
+} LpI8Array;
+
+static inline LpI8Array* lp_i8_array_new(int64_t size) {
+    LpI8Array *arr = (LpI8Array*)malloc(sizeof(LpI8Array));
+    if (!arr) return NULL;
+    size_t bytes = (size_t)size * sizeof(int8_t);
+    size_t aligned = (bytes + 31) & ~(size_t)31;
+    arr->data = (int8_t*)aligned_alloc(32, aligned ? aligned : 32);
+    if (!arr->data) { free(arr); return NULL; }
+    memset(arr->data, 0, bytes);
+    arr->len = size;
+    return arr;
+}
+static inline void lp_i8_array_free(LpI8Array *arr) {
+    if (arr) { free(arr->data); free(arr); }
+}
+static inline LpI8Array* lp_i8_array_repeat(int8_t val, int64_t count) {
+    LpI8Array *arr = lp_i8_array_new(count);
+    if (!arr) return NULL;
+    memset(arr->data, val, (size_t)count);
+    return arr;
+}
+static inline LpList* lp_i8_array_to_list(LpI8Array *arr) {
+    if (!arr) return lp_list_new();
+    LpList *l = lp_list_new();
+    for (int64_t i = 0; i < arr->len; i++)
+        lp_list_append(l, lp_val_int(arr->data[i]));
+    return l;
 }
 
 /* ========================================

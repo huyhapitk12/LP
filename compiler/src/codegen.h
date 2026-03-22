@@ -28,7 +28,9 @@ typedef enum {
     /* int32 arrays: i32[] annotation - 2x denser than int64, fits L1 cache */
     LP_NATIVE_ARRAY_I32_1D, LP_NATIVE_ARRAY_I32_2D,
     /* float32 arrays: f32[] annotation - 4B vs 8B double, 2x memory bandwidth */
-    LP_NATIVE_ARRAY_F32_1D, LP_NATIVE_ARRAY_F32_2D
+    LP_NATIVE_ARRAY_F32_1D, LP_NATIVE_ARRAY_F32_2D,
+    /* int8 arrays: i8[] annotation - 1B per element, 8x denser than int64 (sieve, visited) */
+    LP_NATIVE_ARRAY_I8_1D
 } LpType;
 
 /* Module import tracking */
