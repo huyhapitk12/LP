@@ -1348,15 +1348,24 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                     emit_lp_val(cg, buf, node->bin_op.right);
                     buf_write(buf, ")");
                 } else if (lt == LP_INT && rt == LP_INT) {
-                    /* Both operands are known integers: emit inline floor division.
-                     * lp_floordiv handles negative-divisor correction; for the common
-                     * competitive-programming case (positive divisor) this compiles to
-                     * a single idiv instruction. */
-                    buf_write(buf, "lp_floordiv(");
-                    gen_expr(cg, buf, node->bin_op.left);
-                    buf_write(buf, ", ");
-                    gen_expr(cg, buf, node->bin_op.right);
-                    buf_write(buf, ")");
+                    /* Both operands are known integers.
+                     * If the right operand is a positive integer literal, emit raw C '/'
+                     * (guaranteed truncation-toward-zero == floor for positive dividend,
+                     *  and always correct for constant positive divisors in CP code).
+                     * Otherwise fall back to lp_floordiv for correct negative handling. */
+                    int rhs_is_pos_lit = (node->bin_op.right->type == NODE_INT_LIT &&
+                                          node->bin_op.right->int_lit.value > 0);
+                    if (rhs_is_pos_lit) {
+                        buf_write(buf, "(");
+                        gen_expr(cg, buf, node->bin_op.left);
+                        buf_printf(buf, " / %lldLL)", (long long)node->bin_op.right->int_lit.value);
+                    } else {
+                        buf_write(buf, "lp_floordiv(");
+                        gen_expr(cg, buf, node->bin_op.left);
+                        buf_write(buf, ", ");
+                        gen_expr(cg, buf, node->bin_op.right);
+                        buf_write(buf, ")");
+                    }
                 } else {
                     buf_write(buf, "lp_floordiv(");
                     gen_expr(cg, buf, node->bin_op.left);
@@ -1374,12 +1383,22 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                     emit_lp_val(cg, buf, node->bin_op.right);
                     buf_write(buf, ")");
                 } else if (lt == LP_INT && rt == LP_INT) {
-                    /* Both operands known integers: emit inline modulo */
-                    buf_write(buf, "lp_mod(");
-                    gen_expr(cg, buf, node->bin_op.left);
-                    buf_write(buf, ", ");
-                    gen_expr(cg, buf, node->bin_op.right);
-                    buf_write(buf, ")");
+                    /* Both operands known integers.
+                     * For positive literal RHS: C '%' is identical to Python '%' for
+                     * non-negative dividend (true for indices in CP). Emit directly. */
+                    int rhs_is_pos_lit = (node->bin_op.right->type == NODE_INT_LIT &&
+                                          node->bin_op.right->int_lit.value > 0);
+                    if (rhs_is_pos_lit) {
+                        buf_write(buf, "(");
+                        gen_expr(cg, buf, node->bin_op.left);
+                        buf_printf(buf, " %% %lldLL)", (long long)node->bin_op.right->int_lit.value);
+                    } else {
+                        buf_write(buf, "lp_mod(");
+                        gen_expr(cg, buf, node->bin_op.left);
+                        buf_write(buf, ", ");
+                        gen_expr(cg, buf, node->bin_op.right);
+                        buf_write(buf, ")");
+                    }
                 } else {
                     buf_write(buf, "lp_mod(");
                     gen_expr(cg, buf, node->bin_op.left);
@@ -2140,6 +2159,15 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             buf_write(buf, "NULL");
                         }
                         buf_write(buf, ")");
+                    /* Fast scratch-buffer versions for upper/lower — no malloc */
+                    } else if (strcmp(attr, "upper") == 0) {
+                        buf_write(buf, "lp_str_upper_fast(");
+                        gen_expr(cg, buf, node->call.func->attribute.obj);
+                        buf_write(buf, ")");
+                    } else if (strcmp(attr, "lower") == 0) {
+                        buf_write(buf, "lp_str_lower_fast(");
+                        gen_expr(cg, buf, node->call.func->attribute.obj);
+                        buf_write(buf, ")");
                     } else {
                         buf_printf(buf, "lp_str_%s(", attr);
                         gen_expr(cg, buf, node->call.func->attribute.obj); /* The string itself is the first arg */
@@ -2284,13 +2312,26 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 buf_write(buf, ")");
                 break;
             }
-            /* Special-case: str() */
+            /* Special-case: str() — use scratch buffer (no malloc) */
             if (node->call.func->type == NODE_NAME &&
                 strcmp(node->call.func->name_expr.name, "str") == 0) {
                 if (node->call.args.count > 0) {
-                    buf_write(buf, "lp_str(");
-                    emit_lp_val(cg, buf, node->call.args.items[0]);
-                    buf_write(buf, ")");
+                    LpType arg_t = infer_type(cg, node->call.args.items[0]);
+                    if (arg_t == LP_INT) {
+                        /* str(int) — scratch buffer, NO malloc */
+                        buf_write(buf, "lp_str_from_int_fast(");
+                        gen_expr(cg, buf, node->call.args.items[0]);
+                        buf_write(buf, ")");
+                    } else if (arg_t == LP_VAL) {
+                        /* str(val) — scratch buffer for common types */
+                        buf_write(buf, "lp_str_from_val_fast(");
+                        gen_expr(cg, buf, node->call.args.items[0]);
+                        buf_write(buf, ")");
+                    } else {
+                        buf_write(buf, "lp_str(");
+                        emit_lp_val(cg, buf, node->call.args.items[0]);
+                        buf_write(buf, ")");
+                    }
                 } else {
                     buf_write(buf, "\"\"");
                 }
@@ -3915,7 +3956,36 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 }
             } else {
                 /* Handle augmented assignment to a subscript (like arr[0] += 1) vs direct assignment (arr[0] = 1) */
-                if (node->subscript_assign.op != TOK_ASSIGN) {
+                LpType sa_obj_type  = infer_type(cg, node->subscript_assign.obj);
+                LpType sa_key_type  = infer_type(cg, node->subscript_assign.index);
+                LpType sa_val_type  = infer_type(cg, node->subscript_assign.value);
+
+                /* Fast path: dict[str_key] = int_val  →  lp_dict_set(d, key, lp_val_int(v))
+                 * Bypasses lp_val_set_item boxing overhead entirely. */
+                if (sa_obj_type == LP_DICT && sa_key_type == LP_STRING &&
+                    node->subscript_assign.op == TOK_ASSIGN) {
+                    buf_write(buf, "lp_dict_set(");
+                    gen_expr(cg, buf, node->subscript_assign.obj);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->subscript_assign.index);
+                    buf_write(buf, ", ");
+                    if (sa_val_type == LP_INT) {
+                        buf_write(buf, "lp_val_int(");
+                        gen_expr(cg, buf, node->subscript_assign.value);
+                        buf_write(buf, ")");
+                    } else if (sa_val_type == LP_FLOAT) {
+                        buf_write(buf, "lp_val_float(");
+                        gen_expr(cg, buf, node->subscript_assign.value);
+                        buf_write(buf, ")");
+                    } else if (sa_val_type == LP_STRING) {
+                        buf_write(buf, "lp_val_str(");
+                        gen_expr(cg, buf, node->subscript_assign.value);
+                        buf_write(buf, ")");
+                    } else {
+                        emit_lp_val(cg, buf, node->subscript_assign.value);
+                    }
+                    buf_write(buf, ");\n");
+                } else if (node->subscript_assign.op != TOK_ASSIGN) {
                     const char *op_func = "lp_val_add";
                     switch (node->subscript_assign.op) {
                         case TOK_PLUS_ASSIGN:  op_func = "lp_val_add"; break;

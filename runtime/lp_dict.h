@@ -349,6 +349,44 @@ static inline void lp_dict_merge(LpDict *dst, LpDict *src) {
     }
 }
 
+/* ========================================================
+ * lp_dict_inc_int(d, key, delta)
+ *
+ * Combined "get-or-zero then add delta" in ONE hash probe.
+ * Avoids the double-probe pattern:
+ *   val = get(d, key); set(d, key, val+1)  ← 2 probes + strdup every time
+ * This function probes once, increments in-place if found, inserts if not.
+ * The key is strdup'd ONLY on first insert.
+ *
+ * Use when dict values are counters (frequency tables, histograms).
+ * ======================================================== */
+static inline void lp_dict_inc_int(LpDict *d, const char *key, int64_t delta) {
+    if (!d || !d->entries || !key) return;
+    if (d->count >= (int64_t)(d->capacity * LP_DICT_LOAD_FACTOR)) {
+        lp_dict_resize(d, d->capacity * 2);
+    }
+    uint32_t h = lp_hash(key);
+    uint32_t index = h % (uint32_t)d->capacity;
+    while (d->entries[index].is_occupied) {
+        if (strcmp(d->entries[index].key, key) == 0) {
+            /* Found — increment in place, zero strdup/malloc */
+            if (d->entries[index].value.type == LP_VAL_INT)
+                d->entries[index].value.as.i += delta;
+            else
+                d->entries[index].value = lp_val_int(delta);
+            return;
+        }
+        index = (index + 1) % (uint32_t)d->capacity;
+    }
+    /* Not found — insert with strdup (only on first occurrence) */
+    char *key_copy = strdup(key);
+    if (!key_copy) return;
+    d->entries[index].key = key_copy;
+    d->entries[index].value = lp_val_int(delta);
+    d->entries[index].is_occupied = 1;
+    d->count++;
+}
+
 
 /* Macro helpers for codegen */
 /* d["key"] = 123 */

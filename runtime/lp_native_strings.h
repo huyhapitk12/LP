@@ -480,3 +480,65 @@ static inline LpStrPartition lp_str_partition(const char *s, const char *sep) {
 }
 
 #endif /* LP_NATIVE_STRINGS_H */
+
+/* ========================================================
+ * FAST STRING SCRATCH POOL
+ * Thread-local ring buffer of 8 scratch strings (256 bytes each).
+ * Avoids malloc/free for short-lived string results (upper, lower, str(i)).
+ * Strings are valid until the same slot is reused (8 calls later).
+ * This is safe for typical LP patterns where the result is immediately
+ * consumed: u=s.upper(); l=u.lower(); f=l.find("x")
+ * ======================================================== */
+#define LP_SCRATCH_COUNT 16
+#define LP_SCRATCH_SIZE  512
+typedef struct {
+    char bufs[LP_SCRATCH_COUNT][LP_SCRATCH_SIZE];
+    int  idx;
+} LpScratchPool;
+/* One pool per translation unit — no threading complications in LP programs */
+static LpScratchPool _lp_scratch = {{""}, 0};
+
+static inline char* lp_scratch_next(void) {
+    char *buf = _lp_scratch.bufs[_lp_scratch.idx & (LP_SCRATCH_COUNT-1)];
+    _lp_scratch.idx++;
+    return buf;
+}
+
+/* Fast upper: writes into scratch buffer, NO malloc */
+static inline const char *lp_str_upper_fast(const char *s) {
+    if (!s) return "";
+    char *r = lp_scratch_next();
+    size_t i = 0;
+    for (; s[i] && i < LP_SCRATCH_SIZE-1; i++)
+        r[i] = (char)toupper((unsigned char)s[i]);
+    r[i] = '\0';
+    return r;
+}
+
+/* Fast lower: writes into scratch buffer, NO malloc */
+static inline const char *lp_str_lower_fast(const char *s) {
+    if (!s) return "";
+    char *r = lp_scratch_next();
+    size_t i = 0;
+    for (; s[i] && i < LP_SCRATCH_SIZE-1; i++)
+        r[i] = (char)tolower((unsigned char)s[i]);
+    r[i] = '\0';
+    return r;
+}
+
+/* Fast int→string: scratch buffer, NO malloc */
+static inline const char *lp_str_from_int_fast(int64_t v) {
+    char *r = lp_scratch_next();
+    snprintf(r, LP_SCRATCH_SIZE, "%" PRId64, v);
+    return r;
+}
+
+/* Fast val→string: scratch buffer, NO malloc */
+static inline const char *lp_str_from_val_fast(LpVal v) {
+    if (v.type == LP_VAL_INT)    return lp_str_from_int_fast(v.as.i);
+    if (v.type == LP_VAL_FLOAT)  { char *r=lp_scratch_next(); snprintf(r,LP_SCRATCH_SIZE,"%g",v.as.f); return r; }
+    if (v.type == LP_VAL_STRING) return v.as.s;
+    if (v.type == LP_VAL_BOOL)   return v.as.b ? "True" : "False";
+    return "None";
+}
+
