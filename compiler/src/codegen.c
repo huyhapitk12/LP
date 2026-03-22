@@ -4605,7 +4605,7 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
     cg->scope = func_scope;
 
     /* Signature */
-    buf_write(&cg->funcs, "static inline __attribute__((hot, optimize(\"O3,unroll-loops,strict-aliasing,omit-frame-pointer\"),flatten)) ");
+    buf_write(&cg->funcs, "static inline __attribute__((hot, optimize(\"O3,unroll-loops,strict-aliasing,omit-frame-pointer,fast-math\"), target(\"avx2,fma\"),flatten)) ");
     buf_printf(&cg->funcs, "%s lp_%s(", lp_type_to_c(ret), node->func_def.name);
     for (int i = 0; i < node->func_def.params.count; i++) {
         if (i > 0) buf_write(&cg->funcs, ", ");
@@ -4666,8 +4666,21 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
                 _pt == LP_NATIVE_ARRAY_FLOAT_1D || _pt == LP_NATIVE_ARRAY_FLOAT_2D ||
                 _pt == LP_NATIVE_ARRAY_I32_1D || _pt == LP_NATIVE_ARRAY_I32_2D ||
                 _pt == LP_NATIVE_ARRAY_F32_1D || _pt == LP_NATIVE_ARRAY_F32_2D) {
-                buf_printf(&cg->funcs, "    #define _raw_%s (lp_%s->data)\n",
-                           _sym->name, _sym->name);
+                /* Emit _raw_ macro with assume_aligned for AVX2 aligned loads */
+                {
+                    const char *elem_t2 = "void";
+                    if (_pt == LP_NATIVE_ARRAY_1D || _pt == LP_NATIVE_ARRAY_2D)
+                        elem_t2 = "int64_t";
+                    else if (_pt == LP_NATIVE_ARRAY_FLOAT_1D || _pt == LP_NATIVE_ARRAY_FLOAT_2D)
+                        elem_t2 = "double";
+                    else if (_pt == LP_NATIVE_ARRAY_I32_1D || _pt == LP_NATIVE_ARRAY_I32_2D)
+                        elem_t2 = "int32_t";
+                    else if (_pt == LP_NATIVE_ARRAY_F32_1D || _pt == LP_NATIVE_ARRAY_F32_2D)
+                        elem_t2 = "float";
+                    buf_printf(&cg->funcs,
+                        "    #define _raw_%s ((%s* __restrict__)__builtin_assume_aligned(lp_%s->data, 32))\n",
+                        _sym->name, elem_t2, _sym->name);
+                }
             }
         }
     }

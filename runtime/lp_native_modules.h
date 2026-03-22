@@ -212,19 +212,19 @@ static inline void lp_np_free(LpArray *a) {
 }
 
 /* Reduction operations — GCC will auto-vectorize with -O3 -march=native */
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline double lp_np_sum(LpArray a) {
     double s = 0.0;
     for (int64_t i = 0; i < a.len; i++) s += a.data[i];
     return s;
 }
 
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline double lp_np_mean(LpArray a) {
     return (a.len > 0) ? lp_np_sum(a) / (double)a.len : 0.0;
 }
 
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline double lp_np_min(LpArray a) {
     if (a.len == 0) return 0.0;
     double m = a.data[0];
@@ -232,7 +232,7 @@ static inline double lp_np_min(LpArray a) {
     return m;
 }
 
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline double lp_np_max(LpArray a) {
     if (a.len == 0) return 0.0;
     double m = a.data[0];
@@ -240,7 +240,7 @@ static inline double lp_np_max(LpArray a) {
     return m;
 }
 
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline double lp_np_dot(LpArray a, LpArray b) {
     int64_t n = a.len < b.len ? a.len : b.len;
     double s = 0.0;
@@ -248,7 +248,7 @@ static inline double lp_np_dot(LpArray a, LpArray b) {
     return s;
 }
 
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline double lp_np_std(LpArray a) {
     if (a.len <= 1) return 0.0;
     double mean = lp_np_mean(a);
@@ -261,7 +261,7 @@ static inline double lp_np_std(LpArray a) {
 }
 
 /* Element-wise operations — return new arrays */
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline LpArray lp_np_add(LpArray a, LpArray b) {
     int64_t n = a.len < b.len ? a.len : b.len;
     LpArray r = lp_np_zeros(n);
@@ -269,7 +269,7 @@ static inline LpArray lp_np_add(LpArray a, LpArray b) {
     return r;
 }
 
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline LpArray lp_np_sub(LpArray a, LpArray b) {
     int64_t n = a.len < b.len ? a.len : b.len;
     LpArray r = lp_np_zeros(n);
@@ -277,7 +277,7 @@ static inline LpArray lp_np_sub(LpArray a, LpArray b) {
     return r;
 }
 
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline LpArray lp_np_mul(LpArray a, LpArray b) {
     int64_t n = a.len < b.len ? a.len : b.len;
     LpArray r = lp_np_zeros(n);
@@ -285,7 +285,7 @@ static inline LpArray lp_np_mul(LpArray a, LpArray b) {
     return r;
 }
 
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline LpArray lp_np_div(LpArray a, LpArray b) {
     int64_t n = a.len < b.len ? a.len : b.len;
     LpArray r = lp_np_zeros(n);
@@ -294,14 +294,14 @@ static inline LpArray lp_np_div(LpArray a, LpArray b) {
 }
 
 /* Scalar operations */
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline LpArray lp_np_scale(LpArray a, double s) {
     LpArray r = lp_np_zeros(a.len);
     for (int64_t i = 0; i < a.len; i++) r.data[i] = a.data[i] * s;
     return r;
 }
 
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline LpArray lp_np_add_scalar(LpArray a, double s) {
     LpArray r = lp_np_zeros(a.len);
     for (int64_t i = 0; i < a.len; i++) r.data[i] = a.data[i] + s;
@@ -309,42 +309,42 @@ static inline LpArray lp_np_add_scalar(LpArray a, double s) {
 }
 
 /* Math operations on arrays */
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline LpArray lp_np_sqrt_arr(LpArray a) {
     LpArray r = lp_np_zeros(a.len);
     for (int64_t i = 0; i < a.len; i++) r.data[i] = sqrt(a.data[i]);
     return r;
 }
 
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline LpArray lp_np_abs_arr(LpArray a) {
     LpArray r = lp_np_zeros(a.len);
     for (int64_t i = 0; i < a.len; i++) r.data[i] = fabs(a.data[i]);
     return r;
 }
 
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline LpArray lp_np_sin_arr(LpArray a) {
     LpArray r = lp_np_zeros(a.len);
     for (int64_t i = 0; i < a.len; i++) r.data[i] = sin(a.data[i]);
     return r;
 }
 
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline LpArray lp_np_cos_arr(LpArray a) {
     LpArray r = lp_np_zeros(a.len);
     for (int64_t i = 0; i < a.len; i++) r.data[i] = cos(a.data[i]);
     return r;
 }
 
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline LpArray lp_np_exp_arr(LpArray a) {
     LpArray r = lp_np_zeros(a.len);
     for (int64_t i = 0; i < a.len; i++) r.data[i] = exp(a.data[i]);
     return r;
 }
 
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline LpArray lp_np_log_arr(LpArray a) {
     LpArray r = lp_np_zeros(a.len);
     for (int64_t i = 0; i < a.len; i++) r.data[i] = log(a.data[i]);
@@ -778,7 +778,7 @@ static inline int64_t lp_np_count_equal(LpArray a, double val) {
  * Performs C = A @ B where A is (m x k) and B is (k x n), result is (m x n)
  * Arrays must be reshaped to 2D first using reshape2d()
  */
-__attribute__((hot, optimize("O3,unroll-loops")))
+__attribute__((hot, optimize("O3,unroll-loops,fast-math"), target("avx2,fma")))
 static inline LpArray lp_np_matmul(LpArray a, LpArray b) {
     /* Get dimensions from shape or infer from length */
     int64_t m = a.shape[0] > 0 ? a.shape[0] : 1;

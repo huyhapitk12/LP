@@ -607,6 +607,11 @@ int main(int argc, char **argv) {
             al_add(&al, "-fstrict-aliasing");
             al_add(&al, "-funroll-loops");
             al_add(&al, "-ffast-math");
+            al_add(&al, "-fomit-frame-pointer");
+            al_add(&al, "-falign-functions=32"); /* align hot functions to cache lines */
+            al_add(&al, "-falign-loops=32");     /* align hot loops to cache lines */
+            al_add(&al, "-fno-plt");             /* avoid PLT indirection for math calls */
+            al_add(&al, "-fprefetch-loop-arrays"); /* auto-prefetch in loops */
         } else {
             al_add(&al, "-O2");
         }
@@ -1238,6 +1243,10 @@ int main(int argc, char **argv) {
         al_add(&al, "-funroll-loops");
         al_add(&al, "-ffast-math");
         al_add(&al, "-fomit-frame-pointer");
+        al_add(&al, "-falign-functions=32");
+        al_add(&al, "-falign-loops=32");
+        al_add(&al, "-fno-plt");
+        al_add(&al, "-fprefetch-loop-arrays");
         if (emit_asm) al_add(&al, "-S");
         al_add(&al, tmp_c);
         al_add(&al, inc_flag);
