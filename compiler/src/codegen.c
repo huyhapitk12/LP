@@ -387,6 +387,13 @@ static LpType type_from_annotation(CodeGen *cg, const char *ann) {
     }
     /* i32[] / i32[][] — int32_t native arrays (2x denser than int64, better cache) */
     if (strcmp(ann, "i32[]") == 0) return LP_NATIVE_ARRAY_I32_1D;
+    if (strcmp(ann, "f32[]") == 0) return LP_NATIVE_ARRAY_F32_1D;
+    if (strcmp(ann, "f32[][]") == 0) return LP_NATIVE_ARRAY_F32_2D;
+    if (strncmp(ann, "f32[", 4) == 0) {
+        char *sizes[4]={NULL,NULL,NULL,NULL}; int dims=parse_native_array_dims(ann,sizes);
+        for(int i=0;i<dims;i++) if(sizes[i]) free(sizes[i]);
+        return (dims>=2)?LP_NATIVE_ARRAY_F32_2D:LP_NATIVE_ARRAY_F32_1D;
+    }
     if (strcmp(ann, "i32[][]") == 0) return LP_NATIVE_ARRAY_I32_2D;
     if (strncmp(ann, "i32[", 4) == 0) {
         /* i32[N] or i32[N][M] sized form */
@@ -445,6 +452,8 @@ static const char *lp_type_to_c(LpType t) {
         case LP_NATIVE_ARRAY_FLOAT_2D: return "LpFloatArray2D*";
         case LP_NATIVE_ARRAY_I32_1D: return "LpI32Array*";
         case LP_NATIVE_ARRAY_I32_2D: return "LpI32Array*";
+        case LP_NATIVE_ARRAY_F32_1D: return "LpF32Array*";
+        case LP_NATIVE_ARRAY_F32_2D: return "LpF32Array*";
         default:        return "int64_t";
     }
 }
@@ -593,6 +602,7 @@ static LpType infer_minmax_call_type(CodeGen *cg, AstNode *node) {
         LpType arg_type = infer_type(cg, node->call.args.items[0]);
         if (arg_type == LP_NATIVE_ARRAY_1D) return LP_INT;
         if (arg_type == LP_NATIVE_ARRAY_I32_1D) return LP_INT;
+        if (arg_type == LP_NATIVE_ARRAY_F32_1D) return LP_FLOAT;
         if (arg_type == LP_ARRAY) return LP_FLOAT;
         return LP_UNKNOWN;
     }
@@ -1777,6 +1787,10 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                             buf_write(buf, "lp_i32_memmove_left1(");
                         } else if (strcmp(func_name, "memmove_right1_i32") == 0) {
                             buf_write(buf, "lp_i32_memmove_right1(");
+                        } else if (strcmp(func_name, "memcpy_f32") == 0) {
+                            buf_write(buf, "lp_f32_memcpy(");
+                        } else if (strcmp(func_name, "memset_zero_f32") == 0) {
+                            buf_write(buf, "lp_f32_memset_zero(");
                         } else if (strcmp(func_name, "flush") == 0) {
                             buf_write(buf, "lp_io_flush(");
                         }
@@ -2701,6 +2715,17 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
             } else if (obj_type == LP_NATIVE_ARRAY_1D) {
                 /* Emit raw data access so hot loops stay as plain array loads. */
                 emit_native_int_array_access(cg, buf, node->subscript.obj, node->subscript.index);
+            } else if (obj_type == LP_NATIVE_ARRAY_F32_1D) {
+                /* f32[] read: returns float, auto-promoted to double in LP expressions */
+                if (node->subscript.obj->type == NODE_NAME) {
+                    const char *vn = node->subscript.obj->name_expr.name;
+                    buf_printf(buf, "(_raw_%s[", vn);
+                    gen_expr(cg, buf, node->subscript.index);
+                    buf_write(buf, "])");
+                } else {
+                    buf_write(buf,"(("); gen_expr(cg,buf,node->subscript.obj);
+                    buf_write(buf,")->data["); gen_expr(cg,buf,node->subscript.index); buf_write(buf,"])");
+                }
             } else if (obj_type == LP_NATIVE_ARRAY_I32_1D) {
                 /* i32[] read: _raw_arr[i] returns int32_t, promoted to int64_t by C */
                 if (node->subscript.obj->type == NODE_NAME) {
@@ -3075,6 +3100,9 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 t = type_from_annotation(cg, node->assign.type_ann);
             else if (node->assign.value)
                 t = infer_type(cg, node->assign.value);
+            /* If annotated as f32[], keep that for [0.0]*N pattern */
+            if (t == LP_NATIVE_ARRAY_F32_1D && node->assign.value)
+                match_native_float_repeat_expr(cg, node->assign.value, &auto_array_elem, &auto_array_count);
             /* If annotated as i32[], keep that even for [0]*N pattern */
             if (t == LP_NATIVE_ARRAY_I32_1D && node->assign.value)
                 match_native_int_repeat_expr(cg, node->assign.value, &auto_array_elem, &auto_array_count);
@@ -3262,6 +3290,26 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                             buf_printf(assign_buf, "LpFloatArray* lp_%s = NULL;", node->assign.name);
                         }
                         buf_write(assign_buf, "\n");
+                    } else if (t == LP_NATIVE_ARRAY_F32_1D) {
+                        /* f32[] — float32 array: 2x memory bandwidth vs double */
+                        write_indent(assign_buf, assign_indent);
+                        int emitted_f32 = 0;
+                        if (node->assign.type_ann && strncmp(node->assign.type_ann,"f32[",4)==0) {
+                            char *sizes[4]={NULL,NULL,NULL,NULL};
+                            int dims=parse_native_array_dims(node->assign.type_ann,sizes);
+                            if (dims>=1) {
+                                char *c_size=convert_size_expr_to_c(sizes[0]);
+                                buf_printf(assign_buf,"LpF32Array* lp_%s = lp_f32_array_new(%s);",node->assign.name,c_size?c_size:"1");
+                                if(c_size)free(c_size); emitted_f32=1;
+                            }
+                            for(int i=0;i<dims;i++) if(sizes[i])free(sizes[i]);
+                        }
+                        if (!emitted_f32 && auto_array_count) {
+                            buf_printf(assign_buf,"LpF32Array* lp_%s = lp_f32_array_new(",node->assign.name);
+                            gen_expr(cg,assign_buf,auto_array_count); buf_write(assign_buf,");"); emitted_f32=1;
+                        }
+                        if (!emitted_f32) buf_printf(assign_buf,"LpF32Array* lp_%s = NULL;",node->assign.name);
+                        buf_write(assign_buf,"\n");
                     } else if (t == LP_NATIVE_ARRAY_I32_1D || t == LP_NATIVE_ARRAY_I32_2D) {
                         /* i32[] / i32[][] — int32_t arrays: 2x denser than int64, better cache */
                         write_indent(assign_buf, assign_indent);
@@ -3374,6 +3422,15 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                                 }
                             } else {
                                 buf_printf(assign_buf, "LpFloatArray* lp_%s = NULL;\n", node->assign.name);
+                            }
+                        } else if (existing->type == LP_NATIVE_ARRAY_F32_1D) {
+                            /* f32[] first assignment */
+                            write_indent(assign_buf, assign_indent);
+                            if (auto_array_count) {
+                                buf_printf(assign_buf,"LpF32Array* lp_%s = lp_f32_array_new(",node->assign.name);
+                                gen_expr(cg,assign_buf,auto_array_count); buf_write(assign_buf,");\n");
+                            } else {
+                                buf_printf(assign_buf,"LpF32Array* lp_%s = NULL;\n",node->assign.name);
                             }
                         } else if (existing->type == LP_NATIVE_ARRAY_I32_1D || existing->type == LP_NATIVE_ARRAY_I32_2D) {
                             /* i32[] first assignment — allocate with lp_i32_array_new */
@@ -3503,6 +3560,25 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     gen_expr(cg, buf, node->subscript_assign.value);
                     buf_write(buf, ";\n");
                 }
+            } else if (obj_type == LP_NATIVE_ARRAY_F32_1D) {
+                /* f32[] write: cast value to float */
+                if (node->subscript_assign.obj->type == NODE_NAME) {
+                    const char *vn = node->subscript_assign.obj->name_expr.name;
+                    buf_printf(buf,"(_raw_%s[",vn);
+                } else {
+                    buf_write(buf,"(("); gen_expr(cg,buf,node->subscript_assign.obj); buf_write(buf,")->data[");
+                }
+                gen_expr(cg,buf,node->subscript_assign.index);
+                if (node->subscript_assign.op != TOK_ASSIGN) {
+                    const char *op_str="+="; switch(node->subscript_assign.op){
+                        case TOK_PLUS_ASSIGN: op_str="+="; break;
+                        case TOK_MINUS_ASSIGN: op_str="-="; break;
+                        case TOK_STAR_ASSIGN:  op_str="*="; break;
+                        case TOK_SLASH_ASSIGN: op_str="/="; break; default:break;}
+                    buf_printf(buf,"]) %s (float)(",op_str);
+                } else { buf_write(buf,"]) = (float)("); }
+                gen_expr(cg,buf,node->subscript_assign.value);
+                buf_write(buf,");\n");
             } else if (obj_type == LP_NATIVE_ARRAY_I32_1D) {
                 /* i32[] write: cast value to int32_t */
                 if (node->subscript_assign.obj->type == NODE_NAME) {
@@ -4323,6 +4399,9 @@ static void scan_declarations(CodeGen *cg, NodeList *body) {
                 t = type_from_annotation(cg, stmt->assign.type_ann);
             else if (stmt->assign.value)
                 t = infer_type(cg, stmt->assign.value);
+            /* If annotated as f32[], keep that type for [0.0]*N pattern */
+            if (t == LP_NATIVE_ARRAY_F32_1D && stmt->assign.value)
+                match_native_float_repeat_expr(cg, stmt->assign.value, &auto_array_elem, &auto_array_count);
             /* If annotated as i32[], keep that type for [0]*N pattern */
             if (t == LP_NATIVE_ARRAY_I32_1D && stmt->assign.value)
                 match_native_int_repeat_expr(cg, stmt->assign.value, &auto_array_elem, &auto_array_count);
@@ -4374,6 +4453,7 @@ static void emit_local_declarations(CodeGen *cg, Buffer *buf, Scope *scope, int 
             sym->type != LP_NATIVE_ARRAY_1D && sym->type != LP_NATIVE_ARRAY_2D &&
             sym->type != LP_NATIVE_ARRAY_FLOAT_1D && sym->type != LP_NATIVE_ARRAY_FLOAT_2D &&
             sym->type != LP_NATIVE_ARRAY_I32_1D && sym->type != LP_NATIVE_ARRAY_I32_2D &&
+            sym->type != LP_NATIVE_ARRAY_F32_1D && sym->type != LP_NATIVE_ARRAY_F32_2D &&
             !sym->declared) {
             /* Emit declaration without initialization */
             write_indent(buf, indent);
@@ -4551,7 +4631,8 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
                 if (sym) sym->declared = 1;
             } else if (pt == LP_NATIVE_ARRAY_1D || pt == LP_NATIVE_ARRAY_2D ||
                        pt == LP_NATIVE_ARRAY_FLOAT_1D || pt == LP_NATIVE_ARRAY_FLOAT_2D ||
-                       pt == LP_NATIVE_ARRAY_I32_1D || pt == LP_NATIVE_ARRAY_I32_2D) {
+                       pt == LP_NATIVE_ARRAY_I32_1D || pt == LP_NATIVE_ARRAY_I32_2D ||
+                       pt == LP_NATIVE_ARRAY_F32_1D || pt == LP_NATIVE_ARRAY_F32_2D) {
                 /* __restrict__: no aliasing between native array params -> enables vectorization */
                 buf_printf(&cg->funcs, "%s __restrict__ lp_%s", lp_type_to_c(pt), p->name);
                 Symbol *sym = scope_define(func_scope, p->name, pt);
@@ -4583,7 +4664,8 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
             LpType _pt = _sym->type;
             if (_pt == LP_NATIVE_ARRAY_1D || _pt == LP_NATIVE_ARRAY_2D ||
                 _pt == LP_NATIVE_ARRAY_FLOAT_1D || _pt == LP_NATIVE_ARRAY_FLOAT_2D ||
-                _pt == LP_NATIVE_ARRAY_I32_1D || _pt == LP_NATIVE_ARRAY_I32_2D) {
+                _pt == LP_NATIVE_ARRAY_I32_1D || _pt == LP_NATIVE_ARRAY_I32_2D ||
+                _pt == LP_NATIVE_ARRAY_F32_1D || _pt == LP_NATIVE_ARRAY_F32_2D) {
                 buf_printf(&cg->funcs, "    #define _raw_%s (lp_%s->data)\n",
                            _sym->name, _sym->name);
             }
