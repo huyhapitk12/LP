@@ -158,22 +158,24 @@ static inline int64_t lp_pow_int(int64_t base, int64_t exp) {
 }
 
 static inline int64_t lp_floordiv(int64_t a, int64_t b) {
-    int64_t q, r;
     /* Division by zero check */
-    if (b == 0) return 0;  /* Return 0 on error, caller should handle */
-    /* Use portable C code for correctness - compiler will optimize */
-    q = a / b;
-    r = a % b;
+    if (__builtin_expect(b == 0, 0)) return 0;
+    /* Fast path: non-negative dividend with positive divisor (most common in CP) */
+    if (__builtin_expect(a >= 0 && b > 0, 1)) return a / b;
+    /* General case: Python-style floor division */
+    int64_t q = a / b;
+    int64_t r = a % b;
     if ((r != 0) && ((r ^ b) < 0)) q--;
     return q;
 }
 
 static inline int64_t lp_mod(int64_t a, int64_t b) {
-    int64_t r;
     /* Division by zero check */
-    if (b == 0) return 0;  /* Return 0 on error, caller should handle */
-    /* Use portable C code for correctness - compiler will optimize */
-    r = a % b;
+    if (__builtin_expect(b == 0, 0)) return 0;
+    /* Fast path: non-negative dividend with positive divisor (most common in CP) */
+    if (__builtin_expect(a >= 0 && b > 0, 1)) return a % b;
+    /* General case: Python-style modulo */
+    int64_t r = a % b;
     if ((r != 0) && ((r ^ b) < 0)) r += b;
     return r;
 }
