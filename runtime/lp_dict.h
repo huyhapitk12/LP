@@ -403,8 +403,12 @@ typedef struct {
 static inline LpIntArray* lp_int_array_new(int64_t size) {
     LpIntArray *arr = (LpIntArray*)malloc(sizeof(LpIntArray));
     if (!arr) return NULL;
-    arr->data = (int64_t*)calloc(size, sizeof(int64_t));
+    /* 32-byte aligned: enables AVX2 load/store without penalty */
+    size_t bytes = (size_t)size * sizeof(int64_t);
+    size_t aligned = (bytes + 31) & ~(size_t)31;
+    arr->data = (int64_t*)aligned_alloc(32, aligned ? aligned : 32);
     if (!arr->data) { free(arr); return NULL; }
+    memset(arr->data, 0, bytes);
     arr->len = size;
     return arr;
 }
@@ -441,8 +445,11 @@ typedef struct {
 static inline LpF32Array* lp_f32_array_new(int64_t size) {
     LpF32Array *arr = (LpF32Array*)malloc(sizeof(LpF32Array));
     if (!arr) return NULL;
-    arr->data = (float*)calloc(size, sizeof(float));
+    size_t bytes = (size_t)size * sizeof(float);
+    size_t aligned = (bytes + 31) & ~(size_t)31;
+    arr->data = (float*)aligned_alloc(32, aligned ? aligned : 32);
     if (!arr->data) { free(arr); return NULL; }
+    memset(arr->data, 0, bytes);
     arr->len = (int32_t)size;
     return arr;
 }
@@ -469,8 +476,11 @@ typedef struct {
 static inline LpI32Array* lp_i32_array_new(int64_t size) {
     LpI32Array *arr = (LpI32Array*)malloc(sizeof(LpI32Array));
     if (!arr) return NULL;
-    arr->data = (int32_t*)calloc(size, sizeof(int32_t));
+    size_t bytes = (size_t)size * sizeof(int32_t);
+    size_t aligned = (bytes + 31) & ~(size_t)31;
+    arr->data = (int32_t*)aligned_alloc(32, aligned ? aligned : 32);
     if (!arr->data) { free(arr); return NULL; }
+    memset(arr->data, 0, bytes);
     arr->len = (int32_t)size;
     return arr;
 }
@@ -548,8 +558,11 @@ typedef struct {
 static inline LpFloatArray* lp_float_array_new(int64_t size) {
     LpFloatArray *arr = (LpFloatArray*)malloc(sizeof(LpFloatArray));
     if (!arr) return NULL;
-    arr->data = (double*)calloc(size, sizeof(double));
+    size_t bytes = (size_t)size * sizeof(double);
+    size_t aligned = (bytes + 31) & ~(size_t)31;
+    arr->data = (double*)aligned_alloc(32, aligned ? aligned : 32);
     if (!arr->data) { free(arr); return NULL; }
+    memset(arr->data, 0, bytes);
     arr->len = size;
     return arr;
 }

@@ -1391,6 +1391,8 @@ static inline bool lp_point_in_polygon(LpPoint* points, int64_t n, LpPoint p) {
  * Uses memmove internally -> SIMD-optimized on all platforms */
 static inline void lp_dsa_memmove_left1(LpIntArray *arr, int64_t from, int64_t to) {
     if (!arr || to <= from || from < 1) return;
+    /* Prefetch destination cache line */
+    __builtin_prefetch(arr->data + from - 1, 1, 1);
     memmove(arr->data + from - 1, arr->data + from, (size_t)(to - from) * sizeof(int64_t));
 }
 
