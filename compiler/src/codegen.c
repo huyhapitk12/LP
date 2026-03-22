@@ -629,6 +629,24 @@ static LpType infer_minmax_call_type(CodeGen *cg, AstNode *node) {
     return result;
 }
 
+/* Check if every element of a list literal is an integer (literal or unary-minus-int).
+ * Used to auto-promote [0,0,1,-1] style direction tables to LpIntArray* instead of LpList*.
+ * Only promotes small static literals (<=64 elements) to avoid false positives. */
+static int list_expr_all_ints(AstNode *node) {
+    if (!node || node->type != NODE_LIST_EXPR) return 0;
+    NodeList *elems = &node->list_expr.elems;
+    if (elems->count == 0 || elems->count > 64) return 0;
+    for (int i = 0; i < elems->count; i++) {
+        AstNode *e = elems->items[i];
+        if (!e) return 0;
+        if (e->type == NODE_INT_LIT) continue;
+        if (e->type == NODE_UNARY_OP && e->unary_op.op == TOK_MINUS &&
+            e->unary_op.operand && e->unary_op.operand->type == NODE_INT_LIT) continue;
+        return 0;
+    }
+    return 1;
+}
+
 static LpType infer_type(CodeGen *cg, AstNode *node) {
     if (!node) return LP_VOID;
     switch (node->type) {
@@ -638,7 +656,11 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
         case NODE_FSTRING:    return LP_STRING;  /* F-strings always produce strings */
         case NODE_BOOL_LIT:   return LP_BOOL;
         case NODE_NONE_LIT:   return LP_VOID;
-        case NODE_LIST_EXPR:  return LP_LIST;
+        /* Auto-promote small all-integer list literals to native int array —
+         * avoids LpVal boxing overhead on direction/lookup tables like [0,0,1,-1]. */
+        case NODE_LIST_EXPR:
+            if (list_expr_all_ints(node)) return LP_NATIVE_ARRAY_1D;
+            return LP_LIST;
         case NODE_DICT_EXPR:  return LP_DICT;
         case NODE_SET_EXPR:   return LP_SET;
         case NODE_TUPLE_EXPR: return LP_TUPLE;
@@ -1197,6 +1219,21 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                 buf_write(buf, "lp_list_new()");
                 break;
             }
+            /* All-integer literal list → inline LpIntArray* for zero-overhead table access */
+            if (list_expr_all_ints(node)) {
+                buf_printf(buf, "({ LpIntArray* _la = lp_int_array_new(%d); ", elems->count);
+                for (int i = 0; i < elems->count; i++) {
+                    AstNode *e = elems->items[i];
+                    int64_t iv = 0;
+                    if (e->type == NODE_INT_LIT) iv = e->int_lit.value;
+                    else if (e->type == NODE_UNARY_OP && e->unary_op.op == TOK_MINUS &&
+                             e->unary_op.operand->type == NODE_INT_LIT)
+                        iv = -e->unary_op.operand->int_lit.value;
+                    buf_printf(buf, "_la->data[%d] = %lldLL; ", i, (long long)iv);
+                }
+                buf_write(buf, "_la; })");
+                break;
+            }
             buf_write(buf, "({ LpList *_l = lp_list_new(); ");
             for (int i = 0; i < elems->count; i++) {
                 buf_write(buf, "lp_list_append(_l, ");
@@ -1310,6 +1347,16 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                     buf_write(buf, ", ");
                     emit_lp_val(cg, buf, node->bin_op.right);
                     buf_write(buf, ")");
+                } else if (lt == LP_INT && rt == LP_INT) {
+                    /* Both operands are known integers: emit inline floor division.
+                     * lp_floordiv handles negative-divisor correction; for the common
+                     * competitive-programming case (positive divisor) this compiles to
+                     * a single idiv instruction. */
+                    buf_write(buf, "lp_floordiv(");
+                    gen_expr(cg, buf, node->bin_op.left);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->bin_op.right);
+                    buf_write(buf, ")");
                 } else {
                     buf_write(buf, "lp_floordiv(");
                     gen_expr(cg, buf, node->bin_op.left);
@@ -1325,6 +1372,13 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                     emit_lp_val(cg, buf, node->bin_op.left);
                     buf_write(buf, ", ");
                     emit_lp_val(cg, buf, node->bin_op.right);
+                    buf_write(buf, ")");
+                } else if (lt == LP_INT && rt == LP_INT) {
+                    /* Both operands known integers: emit inline modulo */
+                    buf_write(buf, "lp_mod(");
+                    gen_expr(cg, buf, node->bin_op.left);
+                    buf_write(buf, ", ");
+                    gen_expr(cg, buf, node->bin_op.right);
                     buf_write(buf, ")");
                 } else {
                     buf_write(buf, "lp_mod(");
@@ -3152,6 +3206,12 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 match_native_int_repeat_expr(cg, node->assign.value, &auto_array_elem, &auto_array_count)) {
                 t = LP_NATIVE_ARRAY_1D;
             }
+            /* Auto-promote list annotation to native int array for small all-int literals
+             * e.g. dx: list = [0, 0, 1, -1]  →  LpIntArray*  (avoids LpVal boxing) */
+            if ((t == LP_LIST || t == LP_UNKNOWN) && node->assign.value &&
+                list_expr_all_ints(node->assign.value)) {
+                t = LP_NATIVE_ARRAY_1D;
+            }
             /* Detect [0.0] * N -> LpFloatArray (zero-overhead float array) */
             if ((t == LP_LIST || t == LP_UNKNOWN || t == LP_VAL) && node->assign.value &&
                 match_native_float_repeat_expr(cg, node->assign.value, &auto_array_elem, &auto_array_count)) {
@@ -3478,6 +3538,23 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                                 buf_printf(assign_buf, "LpIntArray* lp_%s = ", node->assign.name);
                                 emit_native_int_array_init_expr(cg, assign_buf, auto_array_elem, auto_array_count);
                                 buf_write(assign_buf, ";\n");
+                            } else if (existing->type == LP_NATIVE_ARRAY_1D && node->assign.value &&
+                                       list_expr_all_ints(node->assign.value)) {
+                                /* All-int literal: [0, 0, 1, -1] etc. - emit inline array init */
+                                NodeList *elems = &node->assign.value->list_expr.elems;
+                                buf_printf(assign_buf, "LpIntArray* lp_%s = lp_int_array_new(%d);\n",
+                                          node->assign.name, elems->count);
+                                for (int _ei = 0; _ei < elems->count; _ei++) {
+                                    AstNode *_e = elems->items[_ei];
+                                    int64_t _iv = 0;
+                                    if (_e->type == NODE_INT_LIT) _iv = _e->int_lit.value;
+                                    else if (_e->type == NODE_UNARY_OP && _e->unary_op.op == TOK_MINUS &&
+                                             _e->unary_op.operand->type == NODE_INT_LIT)
+                                        _iv = -_e->unary_op.operand->int_lit.value;
+                                    write_indent(assign_buf, assign_indent);
+                                    buf_printf(assign_buf, "lp_%s->data[%d] = %lldLL;\n",
+                                              node->assign.name, _ei, (long long)_iv);
+                                }
                             } else if (existing->type == LP_NATIVE_ARRAY_2D) {
                                 buf_printf(assign_buf, "LpIntArray2D* lp_%s = NULL;\n", node->assign.name);
                             } else {
@@ -4529,6 +4606,12 @@ static void scan_declarations(CodeGen *cg, NodeList *body) {
                 match_native_int_repeat_expr(cg, stmt->assign.value, &auto_array_elem, &auto_array_count);
             if ((t == LP_LIST || t == LP_UNKNOWN || t == LP_VAL) && stmt->assign.value &&
                 match_native_int_repeat_expr(cg, stmt->assign.value, &auto_array_elem, &auto_array_count)) {
+                t = LP_NATIVE_ARRAY_1D;
+            }
+            /* Auto-promote list annotation to native int array for small all-int literals
+             * e.g.  dx: list = [0, 0, 1, -1]  →  LpIntArray* lp_dx
+             * This eliminates LpVal boxing overhead on direction / lookup table access. */
+            if (t == LP_LIST && stmt->assign.value && list_expr_all_ints(stmt->assign.value)) {
                 t = LP_NATIVE_ARRAY_1D;
             }
             /* Also detect [0.0] * N -> LpFloatArray */
