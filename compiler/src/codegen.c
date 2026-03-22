@@ -3635,16 +3635,32 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                             buf_free(&lambda_expr_buf);
                         } else {
                             write_indent(assign_buf, assign_indent);
-                            if (node->assign.value && node->assign.value->type == NODE_LAMBDA) {
+                            /* Re-assignment of LP_NATIVE_ARRAY_1D with [val]*N pattern:
+                             * use lp_int_array_reuse() to avoid malloc/free churn inside loops */
+                            if (existing->type == LP_NATIVE_ARRAY_1D && auto_array_elem && auto_array_count) {
+                                buf_printf(assign_buf, "lp_%s = lp_int_array_reuse(lp_%s, ",
+                                          node->assign.name, node->assign.name);
+                                gen_expr(cg, assign_buf, auto_array_count);
+                                buf_write(assign_buf, ");\n");
+                                /* Update _raw_ pointer since data pointer may have changed */
+                                write_indent(assign_buf, assign_indent);
+                                buf_printf(assign_buf, "_raw_%s = lp_%s->data;\n",
+                                          node->assign.name, node->assign.name);
+                            } else if (node->assign.value && node->assign.value->type == NODE_LAMBDA) {
                                 buf_printf(assign_buf, "__auto_type lp_%s", node->assign.name);
+                                if (node->assign.value) {
+                                    buf_write(assign_buf, " = ");
+                                    emit_cast(cg, assign_buf, node->assign.value, existing->type);
+                                }
+                                buf_write(assign_buf, ";\n");
                             } else {
                                 buf_printf(assign_buf, "%s lp_%s", lp_type_to_c_obj(existing->type, class_name), node->assign.name);
+                                if (node->assign.value) {
+                                    buf_write(assign_buf, " = ");
+                                    emit_cast(cg, assign_buf, node->assign.value, existing->type);
+                                }
+                                buf_write(assign_buf, ";\n");
                             }
-                            if (node->assign.value) {
-                                buf_write(assign_buf, " = ");
-                                emit_cast(cg, assign_buf, node->assign.value, existing->type);
-                            }
-                            buf_write(assign_buf, ";\n");
                         }
                     } else {
                         /* Already declared: just assign */

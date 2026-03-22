@@ -21,8 +21,8 @@
 #include <stdio.h>
 #include <inttypes.h>
 
-#define LP_DICT_INITIAL_CAPACITY 16
-#define LP_DICT_LOAD_FACTOR 0.75
+#define LP_DICT_INITIAL_CAPACITY 64
+#define LP_DICT_LOAD_FACTOR 0.60
 
 typedef struct LpDict LpDict;
 typedef struct LpList LpList;
@@ -82,13 +82,20 @@ struct LpDict {
     int64_t count;
 };
 
-/* Hash function (FNV-1a) */
+/* Hash function — FNV-1a with murmur3 finalizer for better short-string distribution */
 static inline uint32_t lp_hash(const char* key) {
     uint32_t hash = 2166136261u;
-    for (const char* p = key; *p; p++) {
-        hash ^= (uint32_t)(*p);
-        hash *= 16777619;
+    const unsigned char *p = (const unsigned char*)key;
+    while (*p) {
+        hash ^= *p++;
+        hash *= 16777619u;
     }
+    /* Murmur3 finalizer mix — reduces clustering for numeric string keys */
+    hash ^= hash >> 16;
+    hash *= 0x85ebca6bu;
+    hash ^= hash >> 13;
+    hash *= 0xc2b2ae35u;
+    hash ^= hash >> 16;
     return hash;
 }
 
@@ -423,6 +430,19 @@ static inline LpIntArray* lp_int_array_new(int64_t size) {
 
 static inline void lp_int_array_free(LpIntArray *arr) {
     if (arr) { free(arr->data); free(arr); }
+}
+
+/* Reuse an existing array if same size, otherwise reallocate.
+ * Eliminates malloc/free churn when the same-sized array is created every loop iteration.
+ * Usage: arr = lp_int_array_reuse(arr, size);  (replaces lp_int_array_new inside loops) */
+static inline LpIntArray* lp_int_array_reuse(LpIntArray *arr, int64_t size) {
+    if (arr && arr->len == size) {
+        /* Same size: just zero it and reuse — no malloc */
+        memset(arr->data, 0, (size_t)size * sizeof(int64_t));
+        return arr;
+    }
+    lp_int_array_free(arr);
+    return lp_int_array_new(size);
 }
 
 static inline int64_t lp_int_array_get(LpIntArray *arr, int64_t idx) {
