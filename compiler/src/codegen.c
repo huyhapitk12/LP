@@ -3646,9 +3646,25 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                                 buf_printf(assign_buf,"LpF32Array* lp_%s = NULL;\n",node->assign.name);
                             }
                         } else if (existing->type == LP_NATIVE_ARRAY_I32_1D || existing->type == LP_NATIVE_ARRAY_I32_2D) {
-                            /* i32[] first assignment — allocate with lp_i32_array_new */
+                            /* i32[] first assignment — use repeat for non-zero init, new for zero */
                             write_indent(assign_buf, assign_indent);
-                            if (auto_array_count) {
+                            if (auto_array_count && auto_array_elem) {
+                                int64_t iv = (auto_array_elem->type == NODE_INT_LIT) ? auto_array_elem->int_lit.value :
+                                             (auto_array_elem->type == NODE_UNARY_OP &&
+                                              auto_array_elem->unary_op.op == TOK_MINUS &&
+                                              auto_array_elem->unary_op.operand->type == NODE_INT_LIT) ?
+                                             -auto_array_elem->unary_op.operand->int_lit.value : 0;
+                                if (iv == 0) {
+                                    buf_printf(assign_buf, "LpI32Array* lp_%s = lp_i32_array_new(", node->assign.name);
+                                    gen_expr(cg, assign_buf, auto_array_count);
+                                    buf_write(assign_buf, ");\n");
+                                } else {
+                                    buf_printf(assign_buf, "LpI32Array* lp_%s = lp_i32_array_repeat((int32_t)%lld, ",
+                                              node->assign.name, (long long)iv);
+                                    gen_expr(cg, assign_buf, auto_array_count);
+                                    buf_write(assign_buf, ");\n");
+                                }
+                            } else if (auto_array_count) {
                                 buf_printf(assign_buf, "LpI32Array* lp_%s = lp_i32_array_new(", node->assign.name);
                                 gen_expr(cg, assign_buf, auto_array_count);
                                 buf_write(assign_buf, ");\n");
@@ -4947,15 +4963,16 @@ static void scan_declarations(CodeGen *cg, NodeList *body) {
                             }
                         }
                     }
-                    /* Also check for-loop body one level deep */
+                    /* Check for/while bodies up to 3 levels deep for subscript-assigns */
                     for (int bi = 0; bi < body->count && can_be_i32; bi++) {
                         AstNode *bs = body->items[bi];
-                        NodeList *inner = NULL;
-                        if (bs->type == NODE_FOR)  inner = &bs->for_stmt.body;
-                        if (bs->type == NODE_WHILE) inner = &bs->while_stmt.body;
-                        if (!inner) continue;
-                        for (int ci = 0; ci < inner->count && can_be_i32; ci++) {
-                            AstNode *cs = inner->items[ci];
+                        NodeList *l1 = NULL;
+                        if (bs->type == NODE_FOR)  l1 = &bs->for_stmt.body;
+                        if (bs->type == NODE_WHILE) l1 = &bs->while_stmt.body;
+                        if (!l1) continue;
+                        for (int ci = 0; ci < l1->count && can_be_i32; ci++) {
+                            AstNode *cs = l1->items[ci];
+                            /* Level 1: direct subscript assign */
                             if (cs->type == NODE_SUBSCRIPT_ASSIGN &&
                                 cs->subscript_assign.obj->type == NODE_NAME &&
                                 strcmp(cs->subscript_assign.obj->name_expr.name, stmt->assign.name) == 0) {
@@ -4967,12 +4984,65 @@ static void scan_declarations(CodeGen *cg, NodeList *body) {
                                     if (val->bin_op.op != TOK_PLUS &&
                                         val->bin_op.op != TOK_MINUS &&
                                         val->bin_op.op != TOK_PERCENT) can_be_i32 = 0;
+                                } else if (val->type == NODE_NAME) {
+                                    /* variable assigned — allow if it's a known int;
+                                     * conservative: only skip if it's the loop index var */
                                 } else {
                                     can_be_i32 = 0;
                                 }
                             }
-                            /* deeper nesting — bail out */
-                            if (cs->type == NODE_FOR || cs->type == NODE_WHILE) can_be_i32 = 0;
+                            /* Level 2: scan if/for/while children */
+                            NodeList *l2 = NULL;
+                            if (cs->type == NODE_FOR)  l2 = &cs->for_stmt.body;
+                            if (cs->type == NODE_WHILE) l2 = &cs->while_stmt.body;
+                            if (cs->type == NODE_IF)   l2 = &cs->if_stmt.then_body;
+                            if (!l2) continue;
+                            for (int di = 0; di < l2->count && can_be_i32; di++) {
+                                AstNode *ds = l2->items[di];
+                                if (ds->type == NODE_SUBSCRIPT_ASSIGN &&
+                                    ds->subscript_assign.obj->type == NODE_NAME &&
+                                    strcmp(ds->subscript_assign.obj->name_expr.name, stmt->assign.name) == 0) {
+                                    AstNode *val = ds->subscript_assign.value;
+                                    if (val->type == NODE_INT_LIT) {
+                                        if (val->int_lit.value < -2000000000LL ||
+                                            val->int_lit.value >  2000000000LL) can_be_i32 = 0;
+                                    } else if (val->type == NODE_BIN_OP) {
+                                        if (val->bin_op.op != TOK_PLUS &&
+                                            val->bin_op.op != TOK_MINUS &&
+                                            val->bin_op.op != TOK_PERCENT) can_be_i32 = 0;
+                                    } else if (val->type == NODE_NAME) {
+                                        /* allow — variable expected to be int */
+                                    } else {
+                                        can_be_i32 = 0;
+                                    }
+                                }
+                                /* Level 3: one more level (if inside for inside while) */
+                                NodeList *l3 = NULL;
+                                if (ds->type == NODE_FOR)  l3 = &ds->for_stmt.body;
+                                if (ds->type == NODE_WHILE) l3 = &ds->while_stmt.body;
+                                if (ds->type == NODE_IF)   l3 = &ds->if_stmt.then_body;
+                                if (!l3) continue;
+                                for (int ei = 0; ei < l3->count && can_be_i32; ei++) {
+                                    AstNode *es = l3->items[ei];
+                                    if (es->type == NODE_SUBSCRIPT_ASSIGN &&
+                                        es->subscript_assign.obj->type == NODE_NAME &&
+                                        strcmp(es->subscript_assign.obj->name_expr.name, stmt->assign.name) == 0) {
+                                        AstNode *val = es->subscript_assign.value;
+                                        if (val->type == NODE_INT_LIT) {
+                                            if (val->int_lit.value < -2000000000LL ||
+                                                val->int_lit.value >  2000000000LL) can_be_i32 = 0;
+                                        } else if (val->type == NODE_BIN_OP) {
+                                            if (val->bin_op.op != TOK_PLUS &&
+                                                val->bin_op.op != TOK_MINUS &&
+                                                val->bin_op.op != TOK_PERCENT) can_be_i32 = 0;
+                                        } else if (val->type == NODE_NAME) {
+                                            /* allow */
+                                        } else {
+                                            can_be_i32 = 0;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     if (can_be_i32) {
