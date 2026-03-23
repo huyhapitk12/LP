@@ -1258,6 +1258,9 @@ int main(int argc, char **argv) {
             if (lp_target_needs_pthread(cg.uses_thread, NULL)) al_add(&al, "-pthread");
             al_add(&al, "-fopenmp");  /* Always enable OpenMP - harmless if not used */
             al_add(&al, "-lm");
+#ifndef _WIN32
+            al_add(&al, "-lmvec");   /* SIMD math: enables _ZGVdN4v_sin etc for vectorized loops */
+#endif
             al_add(&al, LP_LWINHTTP);
             al_add(&al, sqlite_obj);
         }

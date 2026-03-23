@@ -69,6 +69,10 @@ typedef struct {
     /* Native array dimensions for competitive programming */
     int array_dims;           /* Number of dimensions (0 = not an array, 1 = 1D, 2 = 2D) */
     char *array_size_expr[4]; /* Size expression for each dimension (can be expression) */
+    /* Fix 4: constant propagation */
+    int64_t const_int_value;  /* 0 = not a known constant */
+    /* Fix 7: loop-local array hoisting — array declared inside for/while, hoisted out */
+    int is_loop_hoisted;  /* 1 = was declared inside a loop, hoisted to function scope */
 } Symbol;
 
 typedef struct Scope Scope;

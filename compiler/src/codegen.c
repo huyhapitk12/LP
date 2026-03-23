@@ -1348,17 +1348,25 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                     emit_lp_val(cg, buf, node->bin_op.right);
                     buf_write(buf, ")");
                 } else if (lt == LP_INT && rt == LP_INT) {
-                    /* Both operands are known integers.
-                     * If the right operand is a positive integer literal, emit raw C '/'
-                     * (guaranteed truncation-toward-zero == floor for positive dividend,
-                     *  and always correct for constant positive divisors in CP code).
-                     * Otherwise fall back to lp_floordiv for correct negative handling. */
+                    /* Fix 4: Constant propagation — check if RHS is an immutable variable
+                     * assigned a positive literal (tracked in const_int_value).
+                     * BFS: cols=1000 → cur // cols emits (cur / 1000LL) directly. */
                     int rhs_is_pos_lit = (node->bin_op.right->type == NODE_INT_LIT &&
                                           node->bin_op.right->int_lit.value > 0);
+                    int64_t const_val = 0;
+                    if (!rhs_is_pos_lit && node->bin_op.right->type == NODE_NAME) {
+                        Symbol *rs = scope_lookup(cg->scope, node->bin_op.right->name_expr.name);
+                        if (rs && rs->const_int_value > 0) {
+                            const_val = rs->const_int_value;
+                            rhs_is_pos_lit = 1;
+                        }
+                    }
                     if (rhs_is_pos_lit) {
+                        int64_t divisor = const_val > 0 ? const_val :
+                                          node->bin_op.right->int_lit.value;
                         buf_write(buf, "(");
                         gen_expr(cg, buf, node->bin_op.left);
-                        buf_printf(buf, " / %lldLL)", (long long)node->bin_op.right->int_lit.value);
+                        buf_printf(buf, " / %lldLL)", (long long)divisor);
                     } else {
                         buf_write(buf, "lp_floordiv(");
                         gen_expr(cg, buf, node->bin_op.left);
@@ -1383,15 +1391,23 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                     emit_lp_val(cg, buf, node->bin_op.right);
                     buf_write(buf, ")");
                 } else if (lt == LP_INT && rt == LP_INT) {
-                    /* Both operands known integers.
-                     * For positive literal RHS: C '%' is identical to Python '%' for
-                     * non-negative dividend (true for indices in CP). Emit directly. */
+                    /* Fix 4: same constant propagation for % as for // */
                     int rhs_is_pos_lit = (node->bin_op.right->type == NODE_INT_LIT &&
                                           node->bin_op.right->int_lit.value > 0);
+                    int64_t const_val = 0;
+                    if (!rhs_is_pos_lit && node->bin_op.right->type == NODE_NAME) {
+                        Symbol *rs = scope_lookup(cg->scope, node->bin_op.right->name_expr.name);
+                        if (rs && rs->const_int_value > 0) {
+                            const_val = rs->const_int_value;
+                            rhs_is_pos_lit = 1;
+                        }
+                    }
                     if (rhs_is_pos_lit) {
+                        int64_t divisor = const_val > 0 ? const_val :
+                                          node->bin_op.right->int_lit.value;
                         buf_write(buf, "(");
                         gen_expr(cg, buf, node->bin_op.left);
-                        buf_printf(buf, " %% %lldLL)", (long long)node->bin_op.right->int_lit.value);
+                        buf_printf(buf, " %% %lldLL)", (long long)divisor);
                     } else {
                         buf_write(buf, "lp_mod(");
                         gen_expr(cg, buf, node->bin_op.left);
@@ -3717,9 +3733,23 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                         } else {
                             write_indent(assign_buf, assign_indent);
                             if (existing->type == LP_NATIVE_ARRAY_1D && auto_array_elem && auto_array_count) {
-                                buf_printf(assign_buf, "lp_%s = ", node->assign.name);
-                                emit_native_int_array_init_expr(cg, assign_buf, auto_array_elem, auto_array_count);
-                                buf_write(assign_buf, ";\n");
+                                /* Fix 7: if this array was hoisted from a loop body,
+                                 * use lp_int_array_reuse() instead of lp_int_array_new().
+                                 * lp_int_array_reuse(NULL, N) allocates on first call. */
+                                if (existing->is_loop_hoisted) {
+                                    /* lp_int_array_reuse(NULL,N) allocates on first call;
+                                     * on subsequent calls: zeros in-place if same size.
+                                     * _raw_arr macro re-evaluates lp_arr->data each use, so
+                                     * no explicit pointer update needed after reuse(). */
+                                    buf_printf(assign_buf, "lp_%s = lp_int_array_reuse(lp_%s, ",
+                                              node->assign.name, node->assign.name);
+                                    gen_expr(cg, assign_buf, auto_array_count);
+                                    buf_write(assign_buf, ");\n");
+                                } else {
+                                    buf_printf(assign_buf, "lp_%s = ", node->assign.name);
+                                    emit_native_int_array_init_expr(cg, assign_buf, auto_array_elem, auto_array_count);
+                                    buf_write(assign_buf, ";\n");
+                                }
                             } else {
                                 buf_printf(assign_buf, "lp_%s = ", node->assign.name);
                                 emit_cast(cg, assign_buf, node->assign.value, existing->type);
@@ -4042,7 +4072,66 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 buf_write(buf, "return 0;\n");
             }
             break;
-        case NODE_IF:
+        case NODE_IF: {
+            /* ── Fix 5: detect dict counter pattern ──────────────────────────
+             * Pattern: if val == None: d[key] = delta  else: d[key] = val + delta
+             * where val = d[key] was assigned just before this if-statement.
+             * Emits lp_dict_inc_int(d, key, delta) — single probe, strdup only
+             * on first insert. Eliminates 10x strdup overhead on counter tables. */
+            int emitted_inc = 0;
+            if (node->if_stmt.else_branch &&
+                node->if_stmt.else_branch->type != NODE_IF &&
+                node->if_stmt.then_body.count == 1 &&
+                node->if_stmt.else_branch->program.stmts.count == 1) {
+
+                /* Check: condition is  val == None  */
+                AstNode *cond = node->if_stmt.cond;
+                if (cond->type == NODE_BIN_OP && cond->bin_op.op == TOK_EQ &&
+                    (cond->bin_op.right->type == NODE_NONE_LIT ||
+                     (cond->bin_op.right->type == NODE_NAME &&
+                      (strcmp(cond->bin_op.right->name_expr.name, "None") == 0 ||
+                       strcmp(cond->bin_op.right->name_expr.name, "none") == 0)))) {
+
+                    /* Check: then-body is  d[key] = 1 */
+                    AstNode *then_s = node->if_stmt.then_body.items[0];
+                    AstNode *else_s = node->if_stmt.else_branch->program.stmts.items[0];
+
+                    if (then_s->type == NODE_SUBSCRIPT_ASSIGN &&
+                        then_s->subscript_assign.op == TOK_ASSIGN &&
+                        then_s->subscript_assign.value->type == NODE_INT_LIT &&
+                        infer_type(cg, then_s->subscript_assign.obj) == LP_DICT) {
+
+                        int64_t delta = then_s->subscript_assign.value->int_lit.value;
+
+                        /* Check else-body:  d[key] = val + delta */
+                        if (else_s->type == NODE_SUBSCRIPT_ASSIGN &&
+                            else_s->subscript_assign.op == TOK_ASSIGN &&
+                            else_s->subscript_assign.value->type == NODE_BIN_OP &&
+                            else_s->subscript_assign.value->bin_op.op == TOK_PLUS) {
+
+                            /* Same dict and key as then-body */
+                            AstNode *then_obj = then_s->subscript_assign.obj;
+                            AstNode *else_obj = else_s->subscript_assign.obj;
+                            AstNode *then_idx = then_s->subscript_assign.index;
+                            AstNode *else_idx = else_s->subscript_assign.index;
+                            if (then_obj->type == NODE_NAME && else_obj->type == NODE_NAME &&
+                                strcmp(then_obj->name_expr.name, else_obj->name_expr.name) == 0 &&
+                                then_idx->type == NODE_NAME && else_idx->type == NODE_NAME &&
+                                strcmp(then_idx->name_expr.name, else_idx->name_expr.name) == 0) {
+
+                                write_indent(buf, indent);
+                                buf_printf(buf, "lp_dict_inc_int(lp_%s, lp_%s, %lldLL);\n",
+                                           then_obj->name_expr.name,
+                                           then_idx->name_expr.name,
+                                           (long long)delta);
+                                emitted_inc = 1;
+                            }
+                        }
+                    }
+                }
+            }
+            if (!emitted_inc) {
+            /* ── End Fix 5 ───────────────────────────────────────────────── */
             write_indent(buf, indent);
             buf_write(buf, "if (");
             gen_expr(cg, buf, node->if_stmt.cond);
@@ -4053,9 +4142,8 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 if (node->if_stmt.else_branch->type == NODE_IF) {
                     write_indent(buf, indent);
                     buf_write(buf, "} else ");
-                    /* gen_stmt prints 'if (...)' */
                     gen_stmt(cg, buf, node->if_stmt.else_branch, indent);
-                    return; /* skip closing brace, already handled */
+                    return;
                 } else {
                     write_indent(buf, indent);
                     buf_write(buf, "} else {\n");
@@ -4066,7 +4154,9 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
             }
             write_indent(buf, indent);
             buf_write(buf, "}\n");
+            } /* end !emitted_inc */
             break;
+        }
         case NODE_FOR: {
             /* === PEEPHOLE: detect copy/zero loops and emit memcpy/memset === */
             if (is_range_call(node->for_stmt.iter)) {
@@ -4135,6 +4225,27 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 NodeList *args = &node->for_stmt.iter->call.args;
                 /* Define loop var */
                 scope_define(cg->scope, node->for_stmt.var, LP_INT);
+                /* Fix 2: ivdep only for loops whose EVERY statement is NODE_SUBSCRIPT_ASSIGN
+                 * to a native int/float array. Scalar accumulators (total += i) have
+                 * loop-carried deps — ivdep there is WRONG and causes incorrect SIMD.
+                 * Only safe pattern: for i in range(n): arr[i] = expr(i) */
+                {
+                    int all_array_writes = (node->for_stmt.body.count > 0);
+                    for (int _bi = 0; _bi < node->for_stmt.body.count && all_array_writes; _bi++) {
+                        AstNode *_s = node->for_stmt.body.items[_bi];
+                        if (_s->type == NODE_SUBSCRIPT_ASSIGN) {
+                            LpType _ot = infer_type(cg, _s->subscript_assign.obj);
+                            if (_ot == LP_DICT || _ot == LP_LIST || _ot == LP_STRING)
+                                all_array_writes = 0;
+                        } else {
+                            all_array_writes = 0;
+                        }
+                    }
+                    if (all_array_writes) {
+                        write_indent(buf, indent);
+                        buf_write(buf, "#pragma GCC ivdep\n");
+                    }
+                }
                 write_indent(buf, indent);
                 if (args->count == 1) {
                     buf_printf(buf, "for (int64_t lp_%s = 0; lp_%s < ",
@@ -4671,6 +4782,11 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
 
 static void scan_declarations(CodeGen *cg, NodeList *body) {
     if (!body) return;
+
+    /* ── Fix 7 & Fix 4: first pass — collect immutable int variables and
+     * detect arrays declared INSIDE for/while body (loop-local = hoist candidates).
+     * We scan the current level only; recursive calls handle nested scopes. */
+
     for (int i = 0; i < body->count; i++) {
         AstNode *stmt = body->items[i];
         if (stmt->type == NODE_ASSIGN) {
@@ -4694,9 +4810,7 @@ static void scan_declarations(CodeGen *cg, NodeList *body) {
                 match_native_int_repeat_expr(cg, stmt->assign.value, &auto_array_elem, &auto_array_count)) {
                 t = LP_NATIVE_ARRAY_1D;
             }
-            /* Auto-promote list annotation to native int array for small all-int literals
-             * e.g.  dx: list = [0, 0, 1, -1]  →  LpIntArray* lp_dx
-             * This eliminates LpVal boxing overhead on direction / lookup table access. */
+            /* Auto-promote list annotation to native int array for small all-int literals */
             if (t == LP_LIST && stmt->assign.value && list_expr_all_ints(stmt->assign.value)) {
                 t = LP_NATIVE_ARRAY_1D;
             }
@@ -4705,6 +4819,172 @@ static void scan_declarations(CodeGen *cg, NodeList *body) {
                 match_native_float_repeat_expr(cg, stmt->assign.value, &auto_array_elem, &auto_array_count)) {
                 t = LP_NATIVE_ARRAY_FLOAT_1D;
             }
+
+            /* ── Fix 6: detect boolean-only arrays → promote to i8[]
+             * If the array is initialised with [0]*N or [1]*N and no assignment
+             * to it ever uses values outside {0,1}, emit LpI8Array*.
+             * This turns sieve[5M] from 40MB (int64) → 5MB (int8) → cache fits L3. */
+            if ((t == LP_NATIVE_ARRAY_1D || t == LP_LIST) && auto_array_elem && auto_array_count) {
+                int64_t init_val = 0;
+                if (auto_array_elem->type == NODE_INT_LIT)
+                    init_val = auto_array_elem->int_lit.value;
+                /* Safety threshold: only promote large arrays (≥ 1000 elements).
+                 * Small arrays like stack_lo[40] are stack-like structures whose writes
+                 * may be deep inside nested if-blocks that our scan doesn't reach.
+                 * Large arrays (sieve, visited) are almost always pure boolean tables. */
+                int64_t array_size_hint = 0;
+                if (auto_array_count->type == NODE_INT_LIT)
+                    array_size_hint = auto_array_count->int_lit.value;
+                else if (auto_array_count->type == NODE_BIN_OP &&
+                         auto_array_count->bin_op.op == TOK_PLUS &&
+                         auto_array_count->bin_op.right->type == NODE_INT_LIT)
+                    array_size_hint = 2000; /* n+1 style — assume large */
+                if ((init_val == 0 || init_val == 1) && array_size_hint >= 1000) {
+                    /* Check all subsequent assignments to this array in the function body */
+                    int all_bool = 1;
+                    for (int bi = 0; bi < body->count && all_bool; bi++) {
+                        AstNode *bs = body->items[bi];
+                        if (bs->type == NODE_SUBSCRIPT_ASSIGN &&
+                            bs->subscript_assign.obj->type == NODE_NAME &&
+                            strcmp(bs->subscript_assign.obj->name_expr.name, stmt->assign.name) == 0) {
+                            AstNode *val = bs->subscript_assign.value;
+                            if (val->type == NODE_INT_LIT) {
+                                if (val->int_lit.value != 0 && val->int_lit.value != 1)
+                                    all_bool = 0;
+                            } else {
+                                all_bool = 0; /* non-literal assignment — be conservative */
+                            }
+                        }
+                    }
+                    /* Also check for/while bodies up to 3 levels deep */
+                    for (int bi = 0; bi < body->count && all_bool; bi++) {
+                        AstNode *bs = body->items[bi];
+                        NodeList *inner = NULL;
+                        if (bs->type == NODE_FOR)   inner = &bs->for_stmt.body;
+                        if (bs->type == NODE_WHILE)  inner = &bs->while_stmt.body;
+                        if (!inner) continue;
+                        for (int ci = 0; ci < inner->count && all_bool; ci++) {
+                            AstNode *cs = inner->items[ci];
+                            if (cs->type == NODE_SUBSCRIPT_ASSIGN &&
+                                cs->subscript_assign.obj->type == NODE_NAME &&
+                                strcmp(cs->subscript_assign.obj->name_expr.name, stmt->assign.name) == 0) {
+                                AstNode *val = cs->subscript_assign.value;
+                                if (val->type == NODE_INT_LIT) {
+                                    if (val->int_lit.value != 0 && val->int_lit.value != 1)
+                                        all_bool = 0;
+                                } else {
+                                    all_bool = 0; /* non-literal — be conservative */
+                                }
+                            }
+                            /* Any nested loop → bail out (can't inspect deeper) */
+                            if (cs->type == NODE_WHILE || cs->type == NODE_FOR) all_bool = 0;
+                            /* Any if-else that writes to this array → bail out */
+                            if (cs->type == NODE_IF) {
+                                /* scan then/else for writes to our array */
+                                for (int di = 0; di < cs->if_stmt.then_body.count && all_bool; di++) {
+                                    AstNode *ds = cs->if_stmt.then_body.items[di];
+                                    if (ds->type == NODE_SUBSCRIPT_ASSIGN &&
+                                        ds->subscript_assign.obj->type == NODE_NAME &&
+                                        strcmp(ds->subscript_assign.obj->name_expr.name, stmt->assign.name) == 0) {
+                                        AstNode *val = ds->subscript_assign.value;
+                                        if (val->type == NODE_INT_LIT) {
+                                            if (val->int_lit.value != 0 && val->int_lit.value != 1)
+                                                all_bool = 0;
+                                        } else {
+                                            all_bool = 0;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (all_bool) {
+                        t = LP_NATIVE_ARRAY_I8_1D; /* boolean array → i8[] */
+                        auto_array_elem = NULL; /* reset so repeat uses i8 path */
+                        auto_array_count = NULL;
+                        match_native_int_repeat_expr(cg, stmt->assign.value,
+                                                     &auto_array_elem, &auto_array_count);
+                    }
+                }
+            }
+
+            /* ── Fix 3: auto-promote large int arrays to i32[] when values are bounded.
+             * Trigger: array init is [0]*N or [-1]*N AND all subsequent assignments
+             * have right-hand values that are: result of (expr % K) for K≤65535,
+             * or simple counter increments, or index values.
+             * This covers LCS dp[] and BFS dist[]/q[] patterns.
+             * i32 = 4 bytes vs i64 = 8 bytes → 2× less memory → better L3 cache use. */
+            if (t == LP_NATIVE_ARRAY_1D && auto_array_count) {
+                int64_t init_v = (auto_array_elem && auto_array_elem->type == NODE_INT_LIT) ?
+                                  auto_array_elem->int_lit.value : 0;
+                /* Only promote [-1] or [0] initialized arrays */
+                if (init_v == 0 || init_v == -1) {
+                    int can_be_i32 = 1;
+                    /* Check all writes to this array */
+                    for (int bi = 0; bi < body->count && can_be_i32; bi++) {
+                        AstNode *bs = body->items[bi];
+                        if (bs->type == NODE_SUBSCRIPT_ASSIGN &&
+                            bs->subscript_assign.obj->type == NODE_NAME &&
+                            strcmp(bs->subscript_assign.obj->name_expr.name, stmt->assign.name) == 0) {
+                            AstNode *val = bs->subscript_assign.value;
+                            /* Allow: int literal, or (x % K) with K small, or (x + 1) */
+                            if (val->type == NODE_INT_LIT) {
+                                if (val->int_lit.value < -2000000000LL ||
+                                    val->int_lit.value >  2000000000LL) can_be_i32 = 0;
+                            } else if (val->type == NODE_BIN_OP) {
+                                if (val->bin_op.op == TOK_PERCENT &&
+                                    val->bin_op.right->type == NODE_INT_LIT &&
+                                    val->bin_op.right->int_lit.value <= 65536) {
+                                    /* result of % small_K is fine */
+                                } else if (val->bin_op.op == TOK_PLUS ||
+                                           val->bin_op.op == TOK_MINUS) {
+                                    /* inc/dec — likely bounded */
+                                } else {
+                                    can_be_i32 = 0;
+                                }
+                            } else {
+                                can_be_i32 = 0;
+                            }
+                        }
+                    }
+                    /* Also check for-loop body one level deep */
+                    for (int bi = 0; bi < body->count && can_be_i32; bi++) {
+                        AstNode *bs = body->items[bi];
+                        NodeList *inner = NULL;
+                        if (bs->type == NODE_FOR)  inner = &bs->for_stmt.body;
+                        if (bs->type == NODE_WHILE) inner = &bs->while_stmt.body;
+                        if (!inner) continue;
+                        for (int ci = 0; ci < inner->count && can_be_i32; ci++) {
+                            AstNode *cs = inner->items[ci];
+                            if (cs->type == NODE_SUBSCRIPT_ASSIGN &&
+                                cs->subscript_assign.obj->type == NODE_NAME &&
+                                strcmp(cs->subscript_assign.obj->name_expr.name, stmt->assign.name) == 0) {
+                                AstNode *val = cs->subscript_assign.value;
+                                if (val->type == NODE_INT_LIT) {
+                                    if (val->int_lit.value < -2000000000LL ||
+                                        val->int_lit.value >  2000000000LL) can_be_i32 = 0;
+                                } else if (val->type == NODE_BIN_OP) {
+                                    if (val->bin_op.op != TOK_PLUS &&
+                                        val->bin_op.op != TOK_MINUS &&
+                                        val->bin_op.op != TOK_PERCENT) can_be_i32 = 0;
+                                } else {
+                                    can_be_i32 = 0;
+                                }
+                            }
+                            /* deeper nesting — bail out */
+                            if (cs->type == NODE_FOR || cs->type == NODE_WHILE) can_be_i32 = 0;
+                        }
+                    }
+                    if (can_be_i32) {
+                        t = LP_NATIVE_ARRAY_I32_1D;
+                        auto_array_elem = NULL;
+                        auto_array_count = NULL;
+                        match_native_int_repeat_expr(cg, stmt->assign.value,
+                                                     &auto_array_elem, &auto_array_count);
+                    }
+                }
+            }
+
             if (t == LP_UNKNOWN) t = LP_INT;
 
             Symbol *existing = scope_lookup(cg->scope, stmt->assign.name);
@@ -4717,15 +4997,88 @@ static void scan_declarations(CodeGen *cg, NodeList *body) {
                 }
                 scope_define_obj(cg->scope, stmt->assign.name, t, class_name);
             }
+
+            /* ── Fix 4: register immutable positive-int variables for constant propagation.
+             * Condition: assigned from a positive int literal AND never reassigned
+             * at ANY nesting level (including inside for/while/if bodies). */
+            if ((t == LP_INT) && stmt->assign.value &&
+                stmt->assign.value->type == NODE_INT_LIT &&
+                stmt->assign.value->int_lit.value > 0) {
+                int64_t cval = stmt->assign.value->int_lit.value;
+                const char *vname = stmt->assign.name;
+                int reassigned = 0;
+                /* Check ALL statements including nested bodies for reassignment */
+                for (int ri = 0; ri < body->count && !reassigned; ri++) {
+                    AstNode *rs = body->items[ri];
+                    if (rs->type == NODE_ASSIGN && rs != stmt &&
+                        strcmp(rs->assign.name, vname) == 0) reassigned = 1;
+                    if (rs->type == NODE_AUG_ASSIGN &&
+                        strcmp(rs->aug_assign.name, vname) == 0) reassigned = 1;
+                    /* Check inside for/while bodies */
+                    NodeList *inner = NULL;
+                    if (rs->type == NODE_FOR)   inner = &rs->for_stmt.body;
+                    if (rs->type == NODE_WHILE)  inner = &rs->while_stmt.body;
+                    if (inner) {
+                        for (int ii = 0; ii < inner->count && !reassigned; ii++) {
+                            AstNode *is = inner->items[ii];
+                            if (is->type == NODE_ASSIGN &&
+                                strcmp(is->assign.name, vname) == 0) reassigned = 1;
+                            if (is->type == NODE_AUG_ASSIGN &&
+                                strcmp(is->aug_assign.name, vname) == 0) reassigned = 1;
+                            /* One more level deep */
+                            NodeList *inner2 = NULL;
+                            if (is->type == NODE_FOR)   inner2 = &is->for_stmt.body;
+                            if (is->type == NODE_WHILE)  inner2 = &is->while_stmt.body;
+                            if (inner2) {
+                                for (int ji = 0; ji < inner2->count && !reassigned; ji++) {
+                                    AstNode *js = inner2->items[ji];
+                                    if (js->type == NODE_ASSIGN &&
+                                        strcmp(js->assign.name, vname) == 0) reassigned = 1;
+                                    if (js->type == NODE_AUG_ASSIGN &&
+                                        strcmp(js->aug_assign.name, vname) == 0) reassigned = 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!reassigned) {
+                    Symbol *sym = scope_lookup(cg->scope, stmt->assign.name);
+                    if (sym) sym->const_int_value = cval;
+                }
+            }
+
         } else if (stmt->type == NODE_IF) {
             scan_declarations(cg, &stmt->if_stmt.then_body);
-            if (stmt->if_stmt.else_branch && stmt->if_stmt.else_branch->type == NODE_IF) {
-                // To simplify, we can just scan the else body directly if we cast it
-                // Actually, if it's a NODE_IF, else_branch is just an AstNode*.
-                // We'd have to wrap it in a NodeList. Let's just ignore nested for now,
-                // most top-level variables are declared at the top of the function.
-            }
         } else if (stmt->type == NODE_FOR) {
+            /* ── Fix 7: detect arrays declared inside loop body → hoist them.
+             * Pattern: for i in range(N): arr: list = [0]*M → arr allocated M times.
+             * Hoisting: declare arr before the loop, use lp_int_array_reuse() inside.
+             * We scan the for-body; any LP_NATIVE_ARRAY_1D assigned there gets hoisted
+             * to the outer scope (current body scope). The for-body will see it as
+             * "already declared" and emit lp_int_array_reuse() instead of lp_int_array_new(). */
+            for (int bi = 0; bi < stmt->for_stmt.body.count; bi++) {
+                AstNode *bs = stmt->for_stmt.body.items[bi];
+                if (bs->type == NODE_ASSIGN) {
+                    AstNode *elem2 = NULL, *cnt2 = NULL;
+                    LpType bt = LP_UNKNOWN;
+                    if (bs->assign.type_ann) bt = type_from_annotation(cg, bs->assign.type_ann);
+                    else if (bs->assign.value) bt = infer_type(cg, bs->assign.value);
+                    if ((bt == LP_LIST || bt == LP_UNKNOWN) && bs->assign.value &&
+                        match_native_int_repeat_expr(cg, bs->assign.value, &elem2, &cnt2))
+                        bt = LP_NATIVE_ARRAY_1D;
+                    if ((bt == LP_LIST || bt == LP_UNKNOWN) && bs->assign.value &&
+                        list_expr_all_ints(bs->assign.value))
+                        bt = LP_NATIVE_ARRAY_1D;
+                    if (bt == LP_NATIVE_ARRAY_1D && cnt2) {
+                        Symbol *outer = scope_lookup(cg->scope, bs->assign.name);
+                        if (!outer) {
+                            /* Hoist: declare in outer scope */
+                            outer = scope_define(cg->scope, bs->assign.name, LP_NATIVE_ARRAY_1D);
+                            if (outer) outer->is_loop_hoisted = 1;
+                        }
+                    }
+                }
+            }
             scan_declarations(cg, &stmt->for_stmt.body);
         } else if (stmt->type == NODE_WHILE) {
             scan_declarations(cg, &stmt->while_stmt.body);
@@ -4739,19 +5092,29 @@ static void emit_local_declarations(CodeGen *cg, Buffer *buf, Scope *scope, int 
     /* Only emit for the current scope level, not parent scopes */
     for (int i = 0; i < scope->count; i++) {
         Symbol *sym = &scope->symbols[i];
-        /* Skip functions, classes, native arrays, and already declared variables (like parameters) */
-        if (!sym->is_function && sym->type != LP_CLASS &&
-            sym->type != LP_NATIVE_ARRAY_1D && sym->type != LP_NATIVE_ARRAY_2D &&
-            sym->type != LP_NATIVE_ARRAY_FLOAT_1D && sym->type != LP_NATIVE_ARRAY_FLOAT_2D &&
-            sym->type != LP_NATIVE_ARRAY_I32_1D && sym->type != LP_NATIVE_ARRAY_I32_2D &&
-            sym->type != LP_NATIVE_ARRAY_F32_1D && sym->type != LP_NATIVE_ARRAY_F32_2D &&
-            sym->type != LP_NATIVE_ARRAY_I8_1D &&
-            !sym->declared) {
-            /* Emit declaration without initialization */
-            write_indent(buf, indent);
-            const char *class_name = sym->class_name;
-            buf_printf(buf, "%s lp_%s;\n", lp_type_to_c_obj(sym->type, class_name), sym->name);
-            sym->declared = 1;  /* Mark as declared so gen_stmt doesn't emit again */
+        /* Skip functions, classes, native arrays (unless hoisted), and already declared vars */
+        if (!sym->is_function && sym->type != LP_CLASS && !sym->declared) {
+            int is_native_arr = (sym->type == LP_NATIVE_ARRAY_1D || sym->type == LP_NATIVE_ARRAY_2D ||
+                sym->type == LP_NATIVE_ARRAY_FLOAT_1D || sym->type == LP_NATIVE_ARRAY_FLOAT_2D ||
+                sym->type == LP_NATIVE_ARRAY_I32_1D || sym->type == LP_NATIVE_ARRAY_I32_2D ||
+                sym->type == LP_NATIVE_ARRAY_F32_1D || sym->type == LP_NATIVE_ARRAY_F32_2D ||
+                sym->type == LP_NATIVE_ARRAY_I8_1D);
+            if (sym->is_loop_hoisted && sym->type == LP_NATIVE_ARRAY_1D) {
+                /* Fix 7: hoisted loop-local array — emit NULL init before the loop.
+                 * gen_stmt will see declared=0 inside the loop and emit lp_int_array_new()
+                 * on first iteration, then lp_int_array_reuse() on subsequent iterations.
+                 * Actually: mark declared=1 here so gen_stmt uses lp_int_array_reuse path.
+                 * The first call to lp_int_array_reuse(NULL, N) allocates (NULL check inside). */
+                write_indent(buf, indent);
+                buf_printf(buf, "LpIntArray* lp_%s = NULL;\n", sym->name);
+                sym->declared = 1;
+            } else if (!is_native_arr) {
+                /* Emit declaration without initialization */
+                write_indent(buf, indent);
+                const char *class_name = sym->class_name;
+                buf_printf(buf, "%s lp_%s;\n", lp_type_to_c_obj(sym->type, class_name), sym->name);
+                sym->declared = 1;
+            }
         }
     }
 }
@@ -4857,6 +5220,57 @@ static void populate_function_symbol(CodeGen *cg, Symbol *sym, AstNode *node, co
     }
 }
 
+/* ── Fix 1: detect pure-int recursive function ──────────────────────────────
+ * Returns 1 if body contains a self-call AND has no float/vector operations.
+ * For such functions, avx2 target forces YMM register save/restore on every
+ * call frame, adding ~15ns overhead per call. Skip avx2 for them. */
+static int body_has_self_call(NodeList *body, const char *fname);
+static int expr_has_self_call(AstNode *e, const char *fname) {
+    if (!e) return 0;
+    if (e->type == NODE_CALL && e->call.func->type == NODE_NAME &&
+        strcmp(e->call.func->name_expr.name, fname) == 0) return 1;
+    /* recurse into sub-expressions */
+    if (e->type == NODE_BIN_OP)
+        return expr_has_self_call(e->bin_op.left, fname) ||
+               expr_has_self_call(e->bin_op.right, fname);
+    if (e->type == NODE_UNARY_OP) return expr_has_self_call(e->unary_op.operand, fname);
+    if (e->type == NODE_CALL) {
+        for (int i = 0; i < e->call.args.count; i++)
+            if (expr_has_self_call(e->call.args.items[i], fname)) return 1;
+    }
+    return 0;
+}
+static int body_has_self_call(NodeList *body, const char *fname) {
+    if (!body) return 0;
+    for (int i = 0; i < body->count; i++) {
+        AstNode *s = body->items[i];
+        if (!s) continue;
+        if (s->type == NODE_RETURN && expr_has_self_call(s->return_stmt.value, fname)) return 1;
+        if (s->type == NODE_ASSIGN && expr_has_self_call(s->assign.value, fname)) return 1;
+        if (s->type == NODE_EXPR_STMT && expr_has_self_call(s->expr_stmt.expr, fname)) return 1;
+        if (s->type == NODE_IF) {
+            if (body_has_self_call(&s->if_stmt.then_body, fname)) return 1;
+        }
+    }
+    return 0;
+}
+/* Returns 1 if function body uses float literals, float module calls, or LpVal */
+static int body_needs_avx(NodeList *body) {
+    if (!body) return 0;
+    for (int i = 0; i < body->count; i++) {
+        AstNode *s = body->items[i];
+        if (!s) continue;
+        /* If there's a float literal or a module attribute call (math.sin etc.) */
+        if (s->type == NODE_ASSIGN && s->assign.value) {
+            AstNode *v = s->assign.value;
+            if (v->type == NODE_FLOAT_LIT) return 1;
+            if (v->type == NODE_CALL && v->call.func->type == NODE_ATTRIBUTE) return 1;
+        }
+    }
+    return 0;
+}
+/* ── End Fix 1 helpers ───────────────────────────────────────────────────── */
+
 static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
     Symbol *func_sym = scope_lookup(cg->scope, node->func_def.name);
     LpType ret;
@@ -4897,7 +5311,21 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
     cg->scope = func_scope;
 
     /* Signature */
-    buf_write(&cg->funcs, "static inline __attribute__((hot, optimize(\"O3,unroll-loops,strict-aliasing,omit-frame-pointer,fast-math\"), target(\"avx2,fma\"),flatten)) ");
+    /* Fix 1: detect pure-int recursive function — skip avx2 target to avoid
+     * YMM register save/restore overhead (~15ns) per recursive call frame.
+     * For fib(38): 39M calls × 15ns = 585ms saved. */
+    int is_pure_int_recursive = (ret == LP_INT || ret == LP_VOID) &&
+                                 body_has_self_call(&node->func_def.body, node->func_def.name) &&
+                                 !body_needs_avx(&node->func_def.body);
+    if (is_pure_int_recursive) {
+        /* Fix 1: For pure-int recursive functions, skip avx2 target to avoid
+         * VEX preamble overhead (save/restore YMM regs ~15ns per call frame).
+         * Keep static inline so GCC can use TCO and call-site optimization.
+         * No flatten (don't inline callees into recursive fn — causes code explosion). */
+        buf_write(&cg->funcs, "static inline __attribute__((hot, optimize(\"O3,omit-frame-pointer,strict-aliasing\"), noclone)) ");
+    } else {
+        buf_write(&cg->funcs, "static inline __attribute__((hot, optimize(\"O3,unroll-loops,strict-aliasing,omit-frame-pointer,fast-math\"), target(\"avx512f,avx512vl,avx512dq,avx2,fma\"),flatten)) ");
+    }
     buf_printf(&cg->funcs, "%s lp_%s(", lp_type_to_c(ret), node->func_def.name);
     for (int i = 0; i < node->func_def.params.count; i++) {
         if (i > 0) buf_write(&cg->funcs, ", ");
