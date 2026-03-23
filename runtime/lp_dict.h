@@ -87,7 +87,17 @@ static inline const char* lp_entry_key(const LpDictEntry *e) {
     return e->key_is_heap ? e->key_u.heap : e->key_u.sso;
 }
 static inline void lp_entry_set_key(LpDictEntry *e, const char *key) {
-    size_t n = strlen(key);
+    /* Fast path for very short keys (1-8 chars, most common: digits "0"-"9999") */
+    /* Read 8 bytes at once, check for null within first 8 chars */
+    const unsigned char *k = (const unsigned char*)key;
+    if (!k[0])      { e->key_u.sso[0]=0; e->key_is_heap=0; return; }
+    if (!k[1])      { e->key_u.sso[0]=k[0]; e->key_u.sso[1]=0; e->key_is_heap=0; return; }
+    if (!k[2])      { e->key_u.sso[0]=k[0]; e->key_u.sso[1]=k[1]; e->key_u.sso[2]=0; e->key_is_heap=0; return; }
+    if (!k[3])      { e->key_u.sso[0]=k[0]; e->key_u.sso[1]=k[1]; e->key_u.sso[2]=k[2]; e->key_u.sso[3]=0; e->key_is_heap=0; return; }
+    if (!k[4])      { *(uint32_t*)e->key_u.sso = *(const uint32_t*)key; e->key_u.sso[4]=0; e->key_is_heap=0; return; }
+    /* General path: strlen + memcpy or heap */
+    size_t n = 4;
+    while (key[n]) n++;
     if (n <= LP_DICT_SSO_LEN) {
         memcpy(e->key_u.sso, key, n + 1);
         e->key_is_heap = 0;

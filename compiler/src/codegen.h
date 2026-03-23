@@ -1,3 +1,4 @@
+#include <stdint.h>
 #ifndef LP_CODEGEN_H
 #define LP_CODEGEN_H
 
@@ -73,6 +74,8 @@ typedef struct {
     int64_t const_int_value;  /* 0 = not a known constant */
     /* Fix 7: loop-local array hoisting — array declared inside for/while, hoisted out */
     int is_loop_hoisted;  /* 1 = was declared inside a loop, hoisted to function scope */
+    int non_negative;     /* 1 = known >= 0: range var, non-neg literal, or range-derived */
+    uint32_t non_negative_param_mask; /* bitmask: bit i=1 means param[i] is always non-negative at all call sites */
 } Symbol;
 
 typedef struct Scope Scope;

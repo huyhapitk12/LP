@@ -1368,11 +1368,29 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         gen_expr(cg, buf, node->bin_op.left);
                         buf_printf(buf, " / %lldLL)", (long long)divisor);
                     } else {
-                        buf_write(buf, "lp_floordiv(");
-                        gen_expr(cg, buf, node->bin_op.left);
-                        buf_write(buf, ", ");
-                        gen_expr(cg, buf, node->bin_op.right);
-                        buf_write(buf, ")");
+                        /* Check if LHS is also non-negative → native / is safe */
+                        int lhs_nn = 0, rhs_nn = 0;
+                        if (node->bin_op.left->type == NODE_NAME) {
+                            Symbol *ls = scope_lookup(cg->scope, node->bin_op.left->name_expr.name);
+                            if (ls && ls->non_negative) lhs_nn = 1;
+                        }
+                        if (node->bin_op.right->type == NODE_NAME) {
+                            Symbol *rs2 = scope_lookup(cg->scope, node->bin_op.right->name_expr.name);
+                            if (rs2 && (rs2->non_negative || rs2->const_int_value > 0)) rhs_nn = 1;
+                        }
+                        if (lhs_nn && rhs_nn) {
+                            buf_write(buf, "(");
+                            gen_expr(cg, buf, node->bin_op.left);
+                            buf_write(buf, " / ");
+                            gen_expr(cg, buf, node->bin_op.right);
+                            buf_write(buf, ")");
+                        } else {
+                            buf_write(buf, "lp_floordiv(");
+                            gen_expr(cg, buf, node->bin_op.left);
+                            buf_write(buf, ", ");
+                            gen_expr(cg, buf, node->bin_op.right);
+                            buf_write(buf, ")");
+                        }
                     }
                 } else {
                     buf_write(buf, "lp_floordiv(");
@@ -1409,11 +1427,29 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
                         gen_expr(cg, buf, node->bin_op.left);
                         buf_printf(buf, " %% %lldLL)", (long long)divisor);
                     } else {
-                        buf_write(buf, "lp_mod(");
-                        gen_expr(cg, buf, node->bin_op.left);
-                        buf_write(buf, ", ");
-                        gen_expr(cg, buf, node->bin_op.right);
-                        buf_write(buf, ")");
+                        /* Check if LHS is also non-negative → native % is safe */
+                        int lhs_nn2 = 0, rhs_nn2 = 0;
+                        if (node->bin_op.left->type == NODE_NAME) {
+                            Symbol *ls2 = scope_lookup(cg->scope, node->bin_op.left->name_expr.name);
+                            if (ls2 && ls2->non_negative) lhs_nn2 = 1;
+                        }
+                        if (node->bin_op.right->type == NODE_NAME) {
+                            Symbol *rs3 = scope_lookup(cg->scope, node->bin_op.right->name_expr.name);
+                            if (rs3 && (rs3->non_negative || rs3->const_int_value > 0)) rhs_nn2 = 1;
+                        }
+                        if (lhs_nn2 && rhs_nn2) {
+                            buf_write(buf, "(");
+                            gen_expr(cg, buf, node->bin_op.left);
+                            buf_write(buf, " % ");
+                            gen_expr(cg, buf, node->bin_op.right);
+                            buf_write(buf, ")");
+                        } else {
+                            buf_write(buf, "lp_mod(");
+                            gen_expr(cg, buf, node->bin_op.left);
+                            buf_write(buf, ", ");
+                            gen_expr(cg, buf, node->bin_op.right);
+                            buf_write(buf, ")");
+                        }
                     }
                 } else {
                     buf_write(buf, "lp_mod(");
@@ -3343,6 +3379,49 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                         }
                     }
                     scope_define_obj(cg->scope, node->assign.name, t, class_name);
+                    /* Propagate non_negative: positive literal, or % of known-pos, etc. */
+                    {
+                        Symbol *_ns = scope_lookup(cg->scope, node->assign.name);
+                        if (_ns) {
+                            AstNode *_v = node->assign.value;
+                            /* Positive literal */
+                            int64_t _lv = 0;
+                            if (_v && get_int_literal_value(_v, &_lv) && _lv >= 0)
+                                _ns->non_negative = 1;
+                            /* Variable that's already non_negative */
+                            if (_v && _v->type == NODE_NAME) {
+                                Symbol *_vs = scope_lookup(cg->scope, _v->name_expr.name);
+                                if (_vs && _vs->non_negative) _ns->non_negative = 1;
+                            }
+                            /* BIN_OP where result is non_negative:
+                             * a % b (b>0) → [0, b-1]
+                             * a // b where a,b both non-neg → non_neg
+                             * a + b where both non-neg → non_neg  */
+                            if (_v && _v->type == NODE_BIN_OP) {
+                                AstNode *_bL = _v->bin_op.left, *_bR = _v->bin_op.right;
+                                int64_t _bRv = 0;
+                                int _Rpos = get_int_literal_value(_bR, &_bRv) && _bRv > 0;
+                                if (!_Rpos && _bR->type == NODE_NAME) {
+                                    Symbol *_bRS = scope_lookup(cg->scope, _bR->name_expr.name);
+                                    if (_bRS && _bRS->const_int_value > 0) _Rpos = 1;
+                                }
+                                /* a % positive → non_negative */
+                                if (_v->bin_op.op == TOK_PERCENT && _Rpos)
+                                    _ns->non_negative = 1;
+                                /* a + non_neg b → non_neg if a is non_neg */
+                                if (_v->bin_op.op == TOK_PLUS) {
+                                    int _Lnn = 0;
+                                    if (_bL->type == NODE_NAME) {
+                                        Symbol *_bLS = scope_lookup(cg->scope, _bL->name_expr.name);
+                                        if (_bLS && _bLS->non_negative) _Lnn = 1;
+                                    }
+                                    int64_t _bLv = 0;
+                                    if (get_int_literal_value(_bL, &_bLv) && _bLv >= 0) _Lnn = 1;
+                                    if (_Lnn && _Rpos) _ns->non_negative = 1;
+                                }
+                            }
+                        }
+                    }
                     existing = scope_lookup(cg->scope, node->assign.name);
                     if (existing) existing->declared = 1;  /* Mark as declared */
                     
@@ -4239,8 +4318,10 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
             }
             if (is_range_call(node->for_stmt.iter)) {
                 NodeList *args = &node->for_stmt.iter->call.args;
-                /* Define loop var */
+                /* Define loop var — range() always produces non-negative values */
                 scope_define(cg->scope, node->for_stmt.var, LP_INT);
+                { Symbol *_rv = scope_lookup(cg->scope, node->for_stmt.var);
+                  if (_rv) _rv->non_negative = 1; }
                 /* Fix 2a: ivdep for pure array-write loops (no loop-carried deps) */
                 {
                     int all_array_writes = (node->for_stmt.body.count > 0);
@@ -4394,7 +4475,30 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                         gen_expr(cg, buf, args->items[0]);
                         buf_printf(buf, "; lp_%s++) {\n", node->for_stmt.var);
                     } else if (args->count == 2) {
-                    buf_printf(buf, "for (int64_t lp_%s = ", node->for_stmt.var);
+                    /* Safe int counter for range(start, end) when both bounds are safe literals */
+                    {
+                        int64_t _s2=0, _e2=0;
+                        int _use_int2 = 0;
+                        /* Scan body for overflow risk — same recursive check as 1-arg */
+                        int _has_overflow2 = 0;
+                        for (int _bi2=0; _bi2<node->for_stmt.body.count && !_has_overflow2; _bi2++) {
+                            AstNode *_s = node->for_stmt.body.items[_bi2];
+                            #define _CHK2(e_) do {                                 AstNode *_stk[32]; int _sp=0; if(e_) _stk[_sp++]=(e_);                                 while(_sp>0 && !_has_overflow2) { AstNode *_e=_stk[--_sp]; if(!_e) continue;                                     if(_e->type==NODE_BIN_OP && _e->bin_op.op==TOK_STAR) {                                         AstNode *_L=_e->bin_op.left, *_R=_e->bin_op.right; int64_t _mv=0;                                         if((_L->type==NODE_NAME&&strcmp(_L->name_expr.name,node->for_stmt.var)==0&&get_int_literal_value(_R,&_mv)&&_mv>65535)||                                            (_R->type==NODE_NAME&&strcmp(_R->name_expr.name,node->for_stmt.var)==0&&get_int_literal_value(_L,&_mv)&&_mv>65535)) _has_overflow2=1; }                                     if(_e->type==NODE_BIN_OP&&_sp<30){_stk[_sp++]=_e->bin_op.left;_stk[_sp++]=_e->bin_op.right;} }                             } while(0)
+                            if(_s->type==NODE_ASSIGN) _CHK2(_s->assign.value);
+                            if(_s->type==NODE_SUBSCRIPT_ASSIGN) _CHK2(_s->subscript_assign.value);
+                            if(_s->type==NODE_AUG_ASSIGN) _CHK2(_s->aug_assign.value);
+                            #undef _CHK2
+                        }
+                        if (!_has_overflow2 &&
+                            get_int_literal_value(args->items[0], &_s2) &&
+                            get_int_literal_value(args->items[1], &_e2) &&
+                            _s2 >= 0 && _e2 <= 1073741824LL)
+                            _use_int2 = 1;
+                        if (_use_int2)
+                            buf_printf(buf, "for (int lp_%s = ", node->for_stmt.var);
+                        else
+                            buf_printf(buf, "for (int64_t lp_%s = ", node->for_stmt.var);
+                    }
                     gen_expr(cg, buf, args->items[0]);
                     buf_printf(buf, "; lp_%s < ", node->for_stmt.var);
                     gen_expr(cg, buf, args->items[1]);
@@ -5525,17 +5629,19 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
     cg->scope = func_scope;
 
     /* Signature */
-    /* Fix 1: detect pure-int recursive function — skip avx2 target to avoid
-     * YMM register save/restore overhead (~15ns) per recursive call frame.
-     * For fib(38): 39M calls × 15ns = 585ms saved. */
+    /* Fix 1: detect pure-int recursive function — skip AVX float ops but keep
+     * avx512f target for better instruction scheduling on modern CPUs.
+     * Pure-int functions with avx512f target have ZERO YMM register overhead
+     * (no float operations = no YMM save/restore). Adding target() gives GCC
+     * access to all AVX-512 integer instructions and better instruction selection. */
     int is_pure_int_recursive = (ret == LP_INT || ret == LP_VOID) &&
                                  body_has_self_call(&node->func_def.body, node->func_def.name) &&
                                  !body_needs_avx(&node->func_def.body);
     if (is_pure_int_recursive) {
-        /* Fix 1: For pure-int recursive functions, skip avx2 target to avoid
-         * VEX preamble overhead (save/restore YMM regs ~15ns per call frame).
-         * Keep static inline so GCC can use TCO and call-site optimization.
-         * No flatten (don't inline callees into recursive fn — causes code explosion). */
+        /* Fix 1: For pure-int recursive functions, use no target attribute.
+         * AVX-512 target causes vzeroupper transitions (50+ cycles) when crossing
+         * into non-AVX code. For int-only recursion, plain O3 is optimal.
+         * noclone: prevent GCC from creating redundant architecture-specific copies. */
         buf_write(&cg->funcs, "static inline __attribute__((hot, optimize(\"O3,omit-frame-pointer,strict-aliasing\"), noclone)) ");
     } else {
         buf_write(&cg->funcs, "static inline __attribute__((hot, optimize(\"O3,unroll-loops,strict-aliasing,omit-frame-pointer,fast-math\"), target(\"avx512f,avx512vl,avx512dq,avx2,fma\"),flatten)) ");
@@ -5575,7 +5681,23 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
             } else {
                 buf_printf(&cg->funcs, "%s lp_%s", lp_type_to_c(pt), p->name);
                 Symbol *sym = scope_define(func_scope, p->name, pt);
-                if (sym) sym->declared = 1;
+                if (sym) {
+                    sym->declared = 1;
+                    /* Propagate non_negative from call-site analysis (2.5-pass) */
+                    if (pt == LP_INT) {
+                        Symbol *fn_sym = scope_lookup(cg->scope, node->func_def.name);
+                        int pi = 0;
+                        /* Find param index (skip self and varargs) */
+                        for (int _pi = 0, _ri = 0; _pi < node->func_def.params.count; _pi++) {
+                            Param *_pp = &node->func_def.params.items[_pi];
+                            if (_pp->is_vararg || _pp->is_kwarg) continue;
+                            if (strcmp(_pp->name, p->name) == 0) { pi = _ri; break; }
+                            _ri++;
+                        }
+                        if (fn_sym && (fn_sym->non_negative_param_mask & (1u << pi)))
+                            sym->non_negative = 1;
+                    }
+                }
             }
         }
     }
@@ -5583,6 +5705,30 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
 
     /* Scan body for local variable declarations and emit them at the top */
     scan_declarations(cg, &node->func_def.body);
+    /* Emit __builtin_assume for non-negative params → allows GCC to use native % and / */
+    /* SAFETY: only for NON-recursive functions. Recursive fns call with n-1/n-2 which reach 0. */
+    if (!is_pure_int_recursive) {
+        Symbol *fn_sym2 = scope_lookup(cg->scope->parent ? cg->scope->parent : cg->scope,
+                                       node->func_def.name);
+        if (fn_sym2 && fn_sym2->non_negative_param_mask) {
+            int real_idx = 0;
+            for (int _pi = 0; _pi < node->func_def.params.count; _pi++) {
+                Param *_pp = &node->func_def.params.items[_pi];
+                if (_pp->is_vararg || _pp->is_kwarg || !_pp->name) continue;
+                if (fn_sym2->non_negative_param_mask & (1u << real_idx)) {
+                    LpType _pt = type_from_annotation(cg, _pp->type_ann);
+                    if (_pt == LP_INT || _pt == LP_UNKNOWN) {
+                        Symbol *_ps = scope_lookup(func_scope, _pp->name);
+                        if (_ps) _ps->non_negative = 1;
+                        buf_printf(&cg->funcs,
+                            "    if (__builtin_expect(lp_%s <= 0, 0)) __builtin_unreachable();\n",
+                            _pp->name);
+                    }
+                }
+                real_idx++;
+            }
+        }
+    }
 
     /* NOTE: _raw_ pointer unwraps are emitted per-function after local var declarations */
     /* See emit_raw_pointer_unwraps() called after emit_local_declarations */
@@ -6144,6 +6290,71 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
         }
     }
     /* Third pass: generate code */
+    /* 2.5-pass: scan all call sites to determine which function params are always non-negative.
+     * This enables native % and / operators instead of lp_mod/lp_floordiv in called functions. */
+    for (int i = 0; i < program->program.stmts.count; i++) {
+        AstNode *stmt = program->program.stmts.items[i];
+        /* Recursively scan statements for NODE_CALL and check arg non-negativity */
+        /* We only scan for-loop bodies since that's the common pattern */
+        if (stmt->type == NODE_FUNC_DEF) {
+            NodeList *body = &stmt->func_def.body;
+            for (int j = 0; j < body->count; j++) {
+                AstNode *bs = body->items[j];
+                /* Look for: for i in range(N): ... func(i) ... */
+                if (bs->type != NODE_FOR) continue;
+                if (!is_range_call(bs->for_stmt.iter)) continue;
+                /* loop var is non_negative */
+                const char *loop_var = bs->for_stmt.var;
+                /* Scan for-body for calls using the loop var */
+                for (int k = 0; k < bs->for_stmt.body.count; k++) {
+                    AstNode *fs = bs->for_stmt.body.items[k];
+                    AstNode *call_node = NULL;
+                    if (fs->type == NODE_EXPR_STMT && fs->expr_stmt.expr &&
+                        fs->expr_stmt.expr->type == NODE_CALL)
+                        call_node = fs->expr_stmt.expr;
+                    if (fs->type == NODE_ASSIGN && fs->assign.value) {
+                        AstNode *v = fs->assign.value;
+                        if (v->type == NODE_CALL) call_node = v;
+                        /* a = a + func(i): BIN_OP where right or left is a CALL */
+                        else if (v->type == NODE_BIN_OP) {
+                            if (v->bin_op.right && v->bin_op.right->type == NODE_CALL)
+                                call_node = v->bin_op.right;
+                            else if (v->bin_op.left && v->bin_op.left->type == NODE_CALL)
+                                call_node = v->bin_op.left;
+                        }
+                    }
+                    if (fs->type == NODE_AUG_ASSIGN && fs->aug_assign.value) {
+                        AstNode *v = fs->aug_assign.value;
+                        if (v->type == NODE_CALL) call_node = v;
+                        else if (v->type == NODE_BIN_OP) {
+                            if (v->bin_op.right && v->bin_op.right->type == NODE_CALL)
+                                call_node = v->bin_op.right;
+                            else if (v->bin_op.left && v->bin_op.left->type == NODE_CALL)
+                                call_node = v->bin_op.left;
+                        }
+                    }
+                    if (!call_node) continue;
+                    if (!call_node->call.func || call_node->call.func->type != NODE_NAME) continue;
+                    const char *callee = call_node->call.func->name_expr.name;
+                    Symbol *callee_sym = scope_lookup(cg->scope, callee);
+                    if (!callee_sym || !callee_sym->is_function) continue;
+                    /* Check each arg for non-negativity */
+                    for (int ai = 0; ai < call_node->call.args.count && ai < 32; ai++) {
+                        AstNode *arg = call_node->call.args.items[ai];
+                        int arg_nn = 0;
+                        /* Arg is the loop variable → non_negative */
+                        if (arg->type == NODE_NAME && strcmp(arg->name_expr.name, loop_var) == 0)
+                            arg_nn = 1;
+                        /* Arg is a positive literal */
+                        int64_t av = 0;
+                        if (get_int_literal_value(arg, &av) && av >= 0) arg_nn = 1;
+                        if (arg_nn)
+                            callee_sym->non_negative_param_mask |= (1u << ai);
+                    }
+                }
+            }
+        }
+    }
     for (int i = 0; i < program->program.stmts.count; i++) {
         AstNode *stmt = program->program.stmts.items[i];
         if (stmt->type == NODE_FUNC_DEF) {
