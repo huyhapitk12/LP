@@ -527,8 +527,41 @@ static inline const char *lp_str_lower_fast(const char *s) {
 }
 
 /* Fast int→string: scratch buffer, NO malloc */
+/* Lookup table for single-digit strings (most common in LP benchmarks) */
+static const char * const _lp_digit_strs[] = {
+    "0","1","2","3","4","5","6","7","8","9"
+};
+
 static inline const char *lp_str_from_int_fast(int64_t v) {
+    /* Fast path: single digit 0-9 (no snprintf) */
+    if ((uint64_t)v < 10u) return _lp_digit_strs[v];
+    /* Fast path: two digits 10-99 */
     char *r = lp_scratch_next();
+    if ((uint64_t)v < 100u) {
+        r[0] = '0' + (int)(v / 10);
+        r[1] = '0' + (int)(v % 10);
+        r[2] = '\0';
+        return r;
+    }
+    /* Fast path: three digits 100-999 */
+    if ((uint64_t)v < 1000u) {
+        int d = (int)v;
+        r[0] = '0' + d/100;
+        r[1] = '0' + (d/10)%10;
+        r[2] = '0' + d%10;
+        r[3] = '\0';
+        return r;
+    }
+    /* Fast path: four digits 1000-9999 */
+    if ((uint64_t)v < 10000u) {
+        int d = (int)v;
+        r[0] = '0' + d/1000;
+        r[1] = '0' + (d/100)%10;
+        r[2] = '0' + (d/10)%10;
+        r[3] = '0' + d%10;
+        r[4] = '\0';
+        return r;
+    }
     snprintf(r, LP_SCRATCH_SIZE, "%" PRId64, v);
     return r;
 }

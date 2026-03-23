@@ -21,7 +21,7 @@
 #include <stdio.h>
 #include <inttypes.h>
 
-#define LP_DICT_INITIAL_CAPACITY 64
+#define LP_DICT_INITIAL_CAPACITY 1024  /* larger start = fewer rehashes for typical workloads */
 #define LP_DICT_LOAD_FACTOR 0.60
 
 typedef struct LpDict LpDict;
@@ -68,12 +68,41 @@ static inline LpVal lp_val_null(void) { LpVal v; v.type = LP_VAL_NULL; v.as.i = 
 static inline LpVal lp_val_dict(LpDict *d) { LpVal v; v.type = LP_VAL_DICT; v.as.d = d; return v; }
 static inline LpVal lp_val_list(LpList *l) { LpVal v; v.type = LP_VAL_LIST; v.as.l = l; return v; }
 
-/* Dict Entry */
+/* Dict Entry with Small String Optimization (SSO) for keys ≤ 15 chars.
+ * Short string keys (digit strings, identifiers) are stored inline —
+ * no heap allocation, better cache locality, same cost as C++ unordered_map SSO. */
+#define LP_DICT_SSO_LEN 15
 typedef struct {
-    char *key;
+    union {
+        char  sso[LP_DICT_SSO_LEN + 1];  /* inline key storage (≤15 chars + NUL) */
+        char *heap;                        /* heap pointer for keys >15 chars */
+    } key_u;
     LpVal value;
-    int is_occupied;
+    int   is_occupied;
+    int   key_is_heap;   /* 0 = SSO, 1 = heap */
 } LpDictEntry;
+
+/* Key access helpers */
+static inline const char* lp_entry_key(const LpDictEntry *e) {
+    return e->key_is_heap ? e->key_u.heap : e->key_u.sso;
+}
+static inline void lp_entry_set_key(LpDictEntry *e, const char *key) {
+    size_t n = strlen(key);
+    if (n <= LP_DICT_SSO_LEN) {
+        memcpy(e->key_u.sso, key, n + 1);
+        e->key_is_heap = 0;
+    } else {
+        e->key_u.heap = strdup(key);
+        e->key_is_heap = 1;
+    }
+}
+static inline void lp_entry_free_key(LpDictEntry *e) {
+    if (e->key_is_heap && e->key_u.heap) {
+        free(e->key_u.heap);
+        e->key_u.heap = NULL;
+        e->key_is_heap = 0;
+    }
+}
 
 /* The Dictionary */
 struct LpDict {
@@ -97,6 +126,18 @@ static inline uint32_t lp_hash(const char* key) {
     hash *= 0xc2b2ae35u;
     hash ^= hash >> 16;
     return hash;
+}
+
+static inline void lp_dict_resize(LpDict *d, int64_t new_capacity); /* forward decl */
+
+/* Reserve capacity to avoid rehashing. Call before inserting N items. */
+static inline void lp_dict_reserve(LpDict *d, int64_t n) {
+    if (!d) return;
+    int64_t needed = (int64_t)(n / LP_DICT_LOAD_FACTOR) + 1;
+    /* Round up to next power of 2 */
+    int64_t cap = 1024;
+    while (cap < needed) cap <<= 1;
+    if (cap > d->capacity) lp_dict_resize(d, cap);
 }
 
 static inline LpDict* lp_dict_new(void) {
@@ -188,7 +229,7 @@ static inline void lp_dict_free(LpDict *d) {
     if (!d) return;
     for (int64_t i = 0; i < d->capacity; i++) {
         if (d->entries[i].is_occupied) {
-            free(d->entries[i].key);
+            lp_entry_free_key(&d->entries[i]);
             if (d->entries[i].value.type == LP_VAL_STRING) {
                 free(d->entries[i].value.as.s);
             } else if (d->entries[i].value.type == LP_VAL_DICT) {
@@ -214,8 +255,8 @@ static inline void lp_dict_resize(LpDict *d, int64_t new_capacity) {
 
     for (int64_t i = 0; i < old_capacity; i++) {
         if (old_entries[i].is_occupied) {
-            lp_dict_set(d, old_entries[i].key, old_entries[i].value);
-            free(old_entries[i].key); /* Free the old key string, lp_dict_set duplicates it */
+            lp_dict_set(d, lp_entry_key(&old_entries[i]), old_entries[i].value);
+            lp_entry_free_key(&old_entries[i]); /* SSO: free heap key if any */
         }
     }
     free(old_entries);
@@ -229,7 +270,7 @@ static inline void lp_dict_set(LpDict *d, const char *key, LpVal value) {
 
     uint32_t index = lp_hash(key) % d->capacity;
     while (d->entries[index].is_occupied) {
-        if (strcmp(d->entries[index].key, key) == 0) {
+        if (strcmp(lp_entry_key(&d->entries[index]), key) == 0) {
             /* Replace existing value */
             if (d->entries[index].value.type == LP_VAL_STRING) {
                 free(d->entries[index].value.as.s);
@@ -247,16 +288,13 @@ static inline void lp_dict_set(LpDict *d, const char *key, LpVal value) {
         index = (index + 1) % d->capacity;
     }
 
-    char *key_copy = strdup(key);
-    if (!key_copy) return; /* strdup failed */
-    d->entries[index].key = key_copy;
+    lp_entry_set_key(&d->entries[index], key);
     if (value.type == LP_VAL_STRING) {
         LpVal vcopy = value;
         vcopy.as.s = strdup(value.as.s);
         if (!vcopy.as.s) {
-            free(key_copy);
-            d->entries[index].key = NULL;
-            return; /* strdup failed */
+            lp_entry_free_key(&d->entries[index]);
+            return;
         }
         d->entries[index].value = vcopy;
     } else {
@@ -272,7 +310,7 @@ static inline LpVal lp_dict_get(LpDict *d, const char *key) {
     uint32_t start_index = index;
 
     while (d->entries[index].is_occupied) {
-        if (strcmp(d->entries[index].key, key) == 0) {
+        if (strcmp(lp_entry_key(&d->entries[index]), key) == 0) {
             return d->entries[index].value;
         }
         index = (index + 1) % d->capacity;
@@ -287,7 +325,7 @@ static inline int lp_dict_contains(LpDict *d, const char *key) {
     uint32_t start_index = index;
 
     while (d->entries[index].is_occupied) {
-        if (strcmp(d->entries[index].key, key) == 0) {
+        if (strcmp(lp_entry_key(&d->entries[index]), key) == 0) {
             return 1;
         }
         index = (index + 1) % d->capacity;
@@ -305,7 +343,7 @@ static inline void lp_dict_print(LpDict *d) {
     for (int64_t i = 0; i < d->capacity; i++) {
         if (d->entries[i].is_occupied) {
             if (!first) printf(", ");
-            printf("\"%s\": ", d->entries[i].key);
+            printf("\"%s\": ", lp_entry_key(&d->entries[i]));
             switch (d->entries[i].value.type) {
                 case LP_VAL_INT: printf("%" PRId64, d->entries[i].value.as.i); break;
                 case LP_VAL_FLOAT: printf("%f", d->entries[i].value.as.f); break;
@@ -344,7 +382,7 @@ static inline void lp_dict_merge(LpDict *dst, LpDict *src) {
     if (!dst || !src || !src->entries) return;
     for (int64_t i = 0; i < src->capacity; i++) {
         if (src->entries[i].is_occupied) {
-            lp_dict_set(dst, src->entries[i].key, src->entries[i].value);
+            lp_dict_set(dst, lp_entry_key(&src->entries[i]), src->entries[i].value);
         }
     }
 }
@@ -368,8 +406,8 @@ static inline void lp_dict_inc_int(LpDict *d, const char *key, int64_t delta) {
     uint32_t h = lp_hash(key);
     uint32_t index = h % (uint32_t)d->capacity;
     while (d->entries[index].is_occupied) {
-        if (strcmp(d->entries[index].key, key) == 0) {
-            /* Found — increment in place, zero strdup/malloc */
+        if (strcmp(lp_entry_key(&d->entries[index]), key) == 0) {
+            /* Found — increment in place, zero malloc */
             if (d->entries[index].value.type == LP_VAL_INT)
                 d->entries[index].value.as.i += delta;
             else
@@ -378,10 +416,8 @@ static inline void lp_dict_inc_int(LpDict *d, const char *key, int64_t delta) {
         }
         index = (index + 1) % (uint32_t)d->capacity;
     }
-    /* Not found — insert with strdup (only on first occurrence) */
-    char *key_copy = strdup(key);
-    if (!key_copy) return;
-    d->entries[index].key = key_copy;
+    /* Not found — SSO insert (no malloc for keys ≤15 chars) */
+    lp_entry_set_key(&d->entries[index], key);
     d->entries[index].value = lp_val_int(delta);
     d->entries[index].is_occupied = 1;
     d->count++;

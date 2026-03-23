@@ -48,7 +48,7 @@ static inline void lp_set_print(LpSet *s) {
     for (int64_t i = 0; i < s->dict->capacity; i++) {
         if (s->dict->entries[i].is_occupied) {
             if (!first) printf(", ");
-            printf("\"%s\"", s->dict->entries[i].key);
+            printf("\"%s\"", lp_entry_key(&s->dict->entries[i]));
             first = 0;
         }
     }

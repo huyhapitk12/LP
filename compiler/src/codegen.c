@@ -4318,23 +4318,87 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                     }
                     if (is_reduction && red_var && red_op) {
                         write_indent(buf, indent);
-                        buf_printf(buf, "#pragma omp simd reduction(%s:lp_%s)\n",
+                        /* simdlen(8): request 8-wide AVX-512 (8 doubles = 512-bit zmm registers)
+                         * Combined with -lmvec and avx512f target, enables vectorized sin/cos. */
+                        buf_printf(buf, "#pragma omp simd reduction(%s:lp_%s) simdlen(8)\n",
                                    red_op, red_var);
                     }
                 }
-                write_indent(buf, indent);
-                if (args->count == 1) {
-                    buf_printf(buf, "for (int64_t lp_%s = 0; lp_%s < ",
-                               node->for_stmt.var, node->for_stmt.var);
-                    gen_expr(cg, buf, args->items[0]);
-                    buf_printf(buf, "; lp_%s++) {\n", node->for_stmt.var);
-                } else if (args->count == 2) {
+                /* Safe int loop counter: use int (32-bit) when:
+                 * - bound is a literal or const_int_value <= 2^30
+                 * - loop body does NOT multiply lp_i by a large int
+                 *   (int × large_int overflows int32; int × float is safe)
+                 * Benefit: GCC can use full SIMD width (8 doubles) vs int64 (4 doubles) */
+                {
+                    int64_t _b = 0;
+                    int _use_int = 0;
+                    const char *_lvar = node->for_stmt.var;
+                    if (args->count == 1) {
+                        if (get_int_literal_value(args->items[0], &_b) && _b > 0 && _b <= 1073741824LL)
+                            _use_int = 1;
+                        else if (args->items[0]->type == NODE_NAME) {
+                            Symbol *_bs = scope_lookup(cg->scope, args->items[0]->name_expr.name);
+                            if (_bs && _bs->const_int_value > 0 && _bs->const_int_value <= 1073741824LL)
+                                _use_int = 1;
+                        }
+                    }
+                    /* Safety check: recursively scan for lp_i * large_literal anywhere in body.
+                     * This catches: a[i]=(i*1103515245+12345)%26 where the multiply is nested. */
+                    if (_use_int) {
+                        /* Recursive expression scanner */
+                        int _has_overflow = 0;
+                        /* Inline recursive check via stack */
+                        #define _CHECK_EXPR_OVERFLOW(e_) do { \
+                            AstNode *_stk[32]; int _sp=0; \
+                            if(e_) _stk[_sp++]=(e_); \
+                            while(_sp>0 && !_has_overflow) { \
+                                AstNode *_e=_stk[--_sp]; \
+                                if(!_e) continue; \
+                                if(_e->type==NODE_BIN_OP && _e->bin_op.op==TOK_STAR) { \
+                                    AstNode *_L=_e->bin_op.left, *_R=_e->bin_op.right; \
+                                    int64_t _mv=0; \
+                                    if((_L->type==NODE_NAME && strcmp(_L->name_expr.name,_lvar)==0 && \
+                                        get_int_literal_value(_R,&_mv) && _mv>65535) || \
+                                       (_R->type==NODE_NAME && strcmp(_R->name_expr.name,_lvar)==0 && \
+                                        get_int_literal_value(_L,&_mv) && _mv>65535)) \
+                                        _has_overflow=1; \
+                                } \
+                                if(_e->type==NODE_BIN_OP) { \
+                                    if(_sp<30){_stk[_sp++]=_e->bin_op.left;} \
+                                    if(_sp<30){_stk[_sp++]=_e->bin_op.right;} \
+                                } \
+                                if(_e->type==NODE_UNARY_OP && _sp<30) _stk[_sp++]=_e->unary_op.operand; \
+                            } \
+                        } while(0)
+                        for (int _bi = 0; _bi < node->for_stmt.body.count && _use_int; _bi++) {
+                            AstNode *_s = node->for_stmt.body.items[_bi];
+                            if (_s->type == NODE_ASSIGN)
+                                _CHECK_EXPR_OVERFLOW(_s->assign.value);
+                            if (_s->type == NODE_SUBSCRIPT_ASSIGN)
+                                _CHECK_EXPR_OVERFLOW(_s->subscript_assign.value);
+                            if (_s->type == NODE_AUG_ASSIGN)
+                                _CHECK_EXPR_OVERFLOW(_s->aug_assign.value);
+                        }
+                        if (_has_overflow) _use_int = 0;
+                        #undef _CHECK_EXPR_OVERFLOW
+                    }
+                    write_indent(buf, indent);
+                    if (args->count == 1) {
+                        if (_use_int) {
+                            buf_printf(buf, "for (int lp_%s = 0; lp_%s < ",
+                                       node->for_stmt.var, node->for_stmt.var);
+                        } else {
+                            buf_printf(buf, "for (int64_t lp_%s = 0; lp_%s < ",
+                                       node->for_stmt.var, node->for_stmt.var);
+                        }
+                        gen_expr(cg, buf, args->items[0]);
+                        buf_printf(buf, "; lp_%s++) {\n", node->for_stmt.var);
+                    } else if (args->count == 2) {
                     buf_printf(buf, "for (int64_t lp_%s = ", node->for_stmt.var);
                     gen_expr(cg, buf, args->items[0]);
                     buf_printf(buf, "; lp_%s < ", node->for_stmt.var);
                     gen_expr(cg, buf, args->items[1]);
                     buf_printf(buf, "; lp_%s++) {\n", node->for_stmt.var);
-                    
                 } else if (args->count >= 3) {
                     int64_t step_value = 0;
 
@@ -4400,6 +4464,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                         break;
                     }
                 }
+                } /* close _use_int block */
             } else {
                 LpType iter_type = infer_type(cg, node->for_stmt.iter);
                 if (iter_type == LP_NATIVE_ARRAY_1D) {
