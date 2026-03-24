@@ -5203,6 +5203,15 @@ static void scan_declarations(CodeGen *cg, NodeList *body) {
                                 } else if (val->bin_op.op == TOK_PLUS ||
                                            val->bin_op.op == TOK_MINUS) {
                                     /* inc/dec — likely bounded */
+                                } else if (val->bin_op.op == TOK_STAR) {
+                                    /* i * small_K: safe if K <= 1024 (result <= n*1024 < INT32_MAX) */
+                                    int64_t _kmul = 0;
+                                    if ((val->bin_op.right->type == NODE_INT_LIT &&
+                                         ((_kmul = val->bin_op.right->int_lit.value) >= 0) && _kmul <= 1024) ||
+                                        (val->bin_op.left->type == NODE_INT_LIT &&
+                                         ((_kmul = val->bin_op.left->int_lit.value) >= 0) && _kmul <= 1024))
+                                        ; /* safe: small multiplier */
+                                    else can_be_i32 = 0;
                                 } else {
                                     can_be_i32 = 0;
                                 }
@@ -5229,9 +5238,17 @@ static void scan_declarations(CodeGen *cg, NodeList *body) {
                                     if (val->int_lit.value < -2000000000LL ||
                                         val->int_lit.value >  2000000000LL) can_be_i32 = 0;
                                 } else if (val->type == NODE_BIN_OP) {
-                                    if (val->bin_op.op != TOK_PLUS &&
-                                        val->bin_op.op != TOK_MINUS &&
-                                        val->bin_op.op != TOK_PERCENT) can_be_i32 = 0;
+                                    /* Allow +/−/% and small-multiplier × */
+                                    int64_t _km=0;
+                                    int _ok_op = (val->bin_op.op==TOK_PLUS||val->bin_op.op==TOK_MINUS||val->bin_op.op==TOK_PERCENT);
+                                    if (!_ok_op && val->bin_op.op==TOK_STAR) {
+                                        if ((val->bin_op.right->type==NODE_INT_LIT &&
+                                             ((_km=val->bin_op.right->int_lit.value)>=0)&&_km<=1024) ||
+                                            (val->bin_op.left->type==NODE_INT_LIT &&
+                                             ((_km=val->bin_op.left->int_lit.value)>=0)&&_km<=1024))
+                                            _ok_op=1;
+                                    }
+                                    if (!_ok_op) can_be_i32 = 0;
                                 } else if (val->type == NODE_NAME) {
                                     /* variable assigned — allow if it's a known int;
                                      * conservative: only skip if it's the loop index var */
