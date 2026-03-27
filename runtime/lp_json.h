@@ -140,7 +140,7 @@ static inline void lp_json_dump_val(LpVal v, LpJsonBuffer *b) {
         for (int i=0; i<v.as.d->capacity; i++) {
             if (v.as.d->entries[i].is_occupied) {
                 if (!first) lp_jb_writes(b, ", ");
-                lp_jb_printf(b, "\"%s\": ", v.as.d->entries[i].key);
+                lp_jb_printf(b, "\"%s\": ", lp_entry_key(&v.as.d->entries[i]));
                 lp_json_dump_val(v.as.d->entries[i].value, b);
                 first = 0;
             }
@@ -156,6 +156,130 @@ static inline const char* lp_json_dumps(LpVal v) {
     b.data[0] = '\0';
     lp_json_dump_val(v, &b);
     return b.data;
+}
+
+/* ========================================
+ * ADDITIONAL JSON FUNCTIONS
+ * ======================================== */
+
+/* Pretty-print JSON with indentation */
+static inline void lp_json_dump_val_pretty(LpVal v, LpJsonBuffer *b, int indent, int level) {
+    char pad[256];
+    int pad_len = (level * indent < 255) ? level * indent : 255;
+    memset(pad, ' ', pad_len);
+    pad[pad_len] = '\0';
+    
+    char pad_inner[256];
+    int inner_len = ((level + 1) * indent < 255) ? (level + 1) * indent : 255;
+    memset(pad_inner, ' ', inner_len);
+    pad_inner[inner_len] = '\0';
+
+    if (v.type == LP_VAL_NULL) lp_jb_writes(b, "null");
+    else if (v.type == LP_VAL_BOOL) lp_jb_writes(b, v.as.b ? "true" : "false");
+    else if (v.type == LP_VAL_INT) lp_jb_printf(b, "%lld", (long long)v.as.i);
+    else if (v.type == LP_VAL_FLOAT) lp_jb_printf(b, "%g", v.as.f);
+    else if (v.type == LP_VAL_STRING) lp_jb_printf(b, "\"%s\"", v.as.s);
+    else if (v.type == LP_VAL_LIST) {
+        if (!v.as.l || v.as.l->len == 0) { lp_jb_writes(b, "[]"); return; }
+        lp_jb_writes(b, "[\n");
+        for (int i = 0; i < v.as.l->len; i++) {
+            if (i > 0) lp_jb_writes(b, ",\n");
+            lp_jb_writes(b, pad_inner);
+            lp_json_dump_val_pretty(v.as.l->items[i], b, indent, level + 1);
+        }
+        lp_jb_writes(b, "\n");
+        lp_jb_writes(b, pad);
+        lp_jb_writes(b, "]");
+    } else if (v.type == LP_VAL_DICT) {
+        if (!v.as.d || v.as.d->count == 0) { lp_jb_writes(b, "{}"); return; }
+        lp_jb_writes(b, "{\n");
+        int first = 1;
+        for (int i = 0; i < v.as.d->capacity; i++) {
+            if (v.as.d->entries[i].is_occupied) {
+                if (!first) lp_jb_writes(b, ",\n");
+                lp_jb_writes(b, pad_inner);
+                lp_jb_printf(b, "\"%s\": ", lp_entry_key(&v.as.d->entries[i]));
+                lp_json_dump_val_pretty(v.as.d->entries[i].value, b, indent, level + 1);
+                first = 0;
+            }
+        }
+        lp_jb_writes(b, "\n");
+        lp_jb_writes(b, pad);
+        lp_jb_writes(b, "}");
+    }
+}
+
+/* json.dumps(val, indent=2) — pretty-printed JSON string */
+static inline const char* lp_json_dumps_pretty(LpVal v, int indent) {
+    LpJsonBuffer b;
+    b.len = 0; b.cap = 256;
+    b.data = (char*)malloc(b.cap);
+    b.data[0] = '\0';
+    lp_json_dump_val_pretty(v, &b, indent, 0);
+    return b.data;
+}
+
+/* json.load(filename) — read JSON from file */
+static inline LpVal lp_json_load_file(const char *filename) {
+    if (!filename) return lp_val_null();
+    FILE *f = fopen(filename, "rb");
+    if (!f) return lp_val_null();
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (len <= 0) { fclose(f); return lp_val_null(); }
+    char *buf = (char*)malloc(len + 1);
+    if (!buf) { fclose(f); return lp_val_null(); }
+    fread(buf, 1, len, f);
+    buf[len] = '\0';
+    fclose(f);
+    LpVal result = lp_json_loads(buf);
+    free(buf);
+    return result;
+}
+
+/* json.dump(filename, val) — write JSON to file */
+static inline int lp_json_save_file(const char *filename, LpVal val, int pretty) {
+    if (!filename) return 0;
+    FILE *f = fopen(filename, "wb");
+    if (!f) return 0;
+    const char *str = pretty ? lp_json_dumps_pretty(val, 2) : lp_json_dumps(val);
+    if (str) {
+        fwrite(str, 1, strlen(str), f);
+        free((void*)str);
+    }
+    fclose(f);
+    return 1;
+}
+
+/* json.get_path(val, "a.b.c") — access nested JSON by dot-path */
+static inline LpVal lp_json_get_path(LpVal val, const char *path) {
+    if (!path || !*path) return val;
+    LpVal current = val;
+    char key[256];
+    const char *p = path;
+    while (*p) {
+        int k = 0;
+        while (*p && *p != '.' && k < 255) {
+            key[k++] = *p++;
+        }
+        key[k] = '\0';
+        if (*p == '.') p++;
+        
+        if (current.type == LP_VAL_DICT && current.as.d) {
+            current = lp_dict_get(current.as.d, key);
+        } else if (current.type == LP_VAL_LIST && current.as.l) {
+            int64_t idx = atoll(key);
+            if (idx >= 0 && idx < current.as.l->len) {
+                current = current.as.l->items[idx];
+            } else {
+                return lp_val_null();
+            }
+        } else {
+            return lp_val_null();
+        }
+    }
+    return current;
 }
 
 #endif /* LP_JSON_H */

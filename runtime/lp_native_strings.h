@@ -481,6 +481,118 @@ static inline LpStrPartition lp_str_partition(const char *s, const char *sep) {
 
 #endif /* LP_NATIVE_STRINGS_H */
 
+/* ========================================
+ * ADDITIONAL STRING METHODS
+ * ======================================== */
+
+/* str[start:end] — substring (Python slice semantics) */
+static inline const char *lp_str_substr(const char *s, int64_t start, int64_t end) {
+    if (!s) return strdup("");
+    int64_t len = (int64_t)strlen(s);
+    /* Normalize negative indices */
+    if (start < 0) start += len;
+    if (end < 0) end += len;
+    if (start < 0) start = 0;
+    if (end > len) end = len;
+    if (start >= end) return strdup("");
+    int64_t sub_len = end - start;
+    char *r = (char *)malloc(sub_len + 1);
+    if (!r) return strdup("");
+    memcpy(r, s + start, sub_len);
+    r[sub_len] = '\0';
+    return r;
+}
+
+/* str.reverse() — reverse string (not in Python but common) */
+static inline const char *lp_str_reverse(const char *s) {
+    if (!s) return strdup("");
+    size_t len = strlen(s);
+    char *r = (char *)malloc(len + 1);
+    if (!r) return strdup("");
+    for (size_t i = 0; i < len; i++) {
+        r[i] = s[len - 1 - i];
+    }
+    r[len] = '\0';
+    return r;
+}
+
+/* str * n — repeat string n times */
+static inline const char *lp_str_repeat(const char *s, int64_t n) {
+    if (!s || n <= 0) return strdup("");
+    size_t len = strlen(s);
+    size_t total = len * n;
+    char *r = (char *)malloc(total + 1);
+    if (!r) return strdup("");
+    for (int64_t i = 0; i < n; i++) {
+        memcpy(r + i * len, s, len);
+    }
+    r[total] = '\0';
+    return r;
+}
+
+/* str.removeprefix(prefix) */
+static inline const char *lp_str_removeprefix(const char *s, const char *prefix) {
+    if (!s) return strdup("");
+    if (!prefix || !*prefix) return strdup(s);
+    size_t plen = strlen(prefix);
+    if (strncmp(s, prefix, plen) == 0) {
+        return strdup(s + plen);
+    }
+    return strdup(s);
+}
+
+/* str.removesuffix(suffix) */
+static inline const char *lp_str_removesuffix(const char *s, const char *suffix) {
+    if (!s) return strdup("");
+    if (!suffix || !*suffix) return strdup(s);
+    size_t slen = strlen(s);
+    size_t xlen = strlen(suffix);
+    if (xlen > slen) return strdup(s);
+    if (strcmp(s + slen - xlen, suffix) == 0) {
+        char *r = (char *)malloc(slen - xlen + 1);
+        if (!r) return strdup(s);
+        memcpy(r, s, slen - xlen);
+        r[slen - xlen] = '\0';
+        return r;
+    }
+    return strdup(s);
+}
+
+/* str.isnumeric() — check if all digits or decimal */
+static inline int lp_str_isnumeric(const char *s) {
+    if (!s || !*s) return 0;
+    const char *p = s;
+    if (*p == '-' || *p == '+') p++;
+    int has_digit = 0;
+    int has_dot = 0;
+    while (*p) {
+        if (*p == '.' && !has_dot) { has_dot = 1; p++; continue; }
+        if (!isdigit((unsigned char)*p)) return 0;
+        has_digit = 1;
+        p++;
+    }
+    return has_digit;
+}
+
+/* str.istitle() — check if title case */
+static inline int lp_str_istitle(const char *s) {
+    if (!s || !*s) return 0;
+    int expect_upper = 1;
+    int has_cased = 0;
+    while (*s) {
+        if (isalpha((unsigned char)*s)) {
+            if (expect_upper && !isupper((unsigned char)*s)) return 0;
+            if (!expect_upper && !islower((unsigned char)*s)) return 0;
+            has_cased = 1;
+            expect_upper = 0;
+        } else {
+            expect_upper = 1;
+        }
+        s++;
+    }
+    return has_cased;
+}
+
 /* ========================================================
  * FAST STRING SCRATCH POOL
  * Thread-local ring buffer of 8 scratch strings (256 bytes each).

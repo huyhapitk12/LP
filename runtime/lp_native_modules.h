@@ -904,6 +904,232 @@ static inline LpArray lp_np_diag(LpArray a) {
     return result;
 }
 
+/* ========================================
+ * ADDITIONAL MATH FUNCTIONS (P1)
+ * ======================================== */
+
+/* math.comb(n, k) — binomial coefficient */
+static inline int64_t lp_math_comb(int64_t n, int64_t k) {
+    if (k < 0 || k > n) return 0;
+    if (k == 0 || k == n) return 1;
+    if (k > n - k) k = n - k;
+    int64_t result = 1;
+    for (int64_t i = 0; i < k; i++) {
+        result = result * (n - i) / (i + 1);
+    }
+    return result;
+}
+
+/* math.perm(n, k) — permutations */
+static inline int64_t lp_math_perm(int64_t n, int64_t k) {
+    if (k < 0 || k > n) return 0;
+    int64_t result = 1;
+    for (int64_t i = 0; i < k; i++) {
+        result *= (n - i);
+    }
+    return result;
+}
+
+/* math.copysign(x, y) */
+static inline double lp_math_copysign(double x, double y) {
+    return copysign(x, y);
+}
+
+/* math.hypot(x, y) */
+static inline double lp_math_hypot(double x, double y) {
+    return hypot(x, y);
+}
+
+/* math.remainder(x, y) — IEEE remainder */
+static inline double lp_math_remainder(double x, double y) {
+    return remainder(x, y);
+}
+
+/* math.erf(x) / math.erfc(x) */
+static inline double lp_math_erf(double x) { return erf(x); }
+static inline double lp_math_erfc(double x) { return erfc(x); }
+
+/* math.gamma(x) / math.lgamma(x) */
+static inline double lp_math_gamma(double x) { return tgamma(x); }
+static inline double lp_math_lgamma(double x) { return lgamma(x); }
+
+/* math.prod(list) — product of array elements */
+static inline double lp_math_prod_arr(LpArray a) {
+    if (a.len == 0) return 1.0;
+    double result = 1.0;
+    for (int64_t i = 0; i < a.len; i++) {
+        result *= a.data[i];
+    }
+    return result;
+}
+
+/* ========================================
+ * ADDITIONAL RANDOM FUNCTIONS (P1)
+ * ======================================== */
+
+/* random.choice(list) — random element from LpList */
+static inline LpVal lp_random_choice_list(LpList *l) {
+    if (!l || !l->items || l->len == 0) return lp_val_null();
+    int64_t idx = rand() % l->len;
+    return l->items[idx];
+}
+
+/* random.shuffle(list) — Fisher-Yates shuffle in-place */
+static inline void lp_random_shuffle_list(LpList *l) {
+    if (!l || !l->items || l->len <= 1) return;
+    for (int64_t i = l->len - 1; i > 0; i--) {
+        int64_t j = rand() % (i + 1);
+        LpVal tmp = l->items[i];
+        l->items[i] = l->items[j];
+        l->items[j] = tmp;
+    }
+}
+
+/* random.gauss(mu, sigma) — Gaussian/Normal distribution (Box-Muller) */
+static inline double lp_random_gauss(double mu, double sigma) {
+    static int has_spare = 0;
+    static double spare;
+    if (has_spare) {
+        has_spare = 0;
+        return spare * sigma + mu;
+    }
+    has_spare = 1;
+    double u, v, s;
+    do {
+        u = ((double)rand() / RAND_MAX) * 2.0 - 1.0;
+        v = ((double)rand() / RAND_MAX) * 2.0 - 1.0;
+        s = u * u + v * v;
+    } while (s >= 1.0 || s == 0.0);
+    s = sqrt(-2.0 * log(s) / s);
+    spare = v * s;
+    return u * s * sigma + mu;
+}
+
+/* random.sample(list, k) — random sample without replacement */
+static inline LpList* lp_random_sample_list(LpList *l, int64_t k) {
+    LpList *result = lp_list_new();
+    if (!l || !l->items || l->len == 0 || k <= 0) return result;
+    if (k > l->len) k = l->len;
+    
+    /* Fisher-Yates partial shuffle on a copy of indices */
+    int64_t *indices = (int64_t*)malloc(l->len * sizeof(int64_t));
+    if (!indices) return result;
+    for (int64_t i = 0; i < l->len; i++) indices[i] = i;
+    
+    for (int64_t i = 0; i < k; i++) {
+        int64_t j = i + (rand() % (l->len - i));
+        int64_t tmp = indices[i];
+        indices[i] = indices[j];
+        indices[j] = tmp;
+        lp_list_append(result, l->items[indices[i]]);
+    }
+    free(indices);
+    return result;
+}
+
+/* ========================================
+ * ADDITIONAL NUMPY FUNCTIONS (P1)
+ * ======================================== */
+
+/* np.concatenate(a, b) */
+__attribute__((hot))
+static inline LpArray lp_np_concatenate(LpArray a, LpArray b) {
+    LpArray result;
+    result.len = a.len + b.len;
+    result.cap = result.len;
+    result.data = (double*)malloc(result.len * sizeof(double));
+    memcpy(result.data, a.data, a.len * sizeof(double));
+    memcpy(result.data + a.len, b.data, b.len * sizeof(double));
+    result.shape[0] = result.len; result.shape[1] = 0;
+    result.shape[2] = 0; result.shape[3] = 0;
+    return result;
+}
+
+/* np.unique(a) — unique elements (sorted) */
+static inline LpArray lp_np_unique(LpArray a) {
+    if (a.len == 0) return lp_np_zeros(0);
+    
+    /* Sort a copy first */
+    LpArray sorted;
+    sorted.len = a.len; sorted.cap = a.len;
+    sorted.data = (double*)malloc(a.len * sizeof(double));
+    memcpy(sorted.data, a.data, a.len * sizeof(double));
+    lp_np_sort(sorted);
+    
+    /* Count unique */
+    int64_t unique_count = 1;
+    for (int64_t i = 1; i < sorted.len; i++) {
+        if (sorted.data[i] != sorted.data[i - 1]) unique_count++;
+    }
+    
+    LpArray result;
+    result.data = (double*)malloc(unique_count * sizeof(double));
+    result.len = unique_count; result.cap = unique_count;
+    result.data[0] = sorted.data[0];
+    int64_t j = 1;
+    for (int64_t i = 1; i < sorted.len; i++) {
+        if (sorted.data[i] != sorted.data[i - 1]) {
+            result.data[j++] = sorted.data[i];
+        }
+    }
+    free(sorted.data);
+    result.shape[0] = unique_count; result.shape[1] = 0;
+    result.shape[2] = 0; result.shape[3] = 0;
+    return result;
+}
+
+/* np.diff(a) — consecutive differences */
+static inline LpArray lp_np_diff(LpArray a) {
+    if (a.len <= 1) return lp_np_zeros(0);
+    LpArray result;
+    result.len = a.len - 1; result.cap = result.len;
+    result.data = (double*)malloc(result.len * sizeof(double));
+    for (int64_t i = 0; i < result.len; i++) {
+        result.data[i] = a.data[i + 1] - a.data[i];
+    }
+    result.shape[0] = result.len; result.shape[1] = 0;
+    result.shape[2] = 0; result.shape[3] = 0;
+    return result;
+}
+
+/* np.norm(a) — L2 norm */
+__attribute__((hot, optimize("O3,fast-math"), target("avx2,fma")))
+static inline double lp_np_norm(LpArray a) {
+    double sum = 0.0;
+    for (int64_t i = 0; i < a.len; i++) {
+        sum += a.data[i] * a.data[i];
+    }
+    return sqrt(sum);
+}
+
+
+
+
+/* np.searchsorted(a, val) — binary search in sorted array */
+static inline int64_t lp_np_searchsorted(LpArray a, double val) {
+    int64_t lo = 0, hi = a.len;
+    while (lo < hi) {
+        int64_t mid = lo + (hi - lo) / 2;
+        if (a.data[mid] < val) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo;
+}
+
+/* np.where(condition_arr, x, y) — element-wise conditional */
+static inline LpArray lp_np_where(LpArray cond, LpArray x, LpArray y) {
+    int64_t n = cond.len;
+    LpArray result;
+    result.len = n; result.cap = n;
+    result.data = (double*)malloc(n * sizeof(double));
+    for (int64_t i = 0; i < n; i++) {
+        result.data[i] = (cond.data[i] != 0.0) ? x.data[i] : y.data[i];
+    }
+    result.shape[0] = n; result.shape[1] = 0;
+    result.shape[2] = 0; result.shape[3] = 0;
+    return result;
+}
+
 /* ================================================================
  * Module registry — maps module names to tiers
  * Used by codegen to determine which strategy to use

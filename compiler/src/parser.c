@@ -758,7 +758,11 @@ static AstNode *parse_postfix(Parser *p) {
             expect(p, TOK_RBRACKET, "expected ']'");
             expr = sub;
         } else if (match(p, TOK_DOT)) {
-            expect(p, TOK_IDENTIFIER, "expected attribute name");
+            if (p->current.type >= TOK_IDENTIFIER && p->current.type <= TOK_GUEST) {
+                advance(p);
+            } else {
+                expect(p, TOK_IDENTIFIER, "expected attribute name");
+            }
             AstNode *attr = ast_new(p->arena, NODE_ATTRIBUTE, line);
             attr->attribute.obj = expr;
             attr->attribute.attr = tok_to_str(p->previous);

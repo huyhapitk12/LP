@@ -18,6 +18,17 @@
 #include <math.h>
 #include <stdbool.h>
 
+/* Compiler optimization hints */
+#ifdef __GNUC__
+  #define LP_HOT __attribute__((hot))
+  #define LP_LIKELY(x) __builtin_expect(!!(x), 1)
+  #define LP_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#else
+  #define LP_HOT
+  #define LP_LIKELY(x) (x)
+  #define LP_UNLIKELY(x) (x)
+#endif
+
 #include "lp_compat.h"
 #include "lp_dict.h"
 #include "lp_set.h"
@@ -505,7 +516,7 @@ static inline int64_t lp_val_len(LpVal obj) {
 
 
 /* String helpers */
-static inline char *lp_str_concat(const char *a, const char *b) {
+static inline LP_HOT char *lp_str_concat(const char *a, const char *b) {
     if (!a || !b) return NULL;
     size_t la = strlen(a), lb = strlen(b);
     char *r = (char *)malloc(la + lb + 1);
