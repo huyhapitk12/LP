@@ -317,6 +317,14 @@ static void traverse_node(LpSemanticChecker *checker, AstNode *node) {
             checker->current_function = func_name ? strdup(func_name) : NULL;
             checker->in_function = 1;
             
+            /* Register parameters in symbol table BEFORE traversing body */
+            for (int i = 0; i < node->func_def.params.count; i++) {
+                Param *p = &node->func_def.params.items[i];
+                if (p->name) {
+                    lp_symbol_table_add(&checker->symbols, p->name, node->line, 0, 0);
+                }
+            }
+            
             /* Traverse function body */
             traverse_list(checker, &node->func_def.body);
             
@@ -328,6 +336,10 @@ static void traverse_node(LpSemanticChecker *checker, AstNode *node) {
         }
         
         case NODE_CLASS_DEF:
+            /* Register class name */
+            if (node->class_def.name) {
+                lp_symbol_table_add(&checker->symbols, node->class_def.name, node->line, 0, 0);
+            }
             traverse_list(checker, &node->class_def.body);
             break;
             
@@ -340,6 +352,10 @@ static void traverse_node(LpSemanticChecker *checker, AstNode *node) {
             break;
             
         case NODE_FOR:
+            /* Register loop variable before traversing body */
+            if (node->for_stmt.var) {
+                lp_symbol_table_add(&checker->symbols, node->for_stmt.var, node->line, 0, 0);
+            }
             traverse_node(checker, node->for_stmt.iter);
             traverse_list(checker, &node->for_stmt.body);
             break;
@@ -434,13 +450,7 @@ static void traverse_node(LpSemanticChecker *checker, AstNode *node) {
             break;
             
         case NODE_SUBSCRIPT: {
-            /* Check for 2D array access arr[i][j] which is invalid */
-            if (node->subscript.obj->type == NODE_SUBSCRIPT) {
-                lp_error_list_add(checker->errors, ERR_INVALID_2D_ARRAY, SEVERITY_ERROR,
-                                 node->line, 1,
-                                 "2D array access 'arr[i][j]' is not supported in LP",
-                                 "Use flat array: 'arr[i * row_size + j]'");
-            }
+            /* 2D array access arr[i][j] is valid for int[][]/float[][] arrays */
             traverse_node(checker, node->subscript.obj);
             traverse_node(checker, node->subscript.index);
             break;
@@ -481,8 +491,42 @@ static void traverse_node(LpSemanticChecker *checker, AstNode *node) {
                                  "LP uses 'null' instead of Python's 'None'");
             }
             
-            /* Mark as used if it's a known symbol */
+            /* Check for use-before-define */
             if (node->name_expr.name) {
+                LpSymbol *sym = lp_symbol_table_find(&checker->symbols, node->name_expr.name);
+                if (!sym) {
+                    /* Skip builtins and common global names */
+                    const char *name = node->name_expr.name;
+                    int is_builtin = (
+                        strcmp(name, "print") == 0 || strcmp(name, "len") == 0 ||
+                        strcmp(name, "range") == 0 || strcmp(name, "input") == 0 ||
+                        strcmp(name, "int") == 0 || strcmp(name, "float") == 0 ||
+                        strcmp(name, "str") == 0 || strcmp(name, "bool") == 0 ||
+                        strcmp(name, "list") == 0 || strcmp(name, "dict") == 0 ||
+                        strcmp(name, "set") == 0 || strcmp(name, "tuple") == 0 ||
+                        strcmp(name, "type") == 0 || strcmp(name, "abs") == 0 ||
+                        strcmp(name, "max") == 0 || strcmp(name, "min") == 0 ||
+                        strcmp(name, "sum") == 0 || strcmp(name, "sorted") == 0 ||
+                        strcmp(name, "enumerate") == 0 || strcmp(name, "zip") == 0 ||
+                        strcmp(name, "map") == 0 || strcmp(name, "filter") == 0 ||
+                        strcmp(name, "open") == 0 || strcmp(name, "exit") == 0 ||
+                        strcmp(name, "true") == 0 || strcmp(name, "false") == 0 ||
+                        strcmp(name, "null") == 0 || strcmp(name, "self") == 0 ||
+                        strcmp(name, "super") == 0 || strcmp(name, "isinstance") == 0 ||
+                        strcmp(name, "hasattr") == 0 || strcmp(name, "getattr") == 0 ||
+                        strcmp(name, "setattr") == 0 || strcmp(name, "chr") == 0 ||
+                        strcmp(name, "ord") == 0 || strcmp(name, "hex") == 0 ||
+                        strcmp(name, "round") == 0 || strcmp(name, "reversed") == 0 ||
+                        strcmp(name, "any") == 0 || strcmp(name, "all") == 0
+                    );
+                    if (!is_builtin) {
+                        char msg[256];
+                        snprintf(msg, sizeof(msg), "Variable '%s' used before definition", name);
+                        lp_error_list_add(checker->errors, WARN_UNUSED_VAR, SEVERITY_WARNING,
+                                         node->line, 1, msg, "Define the variable before using it");
+                    }
+                }
+                /* Mark as used if it's a known symbol */
                 lp_symbol_table_mark_used(&checker->symbols, node->name_expr.name, node->line);
             }
             break;
@@ -524,6 +568,10 @@ static void traverse_node(LpSemanticChecker *checker, AstNode *node) {
             break;
             
         case NODE_MATCH_CASE:
+            /* Register pattern variable if it's a name binding (e.g., case n if n > 10) */
+            if (node->match_case.pattern && node->match_case.pattern->type == NODE_NAME) {
+                lp_symbol_table_add(&checker->symbols, node->match_case.pattern->name_expr.name, node->line, 0, 0);
+            }
             traverse_node(checker, node->match_case.pattern);
             if (node->match_case.guard) traverse_node(checker, node->match_case.guard);
             traverse_list(checker, &node->match_case.body);

@@ -142,33 +142,39 @@ static inline void lp_np_print(LpArray arr) {
 #endif
 
 /* Math helpers */
-static inline int64_t lp_pow_int(int64_t base, int64_t exp) {
+static inline int64_t __lp_pow_int(int64_t base, int64_t exp) {
     int64_t result = 1;
     if (exp < 0) return 0;
     if (base == 0) return 0;
     if (base == 1) return 1;
     if (base == -1) return (exp % 2 == 0) ? 1 : -1;
-    while (exp > 0) {
-        if (exp & 1) {
+    /* Track sign separately for overflow checks */
+    int neg = (base < 0 && exp % 2 == 1) ? 1 : 0;
+    int64_t abs_base = (base < 0) ? -base : base;
+    int64_t abs_result = 1;
+    int64_t b = abs_base;
+    int64_t e = exp;
+    while (e > 0) {
+        if (e & 1) {
             /* Check for overflow before multiplication */
-            if (result > INT64_MAX / base || result < INT64_MIN / base) {
-                return (base > 0) ? INT64_MAX : INT64_MIN;  /* Overflow */
+            if (abs_result > INT64_MAX / b) {
+                return neg ? INT64_MIN : INT64_MAX;  /* Overflow */
             }
-            result *= base;
+            abs_result *= b;
         }
-        if (exp > 1) {  /* Don't square on last iteration */
+        if (e > 1) {  /* Don't square on last iteration */
             /* Check for overflow before squaring */
-            if (base > INT64_MAX / base || base < INT64_MIN / base) {
-                return (base > 0) ? INT64_MAX : INT64_MIN;  /* Overflow */
+            if (b > INT64_MAX / b) {
+                return neg ? INT64_MIN : INT64_MAX;  /* Overflow */
             }
-            base *= base;
+            b *= b;
         }
-        exp >>= 1;
+        e >>= 1;
     }
-    return result;
+    return neg ? -abs_result : abs_result;
 }
 
-static inline int64_t lp_floordiv(int64_t a, int64_t b) {
+static inline int64_t __lp_floordiv(int64_t a, int64_t b) {
     /* Division by zero check */
     if (__builtin_expect(b == 0, 0)) return 0;
     /* Fast path: non-negative dividend with positive divisor (most common in CP) */
@@ -180,7 +186,7 @@ static inline int64_t lp_floordiv(int64_t a, int64_t b) {
     return q;
 }
 
-static inline int64_t lp_mod(int64_t a, int64_t b) {
+static inline int64_t __lp_mod(int64_t a, int64_t b) {
     /* Division by zero check */
     if (__builtin_expect(b == 0, 0)) return 0;
     /* Fast path: non-negative dividend with positive divisor (most common in CP) */
@@ -259,7 +265,7 @@ static inline LpVal lp_val_floordiv(LpVal a, LpVal b) {
         int64_t i_a = (a.type == LP_VAL_INT) ? a.as.i : (int64_t)a.as.f;
         int64_t i_b = (b.type == LP_VAL_INT) ? b.as.i : (int64_t)b.as.f;
         if (i_b == 0) return lp_val_null();
-        return lp_val_int(lp_floordiv(i_a, i_b));
+        return lp_val_int(__lp_floordiv(i_a, i_b));
     }
     return lp_val_null();
 }
@@ -270,7 +276,7 @@ static inline LpVal lp_val_mod(LpVal a, LpVal b) {
         int64_t i_a = (a.type == LP_VAL_INT) ? a.as.i : (int64_t)a.as.f;
         int64_t i_b = (b.type == LP_VAL_INT) ? b.as.i : (int64_t)b.as.f;
         if (i_b == 0) return lp_val_null();
-        return lp_val_int(lp_mod(i_a, i_b));
+        return lp_val_int(__lp_mod(i_a, i_b));
     }
     return lp_val_null();
 }

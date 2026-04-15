@@ -659,7 +659,10 @@ static AstNode *parse_postfix(Parser *p) {
                     }
                     advance(p);
                 }
-                (void)is_generic; /* TODO: use this for error handling */
+                if (!is_generic) {
+                    /* Non-identifier found in type args — might be malformed generic */
+                    /* Continue parsing; the ']' check below will catch syntax errors */
+                }
                 
                 if (check(p, TOK_RBRACKET)) {
                     /* This could be a generic type instantiation */
@@ -1310,6 +1313,15 @@ static AstNode *parse_security_pragma(Parser *p) {
                 if (match(p, TOK_ASSIGN)) {
                     if (check(p, TOK_STRING_LIT)) {
                         n->security.auth_type = tok_to_str(p->previous);
+                        advance(p);
+                    } else if (check(p, TOK_TRUE)) {
+                        n->security.require_auth = 1;
+                        advance(p);
+                    } else if (check(p, TOK_FALSE)) {
+                        n->security.require_auth = 0;
+                        advance(p);
+                    } else if (check(p, TOK_INT_LIT)) {
+                        n->security.require_auth = (int)p->current.int_val;
                         advance(p);
                     }
                 }

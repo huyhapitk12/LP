@@ -7,6 +7,8 @@ void lexer_init(Lexer *lex, const char *source) {
     lex->source = source;
     lex->current = source;
     lex->line = 1;
+    lex->col = 1;
+    lex->line_start = source;
     lex->indent_stack[0] = 0;
     lex->indent_top = 0;
     lex->pending_dedents = 0;
@@ -22,6 +24,7 @@ static Token make_token(TokenType type, const char *start, int len, int line) {
     t.start = start;
     t.length = len;
     t.line = line;
+    t.col = 0; /* will be set by caller if needed */
     return t;
 }
 
@@ -32,6 +35,7 @@ static void skip_newline_chars(Lexer *lex) {
     if (*lex->current == '\r') lex->current++;
     if (*lex->current == '\n') lex->current++;
     lex->line++;
+    lex->line_start = lex->current;
 }
 
 /* Check if identifier is a keyword */
@@ -177,8 +181,23 @@ static Token lex_token(Lexer *lex) {
             t.float_val = atof(buf);
         } else {
             t.int_val = 0;
-            for (const char *p = start; p < lex->current; p++)
-                t.int_val = t.int_val * 10 + (*p - '0');
+            int overflow = 0;
+            for (const char *p = start; p < lex->current; p++) {
+                int digit = *p - '0';
+                if (t.int_val > (INT64_MAX - digit) / 10) {
+                    overflow = 1;
+                    break;
+                }
+                t.int_val = t.int_val * 10 + digit;
+            }
+            if (overflow) {
+                /* Integer too large, treat as float to preserve value */
+                char buf[64];
+                int blen = len < 63 ? len : 63;
+                memcpy(buf, start, blen); buf[blen] = '\0';
+                t.type = TOK_FLOAT_LIT;
+                t.float_val = atof(buf);
+            }
         }
         return t;
     }
@@ -279,7 +298,7 @@ static Token lex_token(Lexer *lex) {
     return make_token(TOK_ERROR, start, 1, lex->line);
 }
 
-Token lexer_next(Lexer *lex) {
+static Token lexer_next_impl(Lexer *lex) {
     /* Phase 1: Emit pending dedents */
     if (lex->pending_dedents > 0) {
         lex->pending_dedents--;
@@ -322,6 +341,10 @@ Token lexer_next(Lexer *lex) {
         int cur_indent = lex->indent_stack[lex->indent_top];
 
         if (indent > cur_indent) {
+            if (lex->indent_top >= 255) {
+                /* Prevent indent_stack overflow (max 256 levels) */
+                return make_token(TOK_ERROR, lex->current, 0, lex->line);
+            }
             lex->indent_top++;
             lex->indent_stack[lex->indent_top] = indent;
             return make_token(TOK_INDENT, lex->current, 0, lex->line);
@@ -355,7 +378,7 @@ Token lexer_next(Lexer *lex) {
             lex->at_line_start = 1;
             return make_token(TOK_NEWLINE, nl, 1, lex->line - 1);
         }
-        return lexer_next(lex);
+        return lexer_next_impl(lex);
     }
 
     /* Phase 6: EOF — emit remaining dedents first */
@@ -371,6 +394,17 @@ Token lexer_next(Lexer *lex) {
 
     /* Phase 7: Lex actual token */
     return lex_token(lex);
+}
+
+Token lexer_next(Lexer *lex) {
+    Token t = lexer_next_impl(lex);
+    /* Compute column from line_start */
+    if (t.start && lex->line_start && t.start >= lex->line_start) {
+        t.col = (int)(t.start - lex->line_start) + 1;
+    } else {
+        t.col = 1;
+    }
+    return t;
 }
 
 const char *token_type_name(TokenType type) {

@@ -914,7 +914,7 @@ static void asm_gen_stmt_list(AsmCodeGen *gen, NodeList *list) {
 
             case NODE_PARALLEL_FOR: {
                 /* For now, emit as regular for loop */
-                /* TODO: Add OpenMP-style threading */
+                /* ASM backend: parallel for runs as serial loop (OpenMP requires GCC backend) */
 
                 char cond_label[32], end_label[32];
                 asm_new_label(gen, cond_label, sizeof(cond_label));

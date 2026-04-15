@@ -37,6 +37,8 @@ __declspec(dllimport) void __stdcall Sleep(unsigned long dwMilliseconds);
 #include "codegen_asm.h"
 #include "repl.h"
 #include "process_utils.h"
+#include "semantic_check.h"
+#include "error_reporter.h"
 
 #if defined(_WIN32)
   #define LP_LWINHTTP "-lwinhttp"
@@ -862,6 +864,9 @@ int main(int argc, char **argv) {
             emit_asm = 1;
         } else if (strcmp(argv[i], "--gcc") == 0 || strcmp(argv[i], "--with-gcc") == 0) {
             use_gcc_backend = 1;  /* Use GCC backend instead of native ASM */
+        } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
+            printf("LP Language v0.1.0\n");
+            return 0;
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             printf("LP Language v0.1.0 - Lightweight Native Compiler\n");
             printf("Accepts .lp and .py files\n\n");
@@ -905,6 +910,30 @@ int main(int argc, char **argv) {
         ast_free(program); lp_memory_arena_free(arena);
         free(source);
         return 1;
+    }
+
+    /* ── Semantic Analysis ── */
+    {
+        LpErrorList sem_errors;
+        lp_error_list_init(&sem_errors);
+        LpSemanticChecker sem_checker;
+        lp_semantic_init(&sem_checker, &sem_errors, source);
+        lp_semantic_check(&sem_checker, program);
+
+        if (lp_error_list_has_errors(&sem_errors)) {
+            lp_print_all_errors(&sem_errors, source, stderr);
+            lp_semantic_free(&sem_checker);
+            lp_error_list_free(&sem_errors);
+            ast_free(program); lp_memory_arena_free(arena);
+            free(source);
+            return 1;
+        }
+        /* Print warnings even when no errors */
+        if (sem_errors.warning_count > 0) {
+            lp_print_all_errors(&sem_errors, source, stderr);
+        }
+        lp_semantic_free(&sem_checker);
+        lp_error_list_free(&sem_errors);
     }
 
     /* ══════════════════════════════════════════════════════════════
@@ -1365,7 +1394,7 @@ int run_tests(const char *argv0, const char *test_dir) {
 
     if (hFind == -1) {
         printf("\033[33m  No test files found (test_*.lp) in '%s'\033[0m\n\n", test_dir);
-        return 0;
+        return 1;
     }
 
     int total_passed = 0, total_failed = 0;

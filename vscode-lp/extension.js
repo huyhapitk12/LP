@@ -11,7 +11,7 @@ function isValidFilePath(filePath) {
     if (!filePath || typeof filePath !== 'string') return false;
     
     // Check for shell metacharacters
-    const dangerousChars = [';', '|', '&', '`', '$', '(', ')', '{', '}', '[', ']', '<', '>', "'", '"', '\\', '\n', '\r'];
+    const dangerousChars = [';', '|', '&', '`', '$', '(', ')', '{', '}', '[', ']', '<', '>', "'", '"', '\n', '\r'];
     for (const char of dangerousChars) {
         if (filePath.includes(char)) {
             return false;

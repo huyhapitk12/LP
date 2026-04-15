@@ -590,6 +590,24 @@ static inline void lp_int_array_free(LpIntArray *arr) {
     if (arr) { lp_aligned_free(arr->data); free(arr); }
 }
 
+/* Push a value to the end of an LpIntArray, growing it if needed.
+ * Since LpIntArray uses aligned_alloc, we must reallocate with aligned_alloc too. */
+static inline void lp_int_array_push(LpIntArray *arr, int64_t val) {
+    if (!arr) return;
+    int64_t new_len = arr->len + 1;
+    size_t new_bytes = (size_t)new_len * sizeof(int64_t);
+    size_t aligned = (new_bytes + 31) & ~(size_t)31;
+    int64_t *new_data = (int64_t*)lp_aligned_alloc(32, aligned);
+    if (!new_data) return;
+    if (arr->data) {
+        memcpy(new_data, arr->data, (size_t)arr->len * sizeof(int64_t));
+        lp_aligned_free(arr->data);
+    }
+    new_data[arr->len] = val;
+    arr->data = new_data;
+    arr->len = new_len;
+}
+
 /* Reuse an existing array if same size, otherwise reallocate.
  * Eliminates malloc/free churn when the same-sized array is created every loop iteration.
  * Usage: arr = lp_int_array_reuse(arr, size);  (replaces lp_int_array_new inside loops) */

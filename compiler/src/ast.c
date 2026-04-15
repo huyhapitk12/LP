@@ -288,3 +288,279 @@ void ast_free(AstNode *node) {
             break;
     }
 }
+
+/* --- AST Debug Dump --- */
+
+static const char *node_type_name(NodeType t) {
+    switch (t) {
+        case NODE_PROGRAM:       return "PROGRAM";
+        case NODE_FUNC_DEF:      return "FUNC_DEF";
+        case NODE_CLASS_DEF:     return "CLASS_DEF";
+        case NODE_IF:            return "IF";
+        case NODE_FOR:           return "FOR";
+        case NODE_WHILE:         return "WHILE";
+        case NODE_RETURN:        return "RETURN";
+        case NODE_ASSIGN:        return "ASSIGN";
+        case NODE_AUG_ASSIGN:    return "AUG_ASSIGN";
+        case NODE_SUBSCRIPT_ASSIGN: return "SUBSCRIPT_ASSIGN";
+        case NODE_EXPR_STMT:     return "EXPR_STMT";
+        case NODE_PASS:          return "PASS";
+        case NODE_BREAK:         return "BREAK";
+        case NODE_CONTINUE:      return "CONTINUE";
+        case NODE_CONST_DECL:    return "CONST_DECL";
+        case NODE_IMPORT:        return "IMPORT";
+        case NODE_WITH:          return "WITH";
+        case NODE_BIN_OP:        return "BIN_OP";
+        case NODE_UNARY_OP:      return "UNARY_OP";
+        case NODE_CALL:          return "CALL";
+        case NODE_NAME:          return "NAME";
+        case NODE_KWARG:         return "KWARG";
+        case NODE_INT_LIT:       return "INT_LIT";
+        case NODE_FLOAT_LIT:     return "FLOAT_LIT";
+        case NODE_STRING_LIT:    return "STRING_LIT";
+        case NODE_FSTRING:       return "FSTRING";
+        case NODE_BOOL_LIT:      return "BOOL_LIT";
+        case NODE_NONE_LIT:      return "NONE_LIT";
+        case NODE_LIST_EXPR:     return "LIST_EXPR";
+        case NODE_DICT_EXPR:     return "DICT_EXPR";
+        case NODE_SET_EXPR:      return "SET_EXPR";
+        case NODE_TUPLE_EXPR:    return "TUPLE_EXPR";
+        case NODE_SUBSCRIPT:     return "SUBSCRIPT";
+        case NODE_ATTRIBUTE:     return "ATTRIBUTE";
+        case NODE_TRY:           return "TRY";
+        case NODE_RAISE:         return "RAISE";
+        case NODE_LIST_COMP:     return "LIST_COMP";
+        case NODE_DICT_COMP:     return "DICT_COMP";
+        case NODE_LAMBDA:        return "LAMBDA";
+        case NODE_YIELD:         return "YIELD";
+        case NODE_PARALLEL_FOR:  return "PARALLEL_FOR";
+        case NODE_SETTINGS:      return "SETTINGS";
+        case NODE_PARALLEL_SETTINGS: return "PARALLEL_SETTINGS";
+        case NODE_SECURITY:      return "SECURITY";
+        case NODE_MATCH:         return "MATCH";
+        case NODE_MATCH_CASE:    return "MATCH_CASE";
+        case NODE_ASYNC_DEF:     return "ASYNC_DEF";
+        case NODE_AWAIT_EXPR:    return "AWAIT_EXPR";
+        case NODE_TYPE_UNION:    return "TYPE_UNION";
+        case NODE_GENERIC_INST:  return "GENERIC_INST";
+        default:                 return "UNKNOWN";
+    }
+}
+
+static void print_indent(int indent) {
+    for (int i = 0; i < indent; i++) printf("  ");
+}
+
+void ast_dump(AstNode *node, int indent) {
+    if (!node) {
+        print_indent(indent);
+        printf("(null)\n");
+        return;
+    }
+
+    print_indent(indent);
+    printf("%s [line %d]", node_type_name(node->type), node->line);
+
+    switch (node->type) {
+        case NODE_PROGRAM:
+            printf(" (%d stmts)\n", node->program.stmts.count);
+            for (int i = 0; i < node->program.stmts.count; i++)
+                ast_dump(node->program.stmts.items[i], indent + 1);
+            break;
+        case NODE_FUNC_DEF:
+            printf(" name=%s params=%d ret=%s\n",
+                   node->func_def.name ? node->func_def.name : "(null)",
+                   node->func_def.params.count,
+                   node->func_def.ret_type ? node->func_def.ret_type : "void");
+            for (int i = 0; i < node->func_def.body.count; i++)
+                ast_dump(node->func_def.body.items[i], indent + 1);
+            break;
+        case NODE_CLASS_DEF:
+            printf(" name=%s base=%s\n",
+                   node->class_def.name ? node->class_def.name : "(null)",
+                   node->class_def.base_class ? node->class_def.base_class : "(none)");
+            for (int i = 0; i < node->class_def.body.count; i++)
+                ast_dump(node->class_def.body.items[i], indent + 1);
+            break;
+        case NODE_IF:
+            printf("\n");
+            print_indent(indent + 1); printf("cond:\n");
+            ast_dump(node->if_stmt.cond, indent + 2);
+            print_indent(indent + 1); printf("then: (%d stmts)\n", node->if_stmt.then_body.count);
+            for (int i = 0; i < node->if_stmt.then_body.count; i++)
+                ast_dump(node->if_stmt.then_body.items[i], indent + 2);
+            if (node->if_stmt.else_branch) {
+                print_indent(indent + 1); printf("else:\n");
+                ast_dump(node->if_stmt.else_branch, indent + 2);
+            }
+            break;
+        case NODE_FOR:
+            printf(" var=%s\n", node->for_stmt.var ? node->for_stmt.var : "(null)");
+            print_indent(indent + 1); printf("iter:\n");
+            ast_dump(node->for_stmt.iter, indent + 2);
+            for (int i = 0; i < node->for_stmt.body.count; i++)
+                ast_dump(node->for_stmt.body.items[i], indent + 1);
+            break;
+        case NODE_WHILE:
+            printf("\n");
+            ast_dump(node->while_stmt.cond, indent + 1);
+            for (int i = 0; i < node->while_stmt.body.count; i++)
+                ast_dump(node->while_stmt.body.items[i], indent + 1);
+            break;
+        case NODE_RETURN:
+            printf("\n");
+            if (node->return_stmt.value)
+                ast_dump(node->return_stmt.value, indent + 1);
+            break;
+        case NODE_ASSIGN:
+            printf(" name=%s type=%s\n",
+                   node->assign.name ? node->assign.name : "(null)",
+                   node->assign.type_ann ? node->assign.type_ann : "(inferred)");
+            if (node->assign.value)
+                ast_dump(node->assign.value, indent + 1);
+            break;
+        case NODE_AUG_ASSIGN:
+            printf(" name=%s op=%s\n",
+                   node->aug_assign.name ? node->aug_assign.name : "(null)",
+                   token_type_name(node->aug_assign.op));
+            if (node->aug_assign.value)
+                ast_dump(node->aug_assign.value, indent + 1);
+            break;
+        case NODE_EXPR_STMT:
+            printf("\n");
+            ast_dump(node->expr_stmt.expr, indent + 1);
+            break;
+        case NODE_BIN_OP:
+            printf(" op=%s\n", token_type_name(node->bin_op.op));
+            ast_dump(node->bin_op.left, indent + 1);
+            ast_dump(node->bin_op.right, indent + 1);
+            break;
+        case NODE_UNARY_OP:
+            printf(" op=%s\n", token_type_name(node->unary_op.op));
+            ast_dump(node->unary_op.operand, indent + 1);
+            break;
+        case NODE_CALL:
+            printf(" (%d args)\n", node->call.args.count);
+            print_indent(indent + 1); printf("func:\n");
+            ast_dump(node->call.func, indent + 2);
+            for (int i = 0; i < node->call.args.count; i++)
+                ast_dump(node->call.args.items[i], indent + 1);
+            break;
+        case NODE_NAME:
+            printf(" \"%s\"\n", node->name_expr.name ? node->name_expr.name : "(null)");
+            break;
+        case NODE_INT_LIT:
+            printf(" %" PRId64 "\n", node->int_lit.value);
+            break;
+        case NODE_FLOAT_LIT:
+            printf(" %g\n", node->float_lit.value);
+            break;
+        case NODE_STRING_LIT:
+            printf(" \"%s\"\n", node->str_lit.value ? node->str_lit.value : "");
+            break;
+        case NODE_BOOL_LIT:
+            printf(" %s\n", node->bool_lit.value ? "True" : "False");
+            break;
+        case NODE_NONE_LIT:
+            printf("\n");
+            break;
+        case NODE_IMPORT:
+            printf(" module=%s alias=%s\n",
+                   node->import_stmt.module ? node->import_stmt.module : "(null)",
+                   node->import_stmt.alias ? node->import_stmt.alias : "(none)");
+            break;
+        case NODE_ATTRIBUTE:
+            printf(" .%s\n", node->attribute.attr ? node->attribute.attr : "(null)");
+            ast_dump(node->attribute.obj, indent + 1);
+            break;
+        case NODE_SUBSCRIPT:
+            printf("\n");
+            ast_dump(node->subscript.obj, indent + 1);
+            ast_dump(node->subscript.index, indent + 1);
+            break;
+        case NODE_LIST_EXPR:
+            printf(" (%d elems)\n", node->list_expr.elems.count);
+            for (int i = 0; i < node->list_expr.elems.count; i++)
+                ast_dump(node->list_expr.elems.items[i], indent + 1);
+            break;
+        case NODE_DICT_EXPR:
+            printf(" (%d pairs)\n", node->dict_expr.keys.count);
+            for (int i = 0; i < node->dict_expr.keys.count; i++) {
+                print_indent(indent + 1); printf("key:\n");
+                ast_dump(node->dict_expr.keys.items[i], indent + 2);
+                print_indent(indent + 1); printf("val:\n");
+                ast_dump(node->dict_expr.values.items[i], indent + 2);
+            }
+            break;
+        case NODE_MATCH:
+            printf("\n");
+            print_indent(indent + 1); printf("value:\n");
+            ast_dump(node->match_stmt.value, indent + 2);
+            for (int i = 0; i < node->match_stmt.cases.count; i++)
+                ast_dump(node->match_stmt.cases.items[i], indent + 1);
+            break;
+        case NODE_MATCH_CASE:
+            printf(" wildcard=%d\n", node->match_case.is_wildcard);
+            if (node->match_case.pattern)
+                ast_dump(node->match_case.pattern, indent + 1);
+            if (node->match_case.guard) {
+                print_indent(indent + 1); printf("guard:\n");
+                ast_dump(node->match_case.guard, indent + 2);
+            }
+            for (int i = 0; i < node->match_case.body.count; i++)
+                ast_dump(node->match_case.body.items[i], indent + 1);
+            break;
+        case NODE_KWARG:
+            printf(" %s=\n", node->kwarg.name ? node->kwarg.name : "(null)");
+            ast_dump(node->kwarg.value, indent + 1);
+            break;
+        case NODE_CONST_DECL:
+            printf(" name=%s\n", node->const_decl.name ? node->const_decl.name : "(null)");
+            ast_dump(node->const_decl.value, indent + 1);
+            break;
+        case NODE_TRY:
+            printf("\n");
+            print_indent(indent + 1); printf("body:\n");
+            for (int i = 0; i < node->try_stmt.body.count; i++)
+                ast_dump(node->try_stmt.body.items[i], indent + 2);
+            if (node->try_stmt.except_body.count > 0) {
+                print_indent(indent + 1); printf("except %s:\n",
+                    node->try_stmt.except_type ? node->try_stmt.except_type : "");
+                for (int i = 0; i < node->try_stmt.except_body.count; i++)
+                    ast_dump(node->try_stmt.except_body.items[i], indent + 2);
+            }
+            break;
+        case NODE_GENERIC_INST:
+            printf(" base=%s (%d type_args)\n",
+                   node->generic_inst.base_name ? node->generic_inst.base_name : "(null)",
+                   node->generic_inst.type_args.count);
+            break;
+        case NODE_ASYNC_DEF:
+            printf(" name=%s\n",
+                   node->async_def.name ? node->async_def.name : "(null)");
+            for (int i = 0; i < node->async_def.body.count; i++)
+                ast_dump(node->async_def.body.items[i], indent + 1);
+            break;
+        case NODE_AWAIT_EXPR:
+            printf("\n");
+            ast_dump(node->await_expr.expr, indent + 1);
+            break;
+        case NODE_LAMBDA:
+            printf(" params=%d multiline=%d\n",
+                   node->lambda_expr.params.count,
+                   node->lambda_expr.is_multiline);
+            if (node->lambda_expr.body)
+                ast_dump(node->lambda_expr.body, indent + 1);
+            for (int i = 0; i < node->lambda_expr.body_stmts.count; i++)
+                ast_dump(node->lambda_expr.body_stmts.items[i], indent + 1);
+            break;
+        case NODE_FSTRING:
+            printf(" (%d parts)\n", node->fstring_expr.parts.count);
+            for (int i = 0; i < node->fstring_expr.parts.count; i++)
+                ast_dump(node->fstring_expr.parts.items[i], indent + 1);
+            break;
+        default:
+            printf("\n");
+            break;
+    }
+}

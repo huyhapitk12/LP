@@ -52,6 +52,7 @@ typedef struct {
     const char *start;
     int length;
     int line;
+    int col;
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
@@ -75,6 +76,8 @@ typedef struct {
     int at_line_start;
     int paren_depth;
     int eof_dedents_done;
+    int col;
+    const char *line_start;
 } Lexer;
 
 void lexer_init(Lexer *lex, const char *source);

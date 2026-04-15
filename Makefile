@@ -51,8 +51,10 @@ $(SQLITE_OBJ): runtime/sqlite3.c
 clean:
 ifeq ($(OS),Windows_NT)
 	del /Q $(BUILD_DIR)\* 2>nul || exit 0
+	if exist "$(SQLITE_OBJ)" del /Q "$(SQLITE_OBJ)"
 else
 	rm -rf $(BUILD_DIR)/*
+	rm -f $(SQLITE_OBJ)
 endif
 
 install: $(TARGET)
@@ -63,14 +65,14 @@ else
 endif
 
 # Unit test target
-test_unit: $(SRC_DIR)/test_ast_unit.c $(SRC_DIR)/ast.c $(SRC_DIR)/lexer.c
+test_unit: compiler/tests/test_ast_unit.c $(SRC_DIR)/ast.c $(SRC_DIR)/lexer.c
 	$(MKDIR)
-	$(CC) $(CFLAGS) $(SRC_DIR)/test_ast_unit.c $(SRC_DIR)/ast.c $(SRC_DIR)/lexer.c $(INC_DIR) -o $(BUILD_DIR)/test_ast_unit$(EXE_EXT) $(LDFLAGS)
+	$(CC) $(CFLAGS) compiler/tests/test_ast_unit.c $(SRC_DIR)/ast.c $(SRC_DIR)/lexer.c $(INC_DIR) -o $(BUILD_DIR)/test_ast_unit$(EXE_EXT) $(LDFLAGS)
 	./$(BUILD_DIR)/test_ast_unit$(EXE_EXT)
 
 test-c: compiler/tests/test_codegen.c compiler/src/codegen.c compiler/tests/test_lexer.c compiler/src/lexer.c compiler/tests/test_parser.c compiler/src/parser.c compiler/src/ast.c
 	$(MKDIR)
-	$(CC) $(CFLAGS) compiler/tests/test_codegen.c compiler/src/codegen.c -I compiler/src -I runtime -o $(BUILD_DIR)/test_codegen$(EXE_EXT) $(LDFLAGS)
+	$(CC) $(CFLAGS) compiler/tests/test_codegen.c compiler/src/codegen.c compiler/src/parser.c compiler/src/lexer.c compiler/src/ast.c -I compiler/src -I runtime -o $(BUILD_DIR)/test_codegen$(EXE_EXT) $(LDFLAGS)
 	./$(BUILD_DIR)/test_codegen$(EXE_EXT)
 	$(CC) $(CFLAGS) compiler/tests/test_lexer.c compiler/src/lexer.c -I compiler/src -o $(BUILD_DIR)/test_lexer$(EXE_EXT) $(LDFLAGS)
 	./$(BUILD_DIR)/test_lexer$(EXE_EXT)
@@ -78,3 +80,4 @@ test-c: compiler/tests/test_codegen.c compiler/src/codegen.c compiler/tests/test
 	./$(BUILD_DIR)/test_parser$(EXE_EXT)
 
 .PHONY: all clean install test_unit test-c
+

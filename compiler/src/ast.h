@@ -218,4 +218,7 @@ void param_list_push(ParamList *list, Param p);
 AstNode *ast_new(LpArena *arena, NodeType type, int line);
 void ast_free(AstNode *node);
 
+/* Debug: print the AST tree to stdout */
+void ast_dump(AstNode *node, int indent);
+
 #endif
