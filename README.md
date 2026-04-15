@@ -69,8 +69,11 @@
 ### Build The Compiler
 
 ```bash
-# POSIX shell
-./compile.sh
+# Windows (CMD or PowerShell)
+lp --build
+
+# Linux / macOS
+./lp.sh --build
 
 # Or using make
 make
@@ -320,14 +323,16 @@ lp package file.lp            # Package for distribution
 ```
 LP/
 ├── compiler/          # Compiler source code (C)
-├── runtime/           # Runtime library
-├── examples/          # Example programs
+│   ├── src/           # Core: lexer, parser, codegen, semantic
+│   └── tests/         # Unit tests (lexer, parser, codegen, AST)
+├── runtime/           # Runtime library (header-only)
+├── examples/          # Example LP programs
 ├── docs/              # Documentation
 ├── vscode-lp/         # VSCode extension
-├── skills/            # AI assistant skills
+├── tests/             # Integration / regression tests
 ├── Makefile           # Build configuration
-├── compile.sh         # Build script (POSIX)
-└── build.bat          # Build script (Windows)
+├── lp.bat             # Build & run script (Windows)
+└── lp.sh              # Build & run script (POSIX)
 ```
 
 ---
@@ -365,14 +370,6 @@ See the [LP Language Wiki](https://github.com/huyhapitk12/LP/wiki) for comprehen
 
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-### Ways to Contribute
-
-- 🐛 Report bugs
-- 💡 Suggest features
-- 📝 Improve documentation
-- 🔧 Submit pull requests
-- ⭐ Star the repository!
-
 ---
 
 ## 📜 License
@@ -380,7 +377,3 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 MIT License - See [LICENSE](LICENSE)
 
 ---
-
-<p align="center">
-  Made with ❤️ by <a href="https://github.com/huyhapitk12">Ho Quang Huy</a>
-</p>

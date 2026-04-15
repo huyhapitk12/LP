@@ -80,7 +80,9 @@ git clone https://github.com/YOUR_USERNAME/LP.git
 cd LP
 
 # Build the compiler
-make
+make                # Linux / macOS
+lp --build          # Windows (CMD or PowerShell)
+./lp.sh --build     # Linux / macOS (alternative)
 
 # Run tests
 ./build/lp test examples
@@ -91,12 +93,10 @@ make
 ```
 LP/
 ├── compiler/
-│   ├── src/           # Source files (.c)
-│   ├── include/       # Header files (.h)
-│   └── tests/         # Compiler tests
-├── runtime/           # Runtime library
-├── examples/          # Example LP programs
-├── docs/              # Documentation
+│   ├── src/           # Source files (.c, .h)
+│   └── tests/         # Compiler test programs
+├── runtime/           # Runtime library (header-only C)
+├── docs/              # Documentation assets
 └── vscode-lp/         # VSCode extension
 ```
 
@@ -292,7 +292,7 @@ def new_feature():
 
 - **GitHub Issues**: For bug reports and feature requests
 - **GitHub Discussions**: For questions and general discussion
-- **Documentation**: Check the `docs/` folder
+- **Documentation**: Check the [GitHub Wiki](https://github.com/huyhapitk12/LP/wiki)
 
 ---
 
