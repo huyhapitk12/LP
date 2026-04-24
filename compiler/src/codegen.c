@@ -1765,11 +1765,11 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
           gen_expr(cg, buf, part);
           buf_write(buf, " ? \"True\" : \"False\"); ");
         } else {
-          /* Default: convert to string representation */
+          /* Default / LP_VAL / unknown: unwrap to int64_t via lp_int() */
           buf_write(buf, "_fs_len += snprintf(_fs_buf + _fs_len, "
-                         "sizeof(_fs_buf) - _fs_len, \"%lld\", (long long)");
+                         "sizeof(_fs_buf) - _fs_len, \"%lld\", (long long)lp_int(");
           gen_expr(cg, buf, part);
-          buf_write(buf, "); ");
+          buf_write(buf, ")); ");
         }
       }
     }
