@@ -127,6 +127,7 @@ typedef struct {
                           range-derived */
   uint32_t non_negative_param_mask; /* bitmask: bit i=1 means param[i] is always
                                        non-negative at all call sites */
+  int is_param;         /* 1 if symbol is a function parameter (default LP_VAL) */
 } Symbol;
 
 typedef struct Scope Scope;
