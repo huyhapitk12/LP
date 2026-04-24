@@ -5849,7 +5849,21 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
     buf_write(buf, "return");
     if (node->return_stmt.value) {
       buf_write(buf, " ");
-      gen_expr(cg, buf, node->return_stmt.value);
+      /* Type-safe return: if the function returns LP_VAL (LpVal) but the
+       * expression evaluates to a native type (int64_t, double, etc.),
+       * wrap it with emit_lp_val so the C types match.  This handles patterns
+       * like  def f(v): v = float(v); return 0.0 - v  where param narrowing
+       * changes the expression type after the return type was inferred. */
+      LpType _ret_t = cg->current_func_ret;
+      LpType _expr_t = infer_type(cg, node->return_stmt.value);
+      if (_ret_t == LP_VAL && _expr_t != LP_UNKNOWN && _expr_t != LP_VAL) {
+        emit_lp_val(cg, buf, node->return_stmt.value);
+      } else if (_ret_t != LP_UNKNOWN && _ret_t != LP_VAL &&
+                 _expr_t != _ret_t) {
+        emit_cast(cg, buf, node->return_stmt.value, _ret_t);
+      } else {
+        gen_expr(cg, buf, node->return_stmt.value);
+      }
     }
     buf_write(buf, ";\n");
     break;
@@ -7784,6 +7798,9 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
   }
   buf_write(&cg->funcs, ") {\n");
 
+  /* Track current function return type for type-safe return wrapping */
+  cg->current_func_ret = ret;
+
   /* Scan body for local variable declarations and emit them at the top */
   scan_declarations(cg, &node->func_def.body);
   /* Emit __builtin_assume for non-negative params → allows GCC to use native %
@@ -7970,7 +7987,8 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
 
   buf_write(&cg->funcs, "}\n\n");
 
-  /* Restore scope */
+  /* Restore scope and clear current function return type */
+  cg->current_func_ret = LP_VOID;
   cg->scope = func_scope->parent;
   scope_free(func_scope);
 }
@@ -8098,13 +8116,17 @@ static void gen_async_func_def(CodeGen *cg, AstNode *node,
   }
   buf_write(&cg->funcs, ") {\n");
 
+  /* Track current function return type for type-safe return wrapping */
+  cg->current_func_ret = ret;
+
   /* Body */
   for (int i = 0; i < node->async_def.body.count; i++)
     gen_stmt(cg, &cg->funcs, node->async_def.body.items[i], 1);
 
   buf_write(&cg->funcs, "}\n\n");
 
-  /* Restore scope */
+  /* Restore scope and clear current function return type */
+  cg->current_func_ret = LP_VOID;
   cg->scope = func_scope->parent;
   scope_free(func_scope);
 }
@@ -8303,6 +8325,7 @@ void codegen_init(CodeGen *cg) {
   cg->uses_gui = 0;
   cg->has_main = 0;
   cg->main_return_type = LP_VOID;
+  cg->current_func_ret = LP_VOID;
   cg->thread_adapter_count = 0;
 }
 void codegen_generate(CodeGen *cg, AstNode *program) {
