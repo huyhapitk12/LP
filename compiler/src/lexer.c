@@ -293,6 +293,7 @@ static Token lex_token(Lexer *lex) {
         case ':': return make_token(TOK_COLON, start, 1, lex->line);
         case ',': return make_token(TOK_COMMA, start, 1, lex->line);
         case '.': return make_token(TOK_DOT, start, 1, lex->line);
+        case ';': return make_token(TOK_SEMICOLON, start, 1, lex->line);
         case '@': return make_token(TOK_AT, start, 1, lex->line);
     }
     return make_token(TOK_ERROR, start, 1, lex->line);
@@ -436,7 +437,7 @@ const char *token_type_name(TokenType type) {
         "&=", "|=", "^=", "<<=", ">>=",
         "->", "@",
         "(", ")", "[", "]", "{", "}",
-        ":", ",", ".",
+        ":", ",", ".", ";",
         "NEWLINE", "INDENT", "DEDENT",
         "EOF", "ERROR",
     };

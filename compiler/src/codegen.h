@@ -27,6 +27,7 @@ typedef enum {
   LP_PYOBJ,
   LP_LIST,
   LP_ARRAY,
+  LP_TENSOR,
   LP_STR_ARRAY,
   LP_DICT,
   LP_SET,
@@ -84,6 +85,7 @@ typedef enum {
   MOD_TIER1_UNITTEST,
   MOD_TIER1_GUI,
   MOD_TIER2_NUMPY,
+  MOD_TIER2_TENSOR,
   MOD_TIER3_PYTHON
 } ModTier;
 
@@ -137,14 +139,15 @@ struct Scope {
 /* Code generator */
 typedef struct {
   Buffer header;    /* #include, forward decls */
+  Buffer globals;   /* file-scope globals for top-level state */
   Buffer helpers;   /* generated helper structs/wrappers */
   Buffer funcs;     /* function definitions */
   Buffer main_body; /* top-level code goes into main() */
   Scope *scope;
   int had_error;
   char error_msg[512];
-  char *current_class; /* Name of the class currently being compiled (for access
-                          checks) */
+  char *current_class; /* Name of the class currently being compiled (for access checks) */
+  const char *source_file; /* Original LP source file name for #line directives */
   /* Module tracking */
   ImportInfo imports[64];
   int import_count;
@@ -172,9 +175,13 @@ typedef struct {
   int uses_logging;
   int uses_unittest;
   int uses_gui;
+  int uses_tensor;   /* needs lp_tensor.h */
   int has_main;            /* True if main() function was defined by user */
   LpType main_return_type; /* Return type of main() function */
   int thread_adapter_count;
+  /* Hybrid ASM: functions compiled directly to ASM object files */
+  char *asm_compiled_funcs[32];
+  int asm_compiled_func_count;
 } CodeGen;
 
 void codegen_init(CodeGen *cg);

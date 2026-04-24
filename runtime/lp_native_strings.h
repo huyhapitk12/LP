@@ -286,6 +286,38 @@ static inline const char *lp_str_join(const char *sep, LpStrArray arr) {
     return r;
 }
 
+/* str.join(separator, LpList*) — for dynamic lists */
+static inline const char *lp_str_join_list(const char *sep, LpList *list) {
+    if (!list || list->len == 0) {
+        char *r = (char *)malloc(1);
+        if (r) r[0] = '\0';
+        return r ? r : "";
+    }
+    size_t seplen = sep ? strlen(sep) : 0;
+    /* First pass: compute total size */
+    size_t total = 0;
+    for (int64_t i = 0; i < list->len; i++) {
+        const char *s = lp_str_from_val(list->items[i]);
+        if (s) total += strlen(s);
+        if (i > 0) total += seplen;
+    }
+    char *r = (char *)malloc(total + 1);
+    if (!r) return "";
+    char *dst = r;
+    /* Second pass: build string */
+    for (int64_t i = 0; i < list->len; i++) {
+        if (i > 0 && sep) { memcpy(dst, sep, seplen); dst += seplen; }
+        const char *s = lp_str_from_val(list->items[i]);
+        if (s) {
+            size_t len = strlen(s);
+            memcpy(dst, s, len);
+            dst += len;
+        }
+    }
+    *dst = '\0';
+    return r;
+}
+
 /* Additional string methods */
 
 /* str.center(width, fillchar) - Center string in width */

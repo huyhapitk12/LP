@@ -317,7 +317,7 @@ static void repl_help(void) {
 static void repl_banner(void) {
     printf("\n");
     printf(C_BOLD C_CYAN "  +---------------------------------------+" C_RESET "\n");
-    printf(C_BOLD C_CYAN "  |" C_RESET C_BOLD "     LP Language v0.2 - Interactive     " C_CYAN "|" C_RESET "\n");
+    printf(C_BOLD C_CYAN "  |" C_RESET C_BOLD "     LP Language v0.1.0 - Interactive   " C_CYAN "|" C_RESET "\n");
     printf(C_BOLD C_CYAN "  |" C_RESET C_DIM "     Type .help for commands            " C_CYAN "|" C_RESET "\n");
     printf(C_BOLD C_CYAN "  +---------------------------------------+" C_RESET "\n");
     printf("\n");

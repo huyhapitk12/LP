@@ -15,7 +15,7 @@ typedef enum {
     NODE_INT_LIT, NODE_FLOAT_LIT, NODE_STRING_LIT, NODE_FSTRING,
     NODE_BOOL_LIT, NODE_NONE_LIT, NODE_LIST_EXPR,
     NODE_DICT_EXPR, NODE_SET_EXPR, NODE_TUPLE_EXPR,
-    NODE_SUBSCRIPT, NODE_ATTRIBUTE,
+    NODE_SUBSCRIPT, NODE_ATTRIBUTE, NODE_SLICE,
     NODE_TRY, NODE_RAISE,
     NODE_LIST_COMP, NODE_DICT_COMP, NODE_LAMBDA, NODE_YIELD,
     NODE_PARALLEL_FOR,
@@ -105,6 +105,7 @@ struct AstNode {
         struct { NodeList elems; } set_expr;
         struct { NodeList elems; } tuple_expr;
         struct { AstNode *obj; AstNode *index; } subscript;
+        struct { AstNode *obj; AstNode *start; AstNode *stop; AstNode *step; } slice;
         struct { AstNode *obj; char *attr; } attribute;
         struct { char *module; char *alias; /* NULL = use module name */ } import_stmt;
         struct { AstNode *expr; char *alias; NodeList body; } with_stmt;

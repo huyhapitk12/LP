@@ -1,15 +1,13 @@
 #ifndef LP_ARRAY_H
 #define LP_ARRAY_H
 
-#include <stdint.h>
-#include <stdlib.h>
+/*
+ * Backward compatibility layer.
+ * LpArray is now a typedef for LpTensor.
+ * All lp_np_* functions are #defined as macros in lp_tensor.h.
+ */
+#include "lp_tensor.h"
 
-/* Dynamic array type (mapped from numpy or standard lists) */
-typedef struct {
-    double *data;
-    int64_t len;
-    int64_t cap;
-    int shape[4]; /* Basic ndim tracking */
-} LpArray;
+typedef LpTensor LpArray;
 
 #endif /* LP_ARRAY_H */

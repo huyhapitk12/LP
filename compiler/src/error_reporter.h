@@ -46,6 +46,9 @@ typedef enum {
     ERR_ARRAY_OUT_OF_BOUNDS,
     ERR_INFINITE_RECURSION,
     
+    /* Native Compilation Errors E051-E060 */
+    ERR_NATIVE_COMPILATION = 51,
+    
     /* Warnings W001-W010 */
     WARN_ASSIGN_IN_COND = 101,
     WARN_UNUSED_VAR,

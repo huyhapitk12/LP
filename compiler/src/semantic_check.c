@@ -404,6 +404,14 @@ static void traverse_node(LpSemanticChecker *checker, AstNode *node) {
             break;
         }
         
+        
+        case NODE_SUBSCRIPT_ASSIGN:
+            /* arr[i] = expr — traverse obj, index, and value to track usage */
+            traverse_node(checker, node->subscript_assign.obj);
+            traverse_node(checker, node->subscript_assign.index);
+            traverse_node(checker, node->subscript_assign.value);
+            break;
+
         case NODE_AUG_ASSIGN:
             traverse_node(checker, node->aug_assign.value);
             break;
@@ -578,6 +586,10 @@ static void traverse_node(LpSemanticChecker *checker, AstNode *node) {
             break;
             
         case NODE_PARALLEL_FOR:
+            /* Register loop variable before traversing body */
+            if (node->parallel_for.var) {
+                lp_symbol_table_add(&checker->symbols, node->parallel_for.var, node->line, 0, 0);
+            }
             traverse_node(checker, node->parallel_for.iter);
             traverse_list(checker, &node->parallel_for.body);
             break;
@@ -594,6 +606,10 @@ static void traverse_node(LpSemanticChecker *checker, AstNode *node) {
             
         case NODE_WITH:
             traverse_node(checker, node->with_stmt.expr);
+            /* Register the alias variable from 'with ... as alias:' */
+            if (node->with_stmt.alias) {
+                lp_symbol_table_add(&checker->symbols, node->with_stmt.alias, node->line, 0, 0);
+            }
             traverse_list(checker, &node->with_stmt.body);
             break;
             

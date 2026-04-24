@@ -245,9 +245,13 @@ int lp_run_capture(const char *file, const char *const argv[],
     }
     
     DWORD bytes_read = 0;
+    DWORD total_read = 0;
     if (output_buf && output_size > 0) {
-        ReadFile(hReadPipe, output_buf, (DWORD)(output_size - 1), &bytes_read, NULL);
-        output_buf[bytes_read] = '\0';
+        while (ReadFile(hReadPipe, output_buf + total_read, (DWORD)(output_size - 1 - total_read), &bytes_read, NULL) && bytes_read > 0) {
+            total_read += bytes_read;
+            if (total_read >= output_size - 1) break;
+        }
+        output_buf[total_read] = '\0';
     }
     
     WaitForSingleObject(pi.hProcess, INFINITE);

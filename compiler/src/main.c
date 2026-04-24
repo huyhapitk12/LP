@@ -354,6 +354,64 @@ static int run_tool_wait(const char *tool, const char *const *args) {
     return (int)_spawnvp(_P_WAIT, tool, args);
 }
 
+static void get_basename(char *dest, int dest_size, const char *path);
+
+static int run_gcc_with_formatted_errors(const char *gcc, const char *const *args, const char *source, const char *input_file) {
+    char *output_buf = (char *)malloc(65536);
+    char *copy_buf = (char *)malloc(65536);
+    if (!output_buf || !copy_buf) {
+        if (output_buf) free(output_buf);
+        if (copy_buf) free(copy_buf);
+        return run_tool_wait(gcc, args);
+    }
+    
+    int ret = lp_run_capture(gcc, args, output_buf, 65536);
+    if (ret != 0) {
+        strcpy(copy_buf, output_buf);
+        char *line = strtok(copy_buf, "\n\r");
+        int printed_errors = 0;
+        
+        char basename[256];
+        get_basename(basename, sizeof(basename), input_file);
+        
+        int last_line = -1;
+        
+        while (line) {
+            char *err_ptr = strstr(line, "error:");
+            char *warn_ptr = strstr(line, "warning:");
+            char *target = err_ptr ? err_ptr : warn_ptr;
+            
+            if (target && (strstr(line, basename) || strstr(line, ".lp"))) {
+                char *colon1 = strchr(line, ':');
+                if (colon1) {
+                    int lnum = atoi(colon1 + 1);
+                    if (lnum > 0 && lnum != last_line) {
+                        char *msg = target + (err_ptr ? 6 : 8);
+                        while (*msg == ' ') msg++;
+                        
+                        if (err_ptr) {
+                            lp_report_error(ERR_NATIVE_COMPILATION, lnum, 1, msg, "Check native type conversion, arithmetic types or syntax", source);
+                        } else {
+                            lp_report_warning(ERR_NATIVE_COMPILATION, lnum, 1, msg, NULL, source);
+                        }
+                        printed_errors++;
+                        last_line = lnum;
+                    }
+                }
+            }
+            line = strtok(NULL, "\n\r");
+        }
+        
+        if (printed_errors == 0) {
+            fprintf(stderr, "%s\n", output_buf);
+        }
+    }
+    
+    free(output_buf);
+    free(copy_buf);
+    return ret;
+}
+
 typedef struct {
     const char *args[64];
     int ac;
@@ -374,6 +432,47 @@ static void al_add(ArgList *al, const char *arg) {
 
 static void al_finish(ArgList *al) {
     al->args[al->ac] = NULL;
+}
+
+static int lp_target_is_windows(const char *target_os) {
+    if (target_os && target_os[0] != '\0') {
+        return strcmp(target_os, "windows-x64") == 0;
+    }
+#ifdef _WIN32
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+static int lp_generated_c_uses_gui(const char *c_path) {
+    char line[256];
+    FILE *fp = fopen(c_path, "r");
+    if (!fp) return 0;
+
+    while (fgets(line, sizeof(line), fp)) {
+        if (strstr(line, "#include \"lp_gui.h\"")) {
+            fclose(fp);
+            return 1;
+        }
+    }
+
+    fclose(fp);
+    return 0;
+}
+
+static void lp_add_gui_linker_flags(ArgList *al, int uses_gui, const char *target_os) {
+    if (!uses_gui || !lp_target_is_windows(target_os)) return;
+
+    al_add(al, "-lgdi32");
+    al_add(al, "-lopengl32");
+    al_add(al, "-lglu32");
+    al_add(al, "-lcomdlg32");
+    al_add(al, "-lcomctl32");
+    al_add(al, "-ld3d11");
+    al_add(al, "-ldxgi");
+    al_add(al, "-ldxguid");
+    al_add(al, "-ld3dcompiler_47");
 }
 
 /* Get directory of the running executable */
@@ -559,7 +658,9 @@ int main(int argc, char **argv) {
             fprintf(stderr, "[LP Build] Failed to generate intermediate C code.\n");
             return 1;
         }
-        
+
+        int uses_gui = lp_generated_c_uses_gui(tmp_c);
+
         /* 2. Call GCC with requested flags */
         const char *gcc_path = find_gcc();
         if (target_os) {
@@ -637,6 +738,7 @@ int main(int argc, char **argv) {
         al_add(&al, "-fopenmp");  /* Always enable OpenMP - harmless if not used */
         al_add(&al, "-lm");
         al_add(&al, LP_LWINHTTP);
+        lp_add_gui_linker_flags(&al, uses_gui, target_os);
         al_finish(&al);
         
         printf("[LP Build] Running Compile Chain...\n");
@@ -753,6 +855,7 @@ int main(int argc, char **argv) {
         
         CodeGen cg;
         codegen_init(&cg);
+    cg.source_file = input_file;
         codegen_generate(&cg, program);
         
         if (cg.had_error) {
@@ -813,6 +916,7 @@ int main(int argc, char **argv) {
         al_add(&al, "-fopenmp");  /* Always enable OpenMP - harmless if not used */
         al_add(&al, "-lm");
         al_add(&al, LP_LWINHTTP);
+        lp_add_gui_linker_flags(&al, cg.uses_gui, NULL);
         if (cg.uses_sqlite) {
             if (!lp_join2(sql_path, sizeof(sql_path), exe_dir, LP_PATH_SEP_STR ".." LP_PATH_SEP_STR "runtime" LP_PATH_SEP_STR "sqlite3.o")) {
                 fprintf(stderr, "[LP Export] SQLite object path is too long.\n");
@@ -828,7 +932,7 @@ int main(int argc, char **argv) {
         al_finish(&al);
         
         printf("[LP Export] Compiling shared library: %s\n", dll_path);
-        int r2 = run_tool_wait(gcc_path, al.args);
+        int r2 = run_gcc_with_formatted_errors(gcc_path, (const char *const *)al.args, source, input_file);
         remove(tmp_c);
         
         free(c_code);
@@ -850,7 +954,7 @@ int main(int argc, char **argv) {
     int emit_c_only = 0;
     int compile_only = 0;
     int emit_asm = 0;
-    int use_gcc_backend = 0;         /* --gcc: use GCC backend (default is native ASM) */
+    int use_asm_only = 0;            /* --asm: use pure native ASM (default is GCC hybrid) */
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
@@ -862,8 +966,8 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "-asm") == 0 && i + 1 < argc) {
             output_asm = argv[++i];
             emit_asm = 1;
-        } else if (strcmp(argv[i], "--gcc") == 0 || strcmp(argv[i], "--with-gcc") == 0) {
-            use_gcc_backend = 1;  /* Use GCC backend instead of native ASM */
+        } else if (strcmp(argv[i], "--asm") == 0 || strcmp(argv[i], "--native") == 0) {
+            use_asm_only = 1;  /* Use pure native ASM backend */
         } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
             printf("LP Language v0.1.0\n");
             return 0;
@@ -871,8 +975,8 @@ int main(int argc, char **argv) {
             printf("LP Language v0.1.0 - Lightweight Native Compiler\n");
             printf("Accepts .lp and .py files\n\n");
             printf("Usage:\n");
-            printf("  lp <file.lp|.py>            Run directly (native ASM, no GCC!)\n");
-            printf("  lp <file.lp|.py> --gcc      Run using GCC backend\n");
+            printf("  lp <file.lp|.py>            Run (GCC hybrid, full features)\n");
+            printf("  lp <file.lp|.py> --asm      Run using pure native ASM backend\n");
             printf("  lp <file.lp|.py> -o out.c   Generate C code\n");
             printf("  lp <file.lp|.py> -c out.exe Compile to executable\n");
             printf("  lp <file.lp|.py> -asm out.s Generate assembly\n");
@@ -882,8 +986,9 @@ int main(int argc, char **argv) {
             printf("  lp profile <file>              Profile execution\n");
             printf("  lp watch <file>                Hot reload mode\n");
             printf("  lp                             Interactive REPL\n");
-            printf("\nNative compilation (default, no GCC required!):\n");
-            printf("  lp file.lp                  Compile and run using only as+ld\n");
+            printf("\nHybrid compilation (default):\n");
+            printf("  Hot functions auto-detected -> compiled to native ASM\n");
+            printf("  Everything else -> compiled through GCC (full features)\n");
             return 0;
         } else {
             input_file = argv[i];
@@ -937,13 +1042,17 @@ int main(int argc, char **argv) {
     }
 
     /* ══════════════════════════════════════════════════════════════
-     * NATIVE ASSEMBLY BACKEND (DEFAULT) - No GCC required!
+     * PURE NATIVE ASSEMBLY BACKEND (opt-in with --asm)
      * ══════════════════════════════════════════════════════════════ */
-    if (!use_gcc_backend && !emit_c_only && !emit_asm) {
-        printf("[LP] Native compilation (no GCC)\n");
+    if (use_asm_only && !emit_c_only && !emit_asm) {
+        printf("[LP] Pure native ASM compilation (--asm)\n");
 
         AsmCodeGen acg;
+#ifdef _WIN32
+        asm_codegen_init(&acg, TARGET_WINDOWS_X64, 2);
+#else
         asm_codegen_init(&acg, TARGET_LINUX_X64, 2);  /* O2 optimization */
+#endif
 
         if (!asm_generate(&acg, program)) {
             fprintf(stderr, "[LP ASM] Code generation failed: %s\n", acg.error_msg);
@@ -1000,6 +1109,20 @@ int main(int argc, char **argv) {
         }
 
         /* SECURITY FIX: Use spawn for linking too */
+#ifdef _WIN32
+        {
+            const char *ld_argv[] = {"gcc", obj_file, "-o", exe_file, "-lm", NULL};
+            int ret = _spawnvp(_P_WAIT, "gcc", ld_argv);
+            if (ret != 0) {
+                fprintf(stderr, "[LP ASM] Linking failed\n");
+                remove(obj_file);
+                asm_codegen_free(&acg);
+                ast_free(program);
+                free(source);
+                return 1;
+            }
+        }
+#else
         /* Link: ld -o file file.o -lc --dynamic-linker /lib64/ld-linux-x86-64.so.2 */
         {
             const char *ld_argv[] = {"ld", "-o", exe_file, obj_file, "-lc", 
@@ -1014,6 +1137,7 @@ int main(int argc, char **argv) {
                 return 1;
             }
         }
+#endif
 
         /* Cleanup object file */
         remove(obj_file);
@@ -1054,9 +1178,92 @@ int main(int argc, char **argv) {
         return ret;
     }
 
+    /* ══════════════════════════════════════════════════════════════
+     * HYBRID ASM DETECTION - Auto-detect hot functions for native ASM
+     * ══════════════════════════════════════════════════════════════ */
+    char *asm_hot_funcs[32];
+    int asm_hot_count = 0;
+    char asm_obj_files[32][512];
+    int asm_obj_count = 0;
+
+    if (!emit_c_only && !emit_asm) {
+        /* Scan AST for eligible functions */
+        for (int i = 0; i < program->program.stmts.count && asm_hot_count < 32; i++) {
+            AstNode *stmt = program->program.stmts.items[i];
+            if (stmt->type != NODE_FUNC_DEF) continue;
+            if (strcmp(stmt->func_def.name, "main") == 0) continue;
+
+            /* Check: all params must have int annotation */
+            int all_int = 1;
+            for (int p = 0; p < stmt->func_def.params.count; p++) {
+                const char *ann = stmt->func_def.params.items[p].type_ann;
+                if (!ann || strcmp(ann, "int") != 0) {
+                    all_int = 0;
+                    break;
+                }
+            }
+            if (!all_int) continue;
+
+            /* Check: must contain parallel_for in body */
+            int has_parallel = 0;
+            for (int b = 0; b < stmt->func_def.body.count; b++) {
+                if (stmt->func_def.body.items[b]->type == NODE_PARALLEL_FOR) {
+                    has_parallel = 1;
+                    break;
+                }
+            }
+            if (!has_parallel) continue;
+
+            /* This function is eligible for ASM compilation */
+            fprintf(stderr, "[LP Hybrid] Hot function detected: %s -> compiling to native ASM\n",
+                    stmt->func_def.name);
+
+            AsmCodeGen acg;
+#ifdef _WIN32
+            asm_codegen_init(&acg, TARGET_WINDOWS_X64, 2);
+#else
+            asm_codegen_init(&acg, TARGET_LINUX_X64, 2);
+#endif
+
+            if (asm_generate_single_func(&acg, stmt)) {
+                char basename[256];
+                get_basename(basename, sizeof(basename), input_file);
+                char asm_file[512];
+                snprintf(asm_file, sizeof(asm_file), "__lp_%s_%s.s", basename, stmt->func_def.name);
+
+                if (asm_write_to_file(&acg, asm_file)) {
+                    /* Assemble to .o */
+                    char obj_file[512];
+                    snprintf(obj_file, sizeof(obj_file), "__lp_%s_%s.o", basename, stmt->func_def.name);
+
+                    const char *as_argv[] = {"as", "-o", obj_file, asm_file, NULL};
+                    int ret = _spawnvp(_P_WAIT, "as", as_argv);
+                    if (ret == 0) {
+                        asm_hot_funcs[asm_hot_count] = strdup(stmt->func_def.name);
+                        strncpy(asm_obj_files[asm_obj_count], obj_file, sizeof(asm_obj_files[0]) - 1);
+                        asm_hot_count++;
+                        asm_obj_count++;
+                        fprintf(stderr, "[LP Hybrid] Compiled %s to native ASM: %s\n",
+                                stmt->func_def.name, obj_file);
+                    }
+                    remove(asm_file);
+                }
+            }
+            asm_codegen_free(&acg);
+        }
+    }
+
     /* Generate C code */
     CodeGen cg;
     codegen_init(&cg);
+    cg.source_file = input_file;
+
+    /* Pass ASM-compiled functions to C codegen (so it emits extern instead) */
+    for (int i = 0; i < asm_hot_count; i++) {
+        cg.asm_compiled_funcs[i] = asm_hot_funcs[i];
+    }
+    cg.asm_compiled_func_count = asm_hot_count;
+
     codegen_generate(&cg, program);
     char *c_code = codegen_get_output(&cg);
 
@@ -1267,7 +1474,7 @@ int main(int argc, char **argv) {
         al_add(&al, "-std=gnu99");
         al_add(&al, "-O3");
         al_add(&al, "-march=native");
-        if (!emit_asm) al_add(&al, "-flto");
+        if (!emit_asm && asm_obj_count == 0) al_add(&al, "-flto");
         al_add(&al, "-fstrict-aliasing");
         al_add(&al, "-funroll-loops");
         al_add(&al, "-ffast-math");
@@ -1278,6 +1485,10 @@ int main(int argc, char **argv) {
         al_add(&al, "-fprefetch-loop-arrays");
         if (emit_asm) al_add(&al, "-S");
         al_add(&al, tmp_c);
+        /* Add ASM-compiled hot function objects */
+        for (int i = 0; i < asm_obj_count; i++) {
+            al_add(&al, asm_obj_files[i]);
+        }
         al_add(&al, inc_flag);
         if (cg.uses_python) al_add(&al, py_inc_arg);
         al_add(&al, "-o");
@@ -1291,10 +1502,11 @@ int main(int argc, char **argv) {
             al_add(&al, "-lmvec");        /* SIMD math library for vectorized sin/cos/log/sqrt */
 #endif
             al_add(&al, LP_LWINHTTP);
+            lp_add_gui_linker_flags(&al, cg.uses_gui, NULL);
             al_add(&al, sqlite_obj);
         }
         al_finish(&al);
-        ret = (int)run_tool_wait(gcc, al.args);
+        ret = run_gcc_with_formatted_errors(gcc, (const char *const *)al.args, source, input_file);
     }
     
     if (ret != 0) {
@@ -1324,6 +1536,14 @@ int main(int argc, char **argv) {
     fflush(stdout);
     ret = (int)_spawnl(_P_WAIT, exe_path, exe_path, NULL);
     remove(exe_path);
+
+    /* Clean up ASM hybrid object files */
+    for (int i = 0; i < asm_obj_count; i++) {
+        remove(asm_obj_files[i]);
+    }
+    for (int i = 0; i < asm_hot_count; i++) {
+        free(asm_hot_funcs[i]);
+    }
 
     free(c_code); codegen_free(&cg); ast_free(program); lp_memory_arena_free(arena); free(source);
     return ret;
@@ -1476,6 +1696,7 @@ int run_tests(const char *argv0, const char *test_dir) {
             /* Generate C code from the source */
             CodeGen cg;
             codegen_init(&cg);
+    cg.source_file = filepath;
             codegen_generate(&cg, program);
             char *c_code = codegen_get_output(&cg);
 
@@ -1567,9 +1788,10 @@ int run_tests(const char *argv0, const char *test_dir) {
                 al_add(&al, "-fopenmp");
                 al_add(&al, "-lm");
                 al_add(&al, LP_LWINHTTP);
+                lp_add_gui_linker_flags(&al, cg.uses_gui, NULL);
                 al_add(&al, sqlite_obj);
                 al_finish(&al);
-                ret = (int)run_tool_wait(gcc, al.args);
+                ret = run_gcc_with_formatted_errors(gcc, (const char *const *)al.args, source, filepath);
             }
 
             if (ret != 0) {
@@ -1670,6 +1892,7 @@ int run_profile(const char *argv0, const char *input_file) {
     /* Generate C code */
     CodeGen cg;
     codegen_init(&cg);
+    cg.source_file = input_file;
     codegen_generate(&cg, program);
     char *c_code = codegen_get_output(&cg);
     if (cg.had_error) {
@@ -1785,8 +2008,10 @@ int run_profile(const char *argv0, const char *input_file) {
         al_add(&al, exe_path);
         if (lp_target_needs_pthread(cg.uses_thread, NULL)) al_add(&al, "-pthread");
         al_add(&al, "-lm");
+        al_add(&al, LP_LWINHTTP);
+        lp_add_gui_linker_flags(&al, cg.uses_gui, NULL);
         al_finish(&al);
-        ret = (int)run_tool_wait(gcc, al.args);
+        ret = run_gcc_with_formatted_errors(gcc, (const char *const *)al.args, source, input_file);
     }
 
     if (ret != 0) {
@@ -1917,6 +2142,7 @@ int run_watch(const char *argv0, const char *input_file) {
             /* Codegen */
             CodeGen cg;
             codegen_init(&cg);
+    cg.source_file = input_file;
             codegen_generate(&cg, program);
             char *c_code = codegen_get_output(&cg);
 
@@ -1969,6 +2195,7 @@ int run_watch(const char *argv0, const char *input_file) {
             }
             al_add(&al, "-lm");
             al_add(&al, LP_LWINHTTP);
+            lp_add_gui_linker_flags(&al, cg.uses_gui, NULL);
             if (cg.uses_sqlite && runtime_inc[0]) {
                 if (!lp_join2(sql_path, sizeof(sql_path), runtime_inc, LP_PATH_SEP_STR "sqlite3.o")) {
                     printf(" \033[1;31mSQLite path too long\033[0m\n");
@@ -2020,3 +2247,4 @@ int run_watch(const char *argv0, const char *input_file) {
     printf("\n  \033[1;33mStopped watching.\033[0m\n");
     return 0;
 }
+

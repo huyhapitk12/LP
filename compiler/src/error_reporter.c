@@ -128,6 +128,9 @@ const char *lp_error_code_name(LpErrorCode code) {
         case ERR_ARRAY_OUT_OF_BOUNDS: return "E036";
         case ERR_INFINITE_RECURSION: return "E037";
         
+        /* Native Compilation */
+        case ERR_NATIVE_COMPILATION: return "E051";
+        
         /* Warnings */
         case WARN_ASSIGN_IN_COND: return "W001";
         case WARN_UNUSED_VAR: return "W002";

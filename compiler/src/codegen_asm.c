@@ -322,6 +322,7 @@ void asm_func_prologue(AsmCodeGen *gen, const char *name, int stack_size) {
     asm_emit(gen, "    pushq %%r13\n");
     asm_emit(gen, "    pushq %%r14\n");
     asm_emit(gen, "    pushq %%r15\n");
+    asm_emit(gen, "    pushq %%rdi\n"); /* Stack alignment padding (6 pushes * 8 = 48 bytes -> keeps 16n) */
 
     if (gen->func) {
         gen->func->stack_size = stack_size + 40; /* 5 saved regs * 8 bytes */
@@ -329,7 +330,12 @@ void asm_func_prologue(AsmCodeGen *gen, const char *name, int stack_size) {
 }
 
 void asm_func_epilogue(AsmCodeGen *gen) {
-    asm_emit(gen, ".Lepilogue:\n");
+    if (gen->func && gen->func->name) {
+        asm_emit(gen, ".L%s_epilogue:\n", gen->func->name);
+    } else {
+        asm_emit(gen, ".Lepilogue:\n");
+    }
+    asm_emit(gen, "    popq %%rdi\n");
     asm_emit(gen, "    popq %%r15\n");
     asm_emit(gen, "    popq %%r14\n");
     asm_emit(gen, "    popq %%r13\n");
@@ -646,8 +652,67 @@ static void asm_gen_expr(AsmCodeGen *gen, AstNode *node) {
         }
 
         case NODE_CALL: {
-            /* Arguments in System V ABI: rdi, rsi, rdx, rcx, r8, r9 */
-            X64Reg arg_regs[] = {REG_RDI, REG_RSI, REG_RDX, REG_RCX, REG_R8, REG_R9};
+            /* Check for native method overrides */
+            if (node->call.func->type == NODE_ATTRIBUTE && 
+                node->call.func->attribute.obj->type == NODE_NAME && 
+                strcmp(node->call.func->attribute.obj->name_expr.name, "time") == 0 && 
+                strcmp(node->call.func->attribute.attr, "time") == 0) {
+                
+                if (gen->target == TARGET_WINDOWS_X64) {
+                    asm_emit(gen, "    movq $0, %%rcx\n");
+                    asm_emit(gen, "    subq $32, %%rsp\n");
+                    asm_emit(gen, "    call time\n");
+                    asm_emit(gen, "    addq $32, %%rsp\n");
+                } else {
+                    asm_emit(gen, "    movq $0, %%rdi\n");
+                    asm_emit(gen, "    call time\n");
+                }
+                break;
+            }
+            
+            if (node->call.func->type == NODE_NAME && strcmp(node->call.func->name_expr.name, "print") == 0) {
+                if (node->call.args.count > 0) {
+                    AstNode *arg = node->call.args.items[0];
+                    if (arg->type == NODE_STRING_LIT) {
+                        asm_gen_expr(gen, arg);
+                        if (gen->target == TARGET_WINDOWS_X64) {
+                            asm_emit(gen, "    movq %%rax, %%rcx\n");
+                            asm_emit(gen, "    subq $32, %%rsp\n");
+                            asm_emit(gen, "    call puts\n");
+                            asm_emit(gen, "    addq $32, %%rsp\n");
+                        } else {
+                            asm_emit(gen, "    movq %%rax, %%rdi\n");
+                            asm_emit(gen, "    call puts\n");
+                        }
+                        break;
+                    } else {
+                        int label_fmt = gen->labels.counter++;
+                        asm_emit_data(gen, "    .align 8\n");
+                        asm_emit_data(gen, ".LC%d:\n    .asciz \"%%lld\\n\"\n", label_fmt);
+                        
+                        asm_gen_expr(gen, arg);
+                        
+                        if (gen->target == TARGET_WINDOWS_X64) {
+                            asm_emit(gen, "    movq %%rax, %%rdx\n");
+                            asm_emit(gen, "    leaq .LC%d(%%rip), %%rcx\n", label_fmt);
+                            asm_emit(gen, "    subq $32, %%rsp\n");
+                            asm_emit(gen, "    call printf\n");
+                            asm_emit(gen, "    addq $32, %%rsp\n");
+                        } else {
+                            asm_emit(gen, "    movq %%rax, %%rsi\n");
+                            asm_emit(gen, "    leaq .LC%d(%%rip), %%rdi\n", label_fmt);
+                            asm_emit(gen, "    movq $0, %%rax\n");
+                            asm_emit(gen, "    call printf\n");
+                        }
+                        break;
+                    }
+                }
+            }
+
+            X64Reg arg_regs_sysv[] = {REG_RDI, REG_RSI, REG_RDX, REG_RCX, REG_R8, REG_R9};
+            X64Reg arg_regs_win[] = {REG_RCX, REG_RDX, REG_R8, REG_R9};
+            X64Reg *arg_regs = (gen->target == TARGET_WINDOWS_X64) ? arg_regs_win : arg_regs_sysv;
+            int max_regs = (gen->target == TARGET_WINDOWS_X64) ? 4 : 6;
 
             int arg_count = node->call.args.count;
 
@@ -657,27 +722,29 @@ static void asm_gen_expr(AsmCodeGen *gen, AstNode *node) {
                 asm_emit(gen, "    pushq %%rax\n");
             }
 
-            /* Pop into registers (first 6) */
-            for (int i = 0; i < arg_count && i < 6; i++) {
+            /* Pop into registers (up to max_regs) */
+            for (int i = 0; i < arg_count && i < max_regs; i++) {
                 asm_emit(gen, "    popq %%%s\n", reg_name(arg_regs[i], SIZE_64));
             }
 
-            /* Align stack if needed */
-            int stack_args = arg_count > 6 ? arg_count - 6 : 0;
-            int stack_adjust = 0;
-            if ((stack_args + 1) % 2 == 1) {
-                stack_adjust = 8;
-                asm_emit(gen, "    subq $8, %%rsp\n");
-            }
-
-            /* Push remaining args */
-            for (int i = 6; i < arg_count; i++) {
-                asm_emit(gen, "    pushq %%rax\n");  /* Simplified */
+            /* Stack arguments and Shadow Space */
+            int stack_args = arg_count > max_regs ? arg_count - max_regs : 0;
+            int shadow_space = (gen->target == TARGET_WINDOWS_X64) ? 32 : 0;
+            int stack_adjust = shadow_space;
+            
+            if (stack_adjust > 0) {
+                asm_emit(gen, "    subq $%d, %%rsp\n", stack_adjust);
             }
 
             /* Call function */
             if (node->call.func->type == NODE_NAME) {
-                asm_emit_call(gen, node->call.func->name_expr.name);
+                if (gen->hybrid_mode) {
+                    char prefixed[256];
+                    snprintf(prefixed, sizeof(prefixed), "lp_%s", node->call.func->name_expr.name);
+                    asm_emit_call(gen, prefixed);
+                } else {
+                    asm_emit_call(gen, node->call.func->name_expr.name);
+                }
             } else {
                 /* Indirect call through register */
                 asm_gen_expr(gen, node->call.func);
@@ -685,7 +752,7 @@ static void asm_gen_expr(AsmCodeGen *gen, AstNode *node) {
             }
 
             /* Clean up */
-            if (stack_args > 0 || stack_adjust) {
+            if (stack_args > 0 || stack_adjust > 0) {
                 int cleanup = stack_args * 8 + stack_adjust;
                 asm_emit(gen, "    addq $%d, %%rsp\n", cleanup);
             }
@@ -698,18 +765,18 @@ static void asm_gen_expr(AsmCodeGen *gen, AstNode *node) {
 
             /* Allocate space on stack */
             asm_emit(gen, "    subq $%d, %%rsp\n", total_size);
-            asm_emit(gen, "    movq %%rsp, %%rdi\n");
+            asm_emit(gen, "    movq %%rsp, %%r10\n");
 
             /* Store count as first element */
-            asm_emit(gen, "    movq $%d, (%%rdi)\n", count);
+            asm_emit(gen, "    movq $%d, (%%r10)\n", count);
 
             /* Store elements */
             for (int i = 0; i < count; i++) {
                 asm_gen_expr(gen, node->list_expr.elems.items[i]);
-                asm_emit(gen, "    movq %%rax, %d(%%rdi)\n", (i + 1) * 8);
+                asm_emit(gen, "    movq %%rax, %d(%%r10)\n", (i + 1) * 8);
             }
 
-            asm_emit(gen, "    movq %%rdi, %%rax\n");
+            asm_emit(gen, "    movq %%r10, %%rax\n");
             break;
         }
 
@@ -796,7 +863,11 @@ static void asm_gen_stmt_list(AsmCodeGen *gen, NodeList *list) {
                 if (node->return_stmt.value) {
                     asm_gen_expr(gen, node->return_stmt.value);
                 }
-                asm_emit_jmp(gen, ".Lepilogue");
+                if (gen->func && gen->func->name) {
+                    asm_emit(gen, "    jmp .L%s_epilogue\n", gen->func->name);
+                } else {
+                    asm_emit_jmp(gen, ".Lepilogue");
+                }
                 break;
             }
 
@@ -914,7 +985,7 @@ static void asm_gen_stmt_list(AsmCodeGen *gen, NodeList *list) {
 
             case NODE_PARALLEL_FOR: {
                 /* For now, emit as regular for loop */
-                /* ASM backend: parallel for runs as serial loop (OpenMP requires GCC backend) */
+                /* ASM backend: parallel for runs as serial loop */
 
                 char cond_label[32], end_label[32];
                 asm_new_label(gen, cond_label, sizeof(cond_label));
@@ -922,24 +993,40 @@ static void asm_gen_stmt_list(AsmCodeGen *gen, NodeList *list) {
 
                 asm_add_local_var(gen, node->parallel_for.var, 8);
 
-                /* Simplified init */
-                asm_emit(gen, "    movq $0, %%rax\n");
-                VarInfo *vi = asm_lookup_var(gen, node->parallel_for.var);
-                if (vi) {
-                    asm_emit(gen, "    movq %%rax, -%d(%%rbp)\n", vi->offset);
+                /* Initialize iterator */
+                if (node->parallel_for.iter && node->parallel_for.iter->type == NODE_CALL) {
+                    AstNode *iter = node->parallel_for.iter;
+                    if (iter->call.args.count == 1) {
+                        asm_emit(gen, "    movq $0, %%rax\n");
+                    } else if (iter->call.args.count >= 2) {
+                        asm_gen_expr(gen, iter->call.args.items[0]);
+                    }
+                    VarInfo *vi = asm_lookup_var(gen, node->parallel_for.var);
+                    if (vi) {
+                        asm_emit(gen, "    movq %%rax, -%d(%%rbp)\n", vi->offset);
+                    }
                 }
 
                 asm_emit_label(gen, cond_label);
 
                 /* Check condition */
-                asm_gen_expr(gen, node->parallel_for.iter);
-                if (vi) {
-                    asm_emit(gen, "    cmpq -%d(%%rbp), %%rax\n", vi->offset);
+                if (node->parallel_for.iter && node->parallel_for.iter->type == NODE_CALL) {
+                    AstNode *iter = node->parallel_for.iter;
+                    if (iter->call.args.count == 1) {
+                        asm_gen_expr(gen, iter->call.args.items[0]);
+                    } else if (iter->call.args.count >= 2) {
+                        asm_gen_expr(gen, iter->call.args.items[1]);
+                    }
+                    VarInfo *vi = asm_lookup_var(gen, node->parallel_for.var);
+                    if (vi) {
+                        asm_emit(gen, "    cmpq -%d(%%rbp), %%rax\n", vi->offset);
+                    }
                 }
                 asm_emit_jcc(gen, I_JLE, end_label);
 
                 asm_gen_stmt_list(gen, &node->parallel_for.body);
 
+                VarInfo *vi = asm_lookup_var(gen, node->parallel_for.var);
                 if (vi) {
                     asm_emit(gen, "    incq -%d(%%rbp)\n", vi->offset);
                 }
@@ -1056,17 +1143,34 @@ static void asm_gen_func(AsmCodeGen *gen, AstNode *node) {
     gen->func->stack_size = 0;
 
     /* Prologue */
-    asm_func_prologue(gen, name, 256);
+    if (gen->hybrid_mode) {
+        char prefixed_name[256];
+        snprintf(prefixed_name, sizeof(prefixed_name), "lp_%s", name);
+        asm_func_prologue(gen, prefixed_name, 256);
+    } else {
+        asm_func_prologue(gen, name, 256);
+    }
 
-    /* Handle parameters */
-    X64Reg arg_regs[] = {REG_RDI, REG_RSI, REG_RDX, REG_RCX, REG_R8, REG_R9};
-    for (int i = 0; i < node->func_def.params.count && i < 6; i++) {
+    /* Handle parameters - use correct ABI for target */
+    X64Reg arg_regs_sysv[] = {REG_RDI, REG_RSI, REG_RDX, REG_RCX, REG_R8, REG_R9};
+    X64Reg arg_regs_win[] = {REG_RCX, REG_RDX, REG_R8, REG_R9};
+    X64Reg *arg_regs = (gen->target == TARGET_WINDOWS_X64) ? arg_regs_win : arg_regs_sysv;
+    int max_param_regs = (gen->target == TARGET_WINDOWS_X64) ? 4 : 6;
+    for (int i = 0; i < node->func_def.params.count && i < max_param_regs; i++) {
         asm_add_local_var(gen, node->func_def.params.items[i].name, 8);
         VarInfo *vi = asm_lookup_var(gen, node->func_def.params.items[i].name);
         if (vi) {
             asm_emit(gen, "    movq %%%s, -%d(%%rbp)\n",
                 reg_name(arg_regs[i], SIZE_64), vi->offset);
         }
+    }
+
+    if (!gen->hybrid_mode && strcmp(name, "main") == 0 && gen->target == TARGET_WINDOWS_X64) {
+        asm_emit(gen, "    /* SetConsoleOutputCP(65001) for UTF-8 */\n");
+        asm_emit(gen, "    movq $65001, %%rcx\n");
+        asm_emit(gen, "    subq $32, %%rsp\n");
+        asm_emit(gen, "    call SetConsoleOutputCP\n");
+        asm_emit(gen, "    addq $32, %%rsp\n");
     }
 
     /* Generate body */
@@ -1131,7 +1235,7 @@ int asm_generate(AsmCodeGen *gen, AstNode *program) {
     }
 
     /* Generate _start for standalone executables */
-    if (has_main) {
+    if (has_main && gen->target != TARGET_WINDOWS_X64) {
         asm_emit(gen, "\n    .globl _start\n");
         asm_emit(gen, "_start:\n");
         asm_emit(gen, "    call main\n");
@@ -1141,6 +1245,30 @@ int asm_generate(AsmCodeGen *gen, AstNode *program) {
     }
 
     return 1;
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * Single Function Generation (Hybrid Mode)
+ * ══════════════════════════════════════════════════════════════ */
+
+int asm_generate_single_func(AsmCodeGen *gen, AstNode *func_node) {
+    if (!func_node || func_node->type != NODE_FUNC_DEF) {
+        gen->had_error = 1;
+        strcpy(gen->error_msg, "Expected NODE_FUNC_DEF for single function generation");
+        return 0;
+    }
+
+    gen->hybrid_mode = 1;
+
+    /* File header */
+    asm_emit(gen, "# Generated by LP Compiler (Hybrid ASM - Hot Function)\n");
+    asm_emit(gen, "# Function: %s\n\n", func_node->func_def.name);
+    asm_emit(gen, "    .text\n");
+
+    /* Generate the function */
+    asm_gen_func(gen, func_node);
+
+    return !gen->had_error;
 }
 
 /* ══════════════════════════════════════════════════════════════

@@ -55,8 +55,9 @@ static inline LpArray lp_args_to_array(LpVarArgs *vargs) {
     if (!vargs || vargs->count <= 0) return arr;
     arr.data = (double*)malloc(vargs->count * sizeof(double));
     if (!arr.data) return arr;
-    arr.len = vargs->count;
-    arr.cap = vargs->count;
+    arr.ndim = 1;
+    arr.size = vargs->count;
+    arr.owns_data = 1;
     arr.shape[0] = vargs->count;
     arr.shape[1] = 0;
     arr.shape[2] = 0;
@@ -125,12 +126,12 @@ static inline void lp_print_set(LpSet *s) {
     printf("\n");
 }
 
-#ifndef LP_NP_PRINT_DEFINED
+#if !defined(LP_NP_PRINT_DEFINED) && !defined(lp_np_print)
 #define LP_NP_PRINT_DEFINED
-static inline void lp_np_print(LpArray arr) {
+static inline void lp_np_print_compat(LpArray arr) {
     printf("[");
     if (arr.data) {
-        for (int64_t i = 0; i < arr.len; i++) {
+        for (int64_t i = 0; i < arr.shape[0]; i++) {
             if (i > 0) printf(", ");
             double v = arr.data[i];
             if (v == (int64_t)v) printf("%" PRId64, (int64_t)v);

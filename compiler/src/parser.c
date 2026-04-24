@@ -754,12 +754,46 @@ static AstNode *parse_postfix(Parser *p) {
                 }
             }
             
-            /* Parse as regular subscript */
-            AstNode *sub = ast_new(p->arena, NODE_SUBSCRIPT, line);
-            sub->subscript.obj = expr;
-            sub->subscript.index = parse_expression(p);
-            expect(p, TOK_RBRACKET, "expected ']'");
-            expr = sub;
+            /* Parse as subscript or slice */
+            /* Check for slice: obj[:], obj[start:], obj[:stop], obj[start:stop], obj[start:stop:step] */
+            {
+                AstNode *first = NULL;
+                /* Check if first token is colon (e.g. [:50]) */
+                if (check(p, TOK_COLON)) {
+                    /* first/start is NULL */
+                } else {
+                    first = parse_expression(p);
+                }
+                if (check(p, TOK_COLON)) {
+                    /* It's a slice! */
+                    advance(p); /* consume ':' */
+                    AstNode *sl = ast_new(p->arena, NODE_SLICE, line);
+                    sl->slice.obj = expr;
+                    sl->slice.start = first; /* may be NULL */
+                    sl->slice.stop = NULL;
+                    sl->slice.step = NULL;
+                    /* Parse stop if not ] or : */
+                    if (!check(p, TOK_RBRACKET) && !check(p, TOK_COLON)) {
+                        sl->slice.stop = parse_expression(p);
+                    }
+                    /* Parse step if another : */
+                    if (check(p, TOK_COLON)) {
+                        advance(p); /* consume second ':' */
+                        if (!check(p, TOK_RBRACKET)) {
+                            sl->slice.step = parse_expression(p);
+                        }
+                    }
+                    expect(p, TOK_RBRACKET, "expected ']'");
+                    expr = sl;
+                } else {
+                    /* Regular subscript */
+                    AstNode *sub = ast_new(p->arena, NODE_SUBSCRIPT, line);
+                    sub->subscript.obj = expr;
+                    sub->subscript.index = first;
+                    expect(p, TOK_RBRACKET, "expected ']'");
+                    expr = sub;
+                }
+            }
         } else if (match(p, TOK_DOT)) {
             if (p->current.type >= TOK_IDENTIFIER && p->current.type <= TOK_GUEST) {
                 advance(p);
@@ -974,6 +1008,17 @@ static AstNode *parse_expression(Parser *p) {
 
 /* --- Block parsing --- */
 static void parse_block(Parser *p, NodeList *body) {
+    /* Support inline blocks: for x in y: stmt1; stmt2; stmt3 */
+    if (!check(p, TOK_NEWLINE)) {
+        AstNode *stmt = parse_statement(p);
+        if (stmt) node_list_push(body, stmt);
+        /* Parse additional statements separated by semicolons */
+        while (match(p, TOK_SEMICOLON)) {
+            stmt = parse_statement(p);
+            if (stmt) node_list_push(body, stmt);
+        }
+        return;
+    }
     expect(p, TOK_NEWLINE, "expected newline before block");
     skip_newlines(p);
     expect(p, TOK_INDENT, "expected indented block");

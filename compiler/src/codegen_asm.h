@@ -189,6 +189,7 @@ typedef struct {
     int uses_memcpy;
     int uses_pthread;
     int uses_openmp;
+    int hybrid_mode;     /* 1 = compiling individual functions for GCC linking */
 } AsmCodeGen;
 
 /* ══════════════════════════════════════════════════════════════
@@ -198,6 +199,7 @@ typedef struct {
 void asm_codegen_init(AsmCodeGen *gen, AsmTarget target, int opt_level);
 void asm_codegen_free(AsmCodeGen *gen);
 int asm_generate(AsmCodeGen *gen, AstNode *program);
+int asm_generate_single_func(AsmCodeGen *gen, AstNode *func_node);
 char *asm_get_code(AsmCodeGen *gen);
 char *asm_get_full_output(AsmCodeGen *gen);
 int asm_write_to_file(AsmCodeGen *gen, const char *filename);

@@ -846,6 +846,15 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
     /* String + anything = string concat */
     if (op == TOK_PLUS && (lt == LP_STRING || rt == LP_STRING))
       return LP_STRING;
+    /* [elem] * N or N * [elem] — array repeat pattern */
+    if (op == TOK_STAR) {
+      if ((lt == LP_LIST || lt == LP_NATIVE_ARRAY_1D) &&
+          (rt == LP_INT || rt == LP_FLOAT))
+        return lt;
+      if ((rt == LP_LIST || rt == LP_NATIVE_ARRAY_1D) &&
+          (lt == LP_INT || lt == LP_FLOAT))
+        return rt;
+    }
     if (lt == LP_VAL || rt == LP_VAL || lt == LP_DICT || rt == LP_DICT ||
         lt == LP_LIST || rt == LP_LIST) {
       if (op == TOK_EQ || op == TOK_NEQ || op == TOK_LT || op == TOK_GT ||
@@ -899,21 +908,79 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
       const char *func_name = node->call.func->attribute.attr;
       ImportInfo *imp = find_import(cg, mod_alias);
       if (imp) {
-        if (imp->tier == MOD_TIER2_NUMPY) {
-          /* numpy functions that return arrays */
+        if (imp->tier == MOD_TIER2_NUMPY || imp->tier == MOD_TIER2_TENSOR) {
+          /* tensor/numpy functions that return tensors */
           if (strcmp(func_name, "array") == 0 ||
               strcmp(func_name, "zeros") == 0 ||
               strcmp(func_name, "ones") == 0 ||
               strcmp(func_name, "arange") == 0 ||
               strcmp(func_name, "linspace") == 0 ||
               strcmp(func_name, "sort") == 0 || strcmp(func_name, "add") == 0 ||
+              strcmp(func_name, "sub") == 0 ||
               strcmp(func_name, "subtract") == 0 ||
+              strcmp(func_name, "mul") == 0 ||
               strcmp(func_name, "multiply") == 0 ||
+              strcmp(func_name, "div") == 0 ||
               strcmp(func_name, "sqrt") == 0 || strcmp(func_name, "abs") == 0 ||
               strcmp(func_name, "sin") == 0 || strcmp(func_name, "cos") == 0 ||
-              strcmp(func_name, "exp") == 0 || strcmp(func_name, "log") == 0)
+              strcmp(func_name, "exp") == 0 || strcmp(func_name, "log") == 0 ||
+              strcmp(func_name, "from_list") == 0 ||
+              strcmp(func_name, "full") == 0 ||
+              strcmp(func_name, "eye") == 0 ||
+              strcmp(func_name, "rand") == 0 ||
+              strcmp(func_name, "randn") == 0 ||
+              strcmp(func_name, "reshape") == 0 ||
+              strcmp(func_name, "transpose") == 0 ||
+              strcmp(func_name, "permute") == 0 ||
+              strcmp(func_name, "squeeze") == 0 ||
+              strcmp(func_name, "unsqueeze") == 0 ||
+              strcmp(func_name, "flatten") == 0 ||
+              strcmp(func_name, "contiguous") == 0 ||
+              strcmp(func_name, "clone") == 0 ||
+              strcmp(func_name, "neg") == 0 ||
+              strcmp(func_name, "tanh") == 0 ||
+              strcmp(func_name, "sigmoid") == 0 ||
+              strcmp(func_name, "relu") == 0 ||
+              strcmp(func_name, "clamp") == 0 ||
+              strcmp(func_name, "clip") == 0 ||
+              strcmp(func_name, "pow") == 0 ||
+              strcmp(func_name, "power") == 0 ||
+              strcmp(func_name, "matmul") == 0 ||
+              strcmp(func_name, "mm") == 0 ||
+              strcmp(func_name, "bmm") == 0 ||
+              strcmp(func_name, "diag") == 0 ||
+              strcmp(func_name, "reverse") == 0 ||
+              strcmp(func_name, "cumsum") == 0 ||
+              strcmp(func_name, "diff") == 0 ||
+              strcmp(func_name, "concatenate") == 0 ||
+              strcmp(func_name, "unique") == 0 ||
+              strcmp(func_name, "take") == 0 ||
+              strcmp(func_name, "where") == 0 ||
+              strcmp(func_name, "eq") == 0 ||
+              strcmp(func_name, "ne") == 0 ||
+              strcmp(func_name, "gt") == 0 ||
+              strcmp(func_name, "lt") == 0 ||
+              strcmp(func_name, "ge") == 0 ||
+              strcmp(func_name, "le") == 0 ||
+              strcmp(func_name, "sum_axis") == 0 ||
+              strcmp(func_name, "mean_axis") == 0 ||
+              strcmp(func_name, "max_axis") == 0 ||
+              strcmp(func_name, "min_axis") == 0 ||
+              strcmp(func_name, "scale") == 0)
             return LP_ARRAY;
-          /* numpy functions that return scalars */
+          /* tensor/numpy functions that return int */
+          if (strcmp(func_name, "argmax") == 0 ||
+              strcmp(func_name, "argmin") == 0 ||
+              strcmp(func_name, "ndim") == 0 ||
+              strcmp(func_name, "numel") == 0 ||
+              strcmp(func_name, "len") == 0 ||
+              strcmp(func_name, "searchsorted") == 0 ||
+              strcmp(func_name, "count_greater") == 0 ||
+              strcmp(func_name, "count_less") == 0 ||
+              strcmp(func_name, "count_equal") == 0 ||
+              strcmp(func_name, "is_contiguous") == 0)
+            return LP_INT;
+          /* tensor/numpy functions that return scalars */
           return LP_FLOAT;
         }
         if (imp->tier == MOD_TIER1_MATH) {
@@ -926,6 +993,8 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
           return LP_FLOAT;
         }
         if (imp->tier == MOD_TIER1_RANDOM) {
+          if (strcmp(func_name, "shuffle") == 0)
+            return LP_VOID;
           if (strcmp(func_name, "randint") == 0)
             return LP_INT;
           return LP_FLOAT;
@@ -1119,15 +1188,23 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
               strcmp(func_name, "listbox") == 0 || strcmp(func_name, "slider") == 0 ||
               strcmp(func_name, "progress") == 0 || strcmp(func_name, "image") == 0 ||
               strcmp(func_name, "tab") == 0 || strcmp(func_name, "group") == 0 ||
-              strcmp(func_name, "canvas") == 0 || strcmp(func_name, "set_timer") == 0)
+              strcmp(func_name, "canvas") == 0 || strcmp(func_name, "canvas3d") == 0 ||
+              strcmp(func_name, "canvasdx11") == 0 || strcmp(func_name, "get_backend") == 0 ||
+              strcmp(func_name, "set_timer") == 0 || strcmp(func_name, "set_fps") == 0 ||
+              strcmp(func_name, "rgb") == 0 || strcmp(func_name, "load_texture") == 0)
             return LP_INT;
           if (strcmp(func_name, "get_text") == 0 || strcmp(func_name, "input_dialog") == 0 ||
               strcmp(func_name, "file_open_dialog") == 0 || strcmp(func_name, "file_save_dialog") == 0 ||
-              strcmp(func_name, "color_picker") == 0 || strcmp(func_name, "folder_dialog") == 0)
+              strcmp(func_name, "color_picker") == 0 || strcmp(func_name, "folder_dialog") == 0 ||
+              strcmp(func_name, "backend_name") == 0 || strcmp(func_name, "backend_info") == 0 ||
+              strcmp(func_name, "gpu_info") == 0 || strcmp(func_name, "gpu_vendor") == 0 ||
+              strcmp(func_name, "gpu_version") == 0)
             return LP_STRING;
-          if (strcmp(func_name, "get_value") == 0)
+          if (strcmp(func_name, "get_value") == 0 ||
+              strcmp(func_name, "get_mouse_x") == 0 || strcmp(func_name, "get_mouse_y") == 0)
             return LP_INT;
-          if (strcmp(func_name, "confirm") == 0)
+          if (strcmp(func_name, "confirm") == 0 || strcmp(func_name, "get_key_state") == 0 ||
+              strcmp(func_name, "directx_available") == 0 || strcmp(func_name, "vulkan_available") == 0)
             return LP_BOOL;
           return LP_VOID; /* set_text, set_value, run, close, draw_*, etc. */
         }
@@ -1224,6 +1301,26 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
           return LP_INT;
         return LP_STRING; /* upper, lower, strip, replace, join */
       }
+      /* String methods called on LP_VAL variables (auto-unboxed) */
+      if (obj_type == LP_VAL) {
+        const char *attr = node->call.func->attribute.attr;
+        if (strcmp(attr, "strip") == 0 || strcmp(attr, "lstrip") == 0 ||
+            strcmp(attr, "rstrip") == 0 || strcmp(attr, "upper") == 0 ||
+            strcmp(attr, "lower") == 0 || strcmp(attr, "title") == 0 ||
+            strcmp(attr, "capitalize") == 0 || strcmp(attr, "swapcase") == 0 ||
+            strcmp(attr, "replace") == 0 || strcmp(attr, "reverse") == 0 ||
+            strcmp(attr, "join") == 0 || strcmp(attr, "removeprefix") == 0 ||
+            strcmp(attr, "removesuffix") == 0)
+          return LP_STRING;
+        if (strcmp(attr, "split") == 0)
+          return LP_STR_ARRAY;
+        if (strcmp(attr, "startswith") == 0 || strcmp(attr, "endswith") == 0 ||
+            strcmp(attr, "isdigit") == 0 || strcmp(attr, "isalpha") == 0 ||
+            strcmp(attr, "isalnum") == 0)
+          return LP_BOOL;
+        if (strcmp(attr, "find") == 0 || strcmp(attr, "count") == 0)
+          return LP_INT;
+      }
       if (obj_type == LP_LIST) {
         const char *attr = node->call.func->attribute.attr;
         if (strcmp(attr, "append") == 0)
@@ -1244,6 +1341,8 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
         return LP_INT;
       if (strcmp(func, "min") == 0 || strcmp(func, "max") == 0)
         return infer_minmax_call_type(cg, node);
+      if (strcmp(func, "round") == 0)
+        return LP_FLOAT;
       if (strcmp(func, "int") == 0)
         return LP_INT;
       if (strcmp(func, "float") == 0)
@@ -1331,6 +1430,13 @@ case NODE_GENERIC_INST:
 case NODE_TYPE_UNION:
   /* Type union always returns LP_VAL (variant type) */
   return LP_VAL;
+case NODE_SLICE: {
+  /* Slicing preserves the type of the container */
+  LpType obj_type = infer_type(cg, node->slice.obj);
+  if (obj_type == LP_STRING) return LP_STRING;
+  if (obj_type == LP_LIST) return LP_LIST;
+  return LP_VAL;
+}
 default:
   return LP_UNKNOWN;
 }
@@ -2162,6 +2268,16 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
       if (imp) {
         /* ---- TIER 1: math ??? direct C <math.h> ---- */
         if (imp->tier == MOD_TIER1_MATH) {
+          if (strcmp(func_name, "round") == 0 && node->call.args.count == 2) {
+            buf_write(buf, "(round((");
+            gen_expr(cg, buf, node->call.args.items[0]);
+            buf_write(buf, ") * pow(10, ");
+            gen_expr(cg, buf, node->call.args.items[1]);
+            buf_write(buf, ")) / pow(10, ");
+            gen_expr(cg, buf, node->call.args.items[1]);
+            buf_write(buf, "))");
+            break;
+          }
           buf_printf(buf, "lp_math_%s(", func_name);
           for (int i = 0; i < node->call.args.count; i++) {
             if (i > 0)
@@ -2760,6 +2876,166 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
         buf_write(buf, ")");
         break;
       }
+      /* ---- TIER 2: tensor — N-dimensional tensor operations ---- */
+      if (imp->tier == MOD_TIER2_TENSOR) {
+        /* tensor.from_list([1,2,3]) → lp_tensor_from_doubles */
+        if (strcmp(func_name, "from_list") == 0 && node->call.args.count == 1 &&
+            node->call.args.items[0]->type == NODE_LIST_EXPR) {
+          NodeList *elems = &node->call.args.items[0]->list_expr.elems;
+          buf_printf(buf, "lp_tensor_from_doubles(%d", elems->count);
+          for (int i = 0; i < elems->count; i++) {
+            buf_write(buf, ", (double)(");
+            gen_expr(cg, buf, elems->items[i]);
+            buf_write(buf, ")");
+          }
+          buf_write(buf, ")");
+          break;
+        }
+        /* tensor.zeros([2,3,4]) — shape from list literal */
+        if ((strcmp(func_name, "zeros") == 0 || strcmp(func_name, "ones") == 0 ||
+             strcmp(func_name, "rand") == 0 || strcmp(func_name, "randn") == 0 ||
+             strcmp(func_name, "full") == 0) &&
+            node->call.args.count >= 1 &&
+            node->call.args.items[0]->type == NODE_LIST_EXPR) {
+          NodeList *shape = &node->call.args.items[0]->list_expr.elems;
+          /* Emit: ({ int64_t _s[] = {d0,d1,...}; lp_tensor_xxx_nd(_s, ndim); }) */
+          buf_write(buf, "({ int64_t _lp_ts[] = {");
+          for (int i = 0; i < shape->count; i++) {
+            if (i > 0) buf_write(buf, ", ");
+            gen_expr(cg, buf, shape->items[i]);
+          }
+          buf_printf(buf, "}; lp_tensor_%s_nd(_lp_ts, %d", func_name, shape->count);
+          /* full has extra value argument */
+          if (strcmp(func_name, "full") == 0 && node->call.args.count >= 2) {
+            buf_write(buf, ", ");
+            gen_expr(cg, buf, node->call.args.items[1]);
+          }
+          buf_write(buf, "); })");
+          break;
+        }
+        /* tensor.zeros(n) — scalar arg, 1D convenience */
+        if ((strcmp(func_name, "zeros") == 0 || strcmp(func_name, "ones") == 0) &&
+            node->call.args.count == 1 &&
+            node->call.args.items[0]->type != NODE_LIST_EXPR) {
+          buf_printf(buf, "lp_tensor_%s_1d(", func_name);
+          gen_expr(cg, buf, node->call.args.items[0]);
+          buf_write(buf, ")");
+          break;
+        }
+        /* tensor.reshape(t, [2,3]) — shape from list literal */
+        if (strcmp(func_name, "reshape") == 0 && node->call.args.count == 2 &&
+            node->call.args.items[1]->type == NODE_LIST_EXPR) {
+          NodeList *shape = &node->call.args.items[1]->list_expr.elems;
+          buf_write(buf, "({ int64_t _lp_rs[] = {");
+          for (int i = 0; i < shape->count; i++) {
+            if (i > 0) buf_write(buf, ", ");
+            gen_expr(cg, buf, shape->items[i]);
+          }
+          buf_printf(buf, "}; lp_tensor_reshape(");
+          gen_expr(cg, buf, node->call.args.items[0]);
+          buf_printf(buf, ", _lp_rs, %d); })", shape->count);
+          break;
+        }
+        /* tensor.reshape(t, rows, cols) — 2 int args backward compat */
+        if (strcmp(func_name, "reshape") == 0 && node->call.args.count == 3) {
+          buf_write(buf, "lp_tensor_reshape2d(");
+          gen_expr(cg, buf, node->call.args.items[0]);
+          buf_write(buf, ", ");
+          gen_expr(cg, buf, node->call.args.items[1]);
+          buf_write(buf, ", ");
+          gen_expr(cg, buf, node->call.args.items[2]);
+          buf_write(buf, ")");
+          break;
+        }
+        /* tensor.transpose(t) — no axis args, default 2D */
+        if (strcmp(func_name, "transpose") == 0 && node->call.args.count == 1) {
+          buf_write(buf, "lp_tensor_transpose_2d(");
+          gen_expr(cg, buf, node->call.args.items[0]);
+          buf_write(buf, ")");
+          break;
+        }
+        /* tensor.transpose(t, dim0, dim1) — explicit axes */
+        if (strcmp(func_name, "transpose") == 0 && node->call.args.count == 3) {
+          buf_write(buf, "lp_tensor_transpose(");
+          for (int i = 0; i < 3; i++) {
+            if (i > 0) buf_write(buf, ", ");
+            gen_expr(cg, buf, node->call.args.items[i]);
+          }
+          buf_write(buf, ")");
+          break;
+        }
+        /* tensor.sum(t) → scalar, tensor.sum(t, axis) → tensor */
+        if ((strcmp(func_name, "sum") == 0 || strcmp(func_name, "mean") == 0 ||
+             strcmp(func_name, "max") == 0 || strcmp(func_name, "min") == 0) &&
+            node->call.args.count == 2) {
+          buf_printf(buf, "lp_tensor_%s_axis(", func_name);
+          gen_expr(cg, buf, node->call.args.items[0]);
+          buf_write(buf, ", ");
+          gen_expr(cg, buf, node->call.args.items[1]);
+          buf_write(buf, ")");
+          break;
+        }
+        if ((strcmp(func_name, "sum") == 0 || strcmp(func_name, "mean") == 0 ||
+             strcmp(func_name, "max") == 0 || strcmp(func_name, "min") == 0 ||
+             strcmp(func_name, "std") == 0 || strcmp(func_name, "var") == 0 ||
+             strcmp(func_name, "median") == 0 || strcmp(func_name, "norm") == 0) &&
+            node->call.args.count == 1) {
+          buf_printf(buf, "lp_tensor_%s_all(", func_name);
+          gen_expr(cg, buf, node->call.args.items[0]);
+          buf_write(buf, ")");
+          break;
+        }
+        /* tensor.ndim(t) */
+        if (strcmp(func_name, "ndim") == 0) {
+          buf_write(buf, "lp_tensor_ndim_of(");
+          gen_expr(cg, buf, node->call.args.items[0]);
+          buf_write(buf, ")");
+          break;
+        }
+        /* tensor.numel(t) */
+        if (strcmp(func_name, "numel") == 0) {
+          buf_write(buf, "lp_tensor_numel(");
+          gen_expr(cg, buf, node->call.args.items[0]);
+          buf_write(buf, ")");
+          break;
+        }
+        /* tensor.shape(t) — print shape */
+        if (strcmp(func_name, "shape") == 0) {
+          buf_write(buf, "lp_tensor_shape_print(");
+          gen_expr(cg, buf, node->call.args.items[0]);
+          buf_write(buf, ")");
+          break;
+        }
+        /* tensor.print(t) */
+        if (strcmp(func_name, "print") == 0) {
+          buf_write(buf, "lp_tensor_print(");
+          gen_expr(cg, buf, node->call.args.items[0]);
+          buf_write(buf, ")");
+          break;
+        }
+        /* Unary element-wise: map tensor.xxx → lp_tensor_xxx_t or lp_tensor_xxx */
+        if (strcmp(func_name, "abs") == 0) { buf_write(buf, "lp_tensor_abs_t("); }
+        else if (strcmp(func_name, "sqrt") == 0) { buf_write(buf, "lp_tensor_sqrt_t("); }
+        else if (strcmp(func_name, "exp") == 0) { buf_write(buf, "lp_tensor_exp_t("); }
+        else if (strcmp(func_name, "log") == 0) { buf_write(buf, "lp_tensor_log_t("); }
+        else if (strcmp(func_name, "sin") == 0) { buf_write(buf, "lp_tensor_sin_t("); }
+        else if (strcmp(func_name, "cos") == 0) { buf_write(buf, "lp_tensor_cos_t("); }
+        else if (strcmp(func_name, "tanh") == 0) { buf_write(buf, "lp_tensor_tanh_t("); }
+        else if (strcmp(func_name, "pow") == 0) { buf_write(buf, "lp_tensor_pow_t("); }
+        else if (strcmp(func_name, "mm") == 0 || strcmp(func_name, "bmm") == 0) {
+          buf_write(buf, "lp_tensor_matmul(");
+        }
+        else {
+          /* Generic tensor function fallback */
+          buf_printf(buf, "lp_tensor_%s(", func_name);
+        }
+        for (int i = 0; i < node->call.args.count; i++) {
+          if (i > 0) buf_write(buf, ", ");
+          gen_expr(cg, buf, node->call.args.items[i]);
+        }
+        buf_write(buf, ")");
+        break;
+      }
       /* ---- TIER 3: Python/C API fallback ---- */
       if (imp->tier == MOD_TIER3_PYTHON) {
         buf_printf(buf, "lp_py_call_method(lp_pymod_%s, \"%s\", ", imp->alias,
@@ -2817,7 +3093,15 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
       }
       if (obj_type == LP_STRING) {
         if (strcmp(attr, "join") == 0) {
-          buf_write(buf, "lp_str_join(");
+          LpType arg_t = LP_UNKNOWN;
+          if (node->call.args.count > 0) {
+            arg_t = infer_type(cg, node->call.args.items[0]);
+          }
+          if (arg_t == LP_LIST) {
+            buf_write(buf, "lp_str_join_list(");
+          } else {
+            buf_write(buf, "lp_str_join(");
+          }
           gen_expr(cg, buf,
                    node->call.func->attribute.obj); /* The separator string */
           if (node->call.args.count > 0) {
@@ -2902,6 +3186,54 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
           break;
         }
       }
+      /* Handle string methods on LP_VAL variables (auto-unbox to string) */
+      if (obj_type == LP_VAL) {
+        if (strcmp(attr, "strip") == 0 || strcmp(attr, "lstrip") == 0 ||
+            strcmp(attr, "rstrip") == 0 || strcmp(attr, "upper") == 0 ||
+            strcmp(attr, "lower") == 0 || strcmp(attr, "title") == 0 ||
+            strcmp(attr, "capitalize") == 0 || strcmp(attr, "swapcase") == 0 ||
+            strcmp(attr, "replace") == 0 || strcmp(attr, "reverse") == 0 ||
+            strcmp(attr, "removeprefix") == 0 || strcmp(attr, "removesuffix") == 0) {
+          cg->uses_strings = 1;
+          buf_printf(buf, "lp_str_%s(lp_str_from_val(", attr);
+          gen_expr(cg, buf, node->call.func->attribute.obj);
+          buf_write(buf, ")");
+          for (int i = 0; i < node->call.args.count; i++) {
+            buf_write(buf, ", ");
+            gen_expr(cg, buf, node->call.args.items[i]);
+          }
+          buf_write(buf, ")");
+          break;
+        }
+        if (strcmp(attr, "split") == 0) {
+          cg->uses_strings = 1;
+          buf_write(buf, "lp_str_split(lp_str_from_val(");
+          gen_expr(cg, buf, node->call.func->attribute.obj);
+          buf_write(buf, "), ");
+          if (node->call.args.count > 0) {
+            gen_expr(cg, buf, node->call.args.items[0]);
+          } else {
+            buf_write(buf, "NULL");
+          }
+          buf_write(buf, ")");
+          break;
+        }
+        if (strcmp(attr, "find") == 0 || strcmp(attr, "count") == 0 ||
+            strcmp(attr, "startswith") == 0 || strcmp(attr, "endswith") == 0 ||
+            strcmp(attr, "isdigit") == 0 || strcmp(attr, "isalpha") == 0 ||
+            strcmp(attr, "isalnum") == 0) {
+          cg->uses_strings = 1;
+          buf_printf(buf, "lp_str_%s(lp_str_from_val(", attr);
+          gen_expr(cg, buf, node->call.func->attribute.obj);
+          buf_write(buf, ")");
+          for (int i = 0; i < node->call.args.count; i++) {
+            buf_write(buf, ", ");
+            gen_expr(cg, buf, node->call.args.items[i]);
+          }
+          buf_write(buf, ")");
+          break;
+        }
+      }
     }
     /* Special-case: print() */
     if (node->call.func->type == NODE_NAME &&
@@ -2958,6 +3290,24 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
           break;
         }
         gen_expr(cg, buf, node->call.args.items[i]);
+        buf_write(buf, ")");
+      }
+      break;
+    }
+    /* Special-case: round(val, n) */
+    if (node->call.func->type == NODE_NAME &&
+        strcmp(node->call.func->name_expr.name, "round") == 0) {
+      if (node->call.args.count == 2) {
+        buf_write(buf, "(round((");
+        gen_expr(cg, buf, node->call.args.items[0]);
+        buf_write(buf, ") * pow(10, ");
+        gen_expr(cg, buf, node->call.args.items[1]);
+        buf_write(buf, ")) / pow(10, ");
+        gen_expr(cg, buf, node->call.args.items[1]);
+        buf_write(buf, "))");
+      } else {
+        buf_write(buf, "round(");
+        if (node->call.args.count > 0) gen_expr(cg, buf, node->call.args.items[0]);
         buf_write(buf, ")");
       }
       break;
@@ -3084,7 +3434,11 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
           buf_write(buf, "lp_np_len(");
           gen_expr(cg, buf, node->call.args.items[0]);
           buf_write(buf, ")");
-        } else if (at == LP_NATIVE_ARRAY_1D) {
+        } else if (at == LP_NATIVE_ARRAY_1D ||
+                   at == LP_NATIVE_ARRAY_FLOAT_1D ||
+                   at == LP_NATIVE_ARRAY_F32_1D ||
+                   at == LP_NATIVE_ARRAY_I32_1D ||
+                   at == LP_NATIVE_ARRAY_I8_1D) {
           buf_write(buf, "(");
           gen_expr(cg, buf, node->call.args.items[0]);
           buf_write(buf, ")->len");
@@ -3632,9 +3986,16 @@ case NODE_SUBSCRIPT: {
     /* f32[] read: returns float, auto-promoted to double in LP expressions */
     if (node->subscript.obj->type == NODE_NAME) {
       const char *vn = node->subscript.obj->name_expr.name;
-      buf_printf(buf, "(_raw_%s[", vn);
-      gen_expr(cg, buf, node->subscript.index);
-      buf_write(buf, "])");
+      Symbol *_fs = scope_lookup(cg->scope, vn);
+      if (_fs && _fs->is_loop_hoisted) {
+        buf_printf(buf, "(_raw_%s[", vn);
+        gen_expr(cg, buf, node->subscript.index);
+        buf_write(buf, "])");
+      } else {
+        buf_printf(buf, "(lp_%s->data[", vn);
+        gen_expr(cg, buf, node->subscript.index);
+        buf_write(buf, "])");
+      }
     } else {
       buf_write(buf, "((");
       gen_expr(cg, buf, node->subscript.obj);
@@ -3646,9 +4007,16 @@ case NODE_SUBSCRIPT: {
     /* i32[] read: _raw_arr[i] returns int32_t, promoted to int64_t by C */
     if (node->subscript.obj->type == NODE_NAME) {
       const char *vn = node->subscript.obj->name_expr.name;
-      buf_printf(buf, "(_raw_%s[", vn);
-      gen_expr(cg, buf, node->subscript.index);
-      buf_write(buf, "])");
+      Symbol *_is = scope_lookup(cg->scope, vn);
+      if (_is && _is->is_loop_hoisted) {
+        buf_printf(buf, "(_raw_%s[", vn);
+        gen_expr(cg, buf, node->subscript.index);
+        buf_write(buf, "])");
+      } else {
+        buf_printf(buf, "(lp_%s->data[", vn);
+        gen_expr(cg, buf, node->subscript.index);
+        buf_write(buf, "])");
+      }
     } else {
       buf_write(buf, "((");
       gen_expr(cg, buf, node->subscript.obj);
@@ -3660,9 +4028,16 @@ case NODE_SUBSCRIPT: {
     /* i8[] read: direct byte array access, auto-promoted to int64_t */
     if (node->subscript.obj->type == NODE_NAME) {
       const char *vn = node->subscript.obj->name_expr.name;
-      buf_printf(buf, "((int64_t)(_raw_%s[", vn);
-      gen_expr(cg, buf, node->subscript.index);
-      buf_write(buf, "]))");
+      Symbol *_bs = scope_lookup(cg->scope, vn);
+      if (_bs && _bs->is_loop_hoisted) {
+        buf_printf(buf, "((int64_t)(_raw_%s[", vn);
+        gen_expr(cg, buf, node->subscript.index);
+        buf_write(buf, "]))");
+      } else {
+        buf_printf(buf, "((int64_t)(lp_%s->data[", vn);
+        gen_expr(cg, buf, node->subscript.index);
+        buf_write(buf, "]))");
+      }
     } else {
       buf_write(buf, "((int64_t)((");
       gen_expr(cg, buf, node->subscript.obj);
@@ -3683,7 +4058,7 @@ case NODE_SUBSCRIPT: {
     if (node->subscript.obj->type == NODE_NAME) {
       const char *vn = node->subscript.obj->name_expr.name;
       Symbol *s = scope_lookup(cg->scope, vn);
-      if (s && s->type == LP_NATIVE_ARRAY_FLOAT_1D) {
+      if (s && s->type == LP_NATIVE_ARRAY_FLOAT_1D && s->is_loop_hoisted) {
         buf_printf(buf, "(_raw_%s[", vn);
         gen_expr(cg, buf, node->subscript.index);
         buf_write(buf, "])");
@@ -3713,6 +4088,55 @@ case NODE_SUBSCRIPT: {
     buf_write(buf, "[");
     gen_expr(cg, buf, node->subscript.index);
     buf_write(buf, "]");
+  }
+  break;
+}
+case NODE_SLICE: {
+  /* Python-style slicing: obj[start:stop:step] */
+  LpType obj_type = infer_type(cg, node->slice.obj);
+  if (obj_type == LP_STRING) {
+    /* String slicing: lp_str_substr(str, start, len) */
+    buf_write(buf, "lp_str_substr(");
+    gen_expr(cg, buf, node->slice.obj);
+    buf_write(buf, ", ");
+    if (node->slice.start) {
+      gen_expr(cg, buf, node->slice.start);
+    } else {
+      buf_write(buf, "0");
+    }
+    buf_write(buf, ", ");
+    if (node->slice.stop) {
+      gen_expr(cg, buf, node->slice.stop);
+    } else {
+      buf_write(buf, "(int64_t)strlen(");
+      gen_expr(cg, buf, node->slice.obj);
+      buf_write(buf, ")");
+    }
+    buf_write(buf, ")");
+  } else if (obj_type == LP_LIST || obj_type == LP_VAL) {
+    /* List slicing: lp_list_slice(list, start, stop) */
+    buf_write(buf, "lp_list_slice(");
+    if (obj_type == LP_VAL) {
+      buf_write(buf, "lp_val_as_list(");
+      gen_expr(cg, buf, node->slice.obj);
+      buf_write(buf, ")");
+    } else {
+      gen_expr(cg, buf, node->slice.obj);
+    }
+    buf_write(buf, ", ");
+    if (node->slice.start) { gen_expr(cg, buf, node->slice.start); } else { buf_write(buf, "0"); }
+    buf_write(buf, ", ");
+    if (node->slice.stop) { gen_expr(cg, buf, node->slice.stop); } else { buf_write(buf, "-1"); }
+    buf_write(buf, ")");
+  } else {
+    /* Fallback: emit as lp_val_slice */
+    buf_write(buf, "lp_val_slice(");
+    emit_lp_val(cg, buf, node->slice.obj);
+    buf_write(buf, ", ");
+    if (node->slice.start) { gen_expr(cg, buf, node->slice.start); } else { buf_write(buf, "0"); }
+    buf_write(buf, ", ");
+    if (node->slice.stop) { gen_expr(cg, buf, node->slice.stop); } else { buf_write(buf, "-1"); }
+    buf_write(buf, ")");
   }
   break;
 }
@@ -3943,8 +4367,17 @@ static void emit_native_int_array_access(CodeGen *cg, Buffer *buf,
     const char *vname = obj_expr->name_expr.name;
     Symbol *sym = scope_lookup(cg->scope, vname);
     if (sym &&
-        (sym->type == LP_NATIVE_ARRAY_1D || sym->type == LP_NATIVE_ARRAY_2D)) {
+        (sym->type == LP_NATIVE_ARRAY_1D || sym->type == LP_NATIVE_ARRAY_2D) &&
+        sym->is_loop_hoisted) {
       buf_printf(buf, "(_raw_%s[", vname);
+      gen_expr(cg, buf, index_expr);
+      buf_write(buf, "])");
+      return;
+    }
+    /* Non-hoisted: use struct pointer access */
+    if (sym &&
+        (sym->type == LP_NATIVE_ARRAY_1D || sym->type == LP_NATIVE_ARRAY_2D)) {
+      buf_printf(buf, "(lp_%s->data[", vname);
       gen_expr(cg, buf, index_expr);
       buf_write(buf, "])");
       return;
@@ -3980,6 +4413,22 @@ static void emit_native_numeric_minmax(CodeGen *cg, Buffer *buf, AstNode *node,
       buf_write(buf, "for (int64_t __lp_i = 1; __lp_i < __lp_minmax_arr->len; "
                      "__lp_i++) { ");
       buf_write(buf, "int64_t __lp_v = __lp_minmax_arr->data[__lp_i]; ");
+      buf_printf(buf,
+                 "if (__lp_v %s __lp_minmax_res) __lp_minmax_res = __lp_v; ",
+                 cmp);
+      buf_write(buf, "} } __lp_minmax_res; })");
+      return;
+    }
+
+    if (arg_type == LP_NATIVE_ARRAY_F32_1D) {
+      buf_write(buf, "({ LpFloatArray* __lp_minmax_arr = ");
+      gen_expr(cg, buf, node->call.args.items[0]);
+      buf_write(buf, "; double __lp_minmax_res = 0.0; ");
+      buf_write(buf, "if (__lp_minmax_arr && __lp_minmax_arr->len > 0) { ");
+      buf_write(buf, "__lp_minmax_res = __lp_minmax_arr->data[0]; ");
+      buf_write(buf, "for (int64_t __lp_i = 1; __lp_i < __lp_minmax_arr->len; "
+                     "__lp_i++) { ");
+      buf_write(buf, "double __lp_v = __lp_minmax_arr->data[__lp_i]; ");
       buf_printf(buf,
                  "if (__lp_v %s __lp_minmax_res) __lp_minmax_res = __lp_v; ",
                  cmp);
@@ -4072,6 +4521,18 @@ static void emit_cast(CodeGen *cg, Buffer *buf, AstNode *expr,
 static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
   if (!node)
     return;
+    
+  /* Map C compiler errors back to original LP source code */
+  if (cg->source_file && node->line > 0) {
+    const char *basename = cg->source_file;
+    const char *p = basename;
+    while (*p) {
+        if (*p == '/' || *p == '\\') basename = p + 1;
+        p++;
+    }
+    buf_printf(buf, "\n#line %d \"%s\"\n", node->line, basename);
+  }
+
   switch (node->type) {
   case NODE_ASSIGN: {
     Buffer *assign_buf = buf;
@@ -4095,7 +4556,8 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
     if (t == LP_NATIVE_ARRAY_I8_1D && node->assign.value)
       match_native_int_repeat_expr(cg, node->assign.value, &auto_array_elem,
                                    &auto_array_count);
-    if ((t == LP_LIST || t == LP_UNKNOWN || t == LP_VAL) &&
+    if ((t == LP_LIST || t == LP_UNKNOWN || t == LP_VAL ||
+         t == LP_NATIVE_ARRAY_1D) &&
         node->assign.value &&
         match_native_int_repeat_expr(cg, node->assign.value, &auto_array_elem,
                                      &auto_array_count)) {
@@ -4109,7 +4571,8 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
       t = LP_NATIVE_ARRAY_1D;
     }
     /* Detect [0.0] * N -> LpFloatArray (zero-overhead float array) */
-    if ((t == LP_LIST || t == LP_UNKNOWN || t == LP_VAL) &&
+    if ((t == LP_LIST || t == LP_UNKNOWN || t == LP_VAL ||
+         t == LP_NATIVE_ARRAY_FLOAT_1D) &&
         node->assign.value &&
         match_native_float_repeat_expr(cg, node->assign.value, &auto_array_elem,
                                        &auto_array_count)) {
@@ -4976,7 +5439,12 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
       /* f32[] write: cast value to float */
       if (node->subscript_assign.obj->type == NODE_NAME) {
         const char *vn = node->subscript_assign.obj->name_expr.name;
-        buf_printf(buf, "(_raw_%s[", vn);
+        Symbol *_fs = scope_lookup(cg->scope, vn);
+        if (_fs && _fs->is_loop_hoisted) {
+          buf_printf(buf, "(_raw_%s[", vn);
+        } else {
+          buf_printf(buf, "(lp_%s->data[", vn);
+        }
       } else {
         buf_write(buf, "((");
         gen_expr(cg, buf, node->subscript_assign.obj);
@@ -5145,7 +5613,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
       if (node->subscript_assign.obj->type == NODE_NAME) {
         const char *vn = node->subscript_assign.obj->name_expr.name;
         Symbol *s = scope_lookup(cg->scope, vn);
-        if (s && s->type == LP_NATIVE_ARRAY_FLOAT_1D) {
+        if (s && s->type == LP_NATIVE_ARRAY_FLOAT_1D && s->is_loop_hoisted) {
           use_raw = 1;
           raw_name = vn;
         }
@@ -5159,9 +5627,19 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
           buf_write(buf, ")->data[");
         }
         gen_expr(cg, buf, node->subscript_assign.index);
-        buf_printf(buf, "]) %s (double)(", op_str);
-        gen_expr(cg, buf, node->subscript_assign.value);
-        buf_write(buf, ");\n");
+        buf_printf(buf, "]) %s ", op_str);
+        { LpType vt = infer_type(cg, node->subscript_assign.value);
+          if (vt == LP_VAL || vt == LP_LIST) {
+            buf_write(buf, "lp_val_as_float(");
+            emit_lp_val(cg, buf, node->subscript_assign.value);
+            buf_write(buf, ")");
+          } else {
+            buf_write(buf, "(double)(");
+            gen_expr(cg, buf, node->subscript_assign.value);
+            buf_write(buf, ")");
+          }
+        }
+        buf_write(buf, ";\n");
       } else {
         if (use_raw) {
           buf_printf(buf, "(_raw_%s[", raw_name);
@@ -5171,9 +5649,19 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
           buf_write(buf, ")->data[");
         }
         gen_expr(cg, buf, node->subscript_assign.index);
-        buf_write(buf, "]) = (double)(");
-        gen_expr(cg, buf, node->subscript_assign.value);
-        buf_write(buf, ");\n");
+        buf_write(buf, "]) = ");
+        { LpType vt = infer_type(cg, node->subscript_assign.value);
+          if (vt == LP_VAL || vt == LP_LIST) {
+            buf_write(buf, "lp_val_as_float(");
+            emit_lp_val(cg, buf, node->subscript_assign.value);
+            buf_write(buf, ")");
+          } else {
+            buf_write(buf, "(double)(");
+            gen_expr(cg, buf, node->subscript_assign.value);
+            buf_write(buf, ")");
+          }
+        }
+        buf_write(buf, ";\n");
       }
     } else if (obj_type == LP_NATIVE_ARRAY_FLOAT_2D) {
       /* Native float 2D array */
@@ -5808,6 +6296,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                    cur_loop, cur_loop, cur_loop, cur_loop);
         write_indent(buf, indent + 1);
         scope_define(cg->scope, node->for_stmt.var, LP_INT);
+        { Symbol *_itr = scope_lookup(cg->scope, node->for_stmt.var); if (_itr) _itr->declared = 1; }
         buf_printf(buf, "int64_t lp_%s = __lp_iter_%d->data[__lp_i_%d];\n",
                    node->for_stmt.var, cur_loop, cur_loop);
       } else if (iter_type == LP_ARRAY) {
@@ -5828,6 +6317,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                    cur_loop, cur_loop, cur_loop, cur_loop);
         write_indent(buf, indent + 1);
         scope_define(cg->scope, node->for_stmt.var, LP_FLOAT);
+        { Symbol *_itr = scope_lookup(cg->scope, node->for_stmt.var); if (_itr) _itr->declared = 1; }
         buf_printf(buf, "double lp_%s = __lp_iter_%d.data[__lp_i_%d];\n",
                    node->for_stmt.var, cur_loop, cur_loop);
       } else if (iter_type == LP_VAL || iter_type == LP_LIST ||
@@ -5850,6 +6340,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                    cur_loop, cur_loop, cur_loop, cur_loop);
         write_indent(buf, indent + 1);
         scope_define(cg->scope, node->for_stmt.var, LP_VAL);
+        { Symbol *_itr = scope_lookup(cg->scope, node->for_stmt.var); if (_itr) _itr->declared = 1; }
         buf_printf(
             buf, "LpVal lp_%s = lp_val_getitem_int(__lp_iter_%d, __lp_i_%d);\n",
             node->for_stmt.var, cur_loop, cur_loop);
@@ -5867,6 +6358,7 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
         buf_printf(buf, "for (int64_t __lp_fb_i_%d = 0; __lp_fb_i_%d < __lp_fb_len_%d; __lp_fb_i_%d++) {\n", fb, fb, fb, fb);
         write_indent(buf, indent + 1);
         scope_define(cg->scope, node->for_stmt.var, LP_VAL);
+        { Symbol *_itr = scope_lookup(cg->scope, node->for_stmt.var); if (_itr) _itr->declared = 1; }
         buf_printf(buf, "LpVal lp_%s = lp_val_getitem_int(__lp_fb_iter_%d, __lp_fb_i_%d);\n", node->for_stmt.var, fb, fb);
       }
     }
@@ -6773,6 +7265,9 @@ static void scan_declarations(CodeGen *cg, NodeList *body) {
       scan_declarations(cg, &stmt->for_stmt.body);
     } else if (stmt->type == NODE_WHILE) {
       scan_declarations(cg, &stmt->while_stmt.body);
+    } else if (stmt->type == NODE_PARALLEL_FOR) {
+      /* Fix: scan parallel for body for declarations — same as NODE_FOR */
+      scan_declarations(cg, &stmt->parallel_for.body);
     }
   }
 }
@@ -6819,6 +7314,57 @@ static void emit_local_declarations(CodeGen *cg, Buffer *buf, Scope *scope,
         sym->declared = 1;
       }
     }
+  }
+}
+
+static void emit_global_declarations(CodeGen *cg, Buffer *buf, Scope *scope) {
+  int emitted_any = 0;
+  if (!scope)
+    return;
+
+  for (int i = 0; i < scope->count; i++) {
+    Symbol *sym = &scope->symbols[i];
+    if (sym->is_function || sym->type == LP_CLASS || !sym->name)
+      continue;
+    if (strchr(sym->name, '.') != NULL)
+      continue;
+
+    buf_printf(buf, "static %s lp_%s;\n",
+               lp_type_to_c_obj(sym->type, sym->class_name), sym->name);
+
+    if (sym->type == LP_NATIVE_ARRAY_1D) {
+      buf_printf(buf,
+                 "#define _raw_%s ((int64_t* "
+                 "__restrict__)__builtin_assume_aligned(lp_%s->data, 32))\n",
+                 sym->name, sym->name);
+    } else if (sym->type == LP_NATIVE_ARRAY_FLOAT_1D) {
+      buf_printf(buf,
+                 "#define _raw_%s ((double* "
+                 "__restrict__)__builtin_assume_aligned(lp_%s->data, 32))\n",
+                 sym->name, sym->name);
+    } else if (sym->type == LP_NATIVE_ARRAY_I32_1D) {
+      buf_printf(buf,
+                 "#define _raw_%s ((int32_t* "
+                 "__restrict__)__builtin_assume_aligned(lp_%s->data, 32))\n",
+                 sym->name, sym->name);
+    } else if (sym->type == LP_NATIVE_ARRAY_F32_1D) {
+      buf_printf(buf,
+                 "#define _raw_%s ((float* "
+                 "__restrict__)__builtin_assume_aligned(lp_%s->data, 32))\n",
+                 sym->name, sym->name);
+    } else if (sym->type == LP_NATIVE_ARRAY_I8_1D) {
+      buf_printf(buf,
+                 "#define _raw_%s ((int8_t* "
+                 "__restrict__)__builtin_assume_aligned(lp_%s->data, 32))\n",
+                 sym->name, sym->name);
+    }
+
+    sym->declared = 1;
+    emitted_any = 1;
+  }
+
+  if (emitted_any) {
+    buf_write(buf, "\n");
   }
 }
 
@@ -7002,6 +7548,28 @@ static int body_needs_avx(NodeList *body) {
 /* ── End Fix 1 helpers ───────────────────────────────────────────────────── */
 
 static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
+  /* Check if this function is compiled via ASM backend (hybrid mode) */
+  for (int _ai = 0; _ai < cg->asm_compiled_func_count; _ai++) {
+    if (strcmp(cg->asm_compiled_funcs[_ai], node->func_def.name) == 0) {
+      /* Emit extern declaration only - body compiled to ASM object */
+      Symbol *asym = scope_lookup(cg->scope, node->func_def.name);
+      if (!asym) asym = scope_define(cg->scope, node->func_def.name, LP_VOID);
+      populate_function_symbol(cg, asym, node, class_name);
+      LpType aret = asym ? asym->type : LP_VOID;
+      buf_printf(&cg->header, "%s lp_%s(", lp_type_to_c(aret), node->func_def.name);
+      for (int j = 0; j < node->func_def.params.count; j++) {
+        Param *p = &node->func_def.params.items[j];
+        if (j > 0) buf_write(&cg->header, ", ");
+        LpType pt = type_from_annotation(cg, p->type_ann);
+        if (pt == LP_UNKNOWN) pt = LP_VAL;
+        buf_printf(&cg->header, "%s lp_%s", lp_type_to_c(pt), p->name);
+      }
+      if (node->func_def.params.count == 0) buf_write(&cg->header, "void");
+      buf_write(&cg->header, ");\n");
+      return;
+    }
+  }
+
   Symbol *func_sym = scope_lookup(cg->scope, node->func_def.name);
   LpType ret;
 
@@ -7630,6 +8198,7 @@ static void gen_class_def(CodeGen *cg, AstNode *node) {
 /* --- Public API --- */
 void codegen_init(CodeGen *cg) {
   buf_init(&cg->header);
+  buf_init(&cg->globals);
   buf_init(&cg->helpers);
   buf_init(&cg->funcs);
   buf_init(&cg->main_body);
@@ -7735,6 +8304,8 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
         tier = MOD_TIER1_UNITTEST;
       else if (strcmp(module, "gui") == 0)
         tier = MOD_TIER1_GUI;
+      else if (strcmp(module, "tensor") == 0)
+        tier = MOD_TIER2_TENSOR;
       else
         tier = MOD_TIER3_PYTHON;
 
@@ -7820,6 +8391,12 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
           } else if (tier == MOD_TIER1_GUI) {
             cg->uses_native = 1;
             cg->uses_gui = 1;
+          } else if (tier == MOD_TIER2_TENSOR) {
+            cg->uses_native = 1;
+            cg->uses_tensor = 1;
+          } else if (tier == MOD_TIER2_NUMPY) {
+            cg->uses_native = 1;
+            cg->uses_tensor = 1; /* numpy now backed by tensor */
           } else
             cg->uses_native = 1;
         } else {
@@ -7887,6 +8464,8 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
     buf_write(&cg->header, "#include \"lp_unittest.h\"\n");
   if (cg->uses_gui)
     buf_write(&cg->header, "#include \"lp_gui.h\"\n");
+  if (cg->uses_tensor)
+    buf_write(&cg->header, "#include \"lp_tensor.h\"\n");
   if (cg->uses_python) {
     buf_write(&cg->header, "#include \"lp_python.h\"\n");
   }
@@ -7916,6 +8495,9 @@ void codegen_generate(CodeGen *cg, AstNode *program) {
       }
     }
   }
+  scan_declarations(cg, &program->program.stmts);
+  emit_global_declarations(cg, &cg->globals, cg->scope);
+
   /* Third pass: generate code */
   /* 2.5-pass: scan all call sites to determine which function params are always
    * non-negative. This enables native % and / operators instead of
@@ -8079,6 +8661,7 @@ char *codegen_get_output(CodeGen *cg) {
   Buffer out;
   buf_init(&out);
   buf_write(&out, cg->header.data ? cg->header.data : "");
+  buf_write(&out, cg->globals.data ? cg->globals.data : "");
   if (cg->uses_security)
     buf_write(&out, "#include \"lp_security.h\"\n");
   if (cg->uses_parallel)
@@ -8087,7 +8670,15 @@ char *codegen_get_output(CodeGen *cg) {
     buf_write(&out, "#include \"lp_gpu.h\"\n");
   buf_write(&out, cg->helpers.data ? cg->helpers.data : "");
   buf_write(&out, cg->funcs.data ? cg->funcs.data : "");
+  buf_write(&out, "#include <locale.h>\n");
   buf_write(&out, "int main(void) {\n");
+  buf_write(&out, "    setlocale(LC_NUMERIC, \"C\");\n");
+  buf_write(&out, "#ifdef _WIN32\n");
+  buf_write(&out, "#ifndef _WINDOWS_\n");
+  buf_write(&out, "    extern int SetConsoleOutputCP();\n");
+  buf_write(&out, "#endif\n");
+  buf_write(&out, "    SetConsoleOutputCP(65001);\n");
+  buf_write(&out, "#endif\n");
 
   /* Python init if needed */
   if (cg->uses_python) {
@@ -8130,6 +8721,7 @@ char *codegen_get_output(CodeGen *cg) {
 }
 void codegen_free(CodeGen *cg) {
   buf_free(&cg->header);
+  buf_free(&cg->globals);
   buf_free(&cg->helpers);
   buf_free(&cg->funcs);
   buf_free(&cg->main_body);
