@@ -843,6 +843,12 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
         op == TOK_LTE || op == TOK_GTE || op == TOK_AND || op == TOK_OR ||
         op == TOK_IS)
       return LP_BOOL;
+    /* Bitwise ops always produce LP_INT regardless of operand types.
+     * The codegen inserts (int64_t)lp_int(...) unwraps for LP_VAL operands,
+     * so the result is always a native integer. */
+    if (op == TOK_BIT_AND || op == TOK_BIT_OR || op == TOK_BIT_XOR ||
+        op == TOK_LSHIFT || op == TOK_RSHIFT)
+      return LP_INT;
     /* String + anything = string concat */
     if (op == TOK_PLUS && (lt == LP_STRING || rt == LP_STRING))
       return LP_STRING;
@@ -862,9 +868,6 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
         return LP_BOOL;
       return LP_VAL;
     }
-    if (op == TOK_BIT_AND || op == TOK_BIT_OR || op == TOK_BIT_XOR ||
-        op == TOK_LSHIFT || op == TOK_RSHIFT)
-      return LP_INT;
     if (lt == LP_FLOAT || rt == LP_FLOAT)
       return LP_FLOAT;
     if (op == TOK_SLASH)
@@ -1698,9 +1701,24 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
   case NODE_NONE_LIT:
     buf_write(buf, "0 /* None */");
     break;
-  case NODE_NAME:
-    buf_printf(buf, "lp_%s", node->name_expr.name);
+  case NODE_NAME: {
+    /* Type narrowing: if a parameter was narrowed (e.g. x = int(x)), the C
+     * variable is still LpVal but the logical type is LP_INT.  Emit an
+     * unwrap so the C expression has the correct native type. */
+    Symbol *_ns = scope_lookup(cg->scope, node->name_expr.name);
+    if (_ns && _ns->is_param && _ns->type == LP_INT) {
+      buf_printf(buf, "lp_int(lp_%s)", node->name_expr.name);
+    } else if (_ns && _ns->is_param && _ns->type == LP_FLOAT) {
+      buf_printf(buf, "lp_float(lp_%s)", node->name_expr.name);
+    } else if (_ns && _ns->is_param && _ns->type == LP_STRING) {
+      buf_printf(buf, "lp_str(lp_%s)", node->name_expr.name);
+    } else if (_ns && _ns->is_param && _ns->type == LP_BOOL) {
+      buf_printf(buf, "lp_bool(lp_%s)", node->name_expr.name);
+    } else {
+      buf_printf(buf, "lp_%s", node->name_expr.name);
+    }
     break;
+  }
   case NODE_FSTRING: {
     /* Generate f-string: concatenate all parts into a string */
     /* We'll use snprintf with a buffer for each part */
@@ -2203,11 +2221,24 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
       buf_write(buf, "(");
       if (op == TOK_BIT_AND || op == TOK_BIT_OR || op == TOK_BIT_XOR ||
           op == TOK_LSHIFT || op == TOK_RSHIFT) {
-        buf_write(buf, "(int64_t)(");
+        /* Safety: unwrap LP_VAL via lp_int() before the (int64_t) cast.
+         * This handles cases where a variable was not narrowed (e.g. local
+         * vars pre-declared as LpVal by scan_declarations). */
+        LpType _lt = infer_type(cg, node->bin_op.left);
+        if (_lt == LP_VAL) {
+          buf_write(buf, "(int64_t)lp_int(");
+        } else {
+          buf_write(buf, "(int64_t)(");
+        }
         gen_expr(cg, buf, node->bin_op.left);
         buf_write(buf, ")");
         buf_write(buf, ops);
-        buf_write(buf, "(int64_t)(");
+        LpType _rt = infer_type(cg, node->bin_op.right);
+        if (_rt == LP_VAL) {
+          buf_write(buf, "(int64_t)lp_int(");
+        } else {
+          buf_write(buf, "(int64_t)(");
+        }
         gen_expr(cg, buf, node->bin_op.right);
         buf_write(buf, ")");
       } else {
@@ -2229,9 +2260,16 @@ static void gen_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
       gen_expr(cg, buf, node->unary_op.operand);
       buf_write(buf, "))");
     } else if (node->unary_op.op == TOK_BIT_NOT) {
-      buf_write(buf, "(~(int64_t)(");
-      gen_expr(cg, buf, node->unary_op.operand);
-      buf_write(buf, "))");
+      {
+        LpType _ut = infer_type(cg, node->unary_op.operand);
+        if (_ut == LP_VAL) {
+          buf_write(buf, "(~(int64_t)lp_int(");
+        } else {
+          buf_write(buf, "(~(int64_t)(");
+        }
+        gen_expr(cg, buf, node->unary_op.operand);
+        buf_write(buf, "))");
+      }
     } else {
       gen_expr(cg, buf, node->unary_op.operand);
     }
@@ -4629,6 +4667,25 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
       *dot = '.'; /* restore string */
     } else {
       Symbol *existing = scope_lookup(cg->scope, node->assign.name);
+      /* Type narrowing: when a parameter (default LP_VAL) is reassigned with a
+       * specific type (LP_INT/LP_FLOAT/etc.), record it and apply AFTER emitting
+       * the assignment.  The assignment itself still targets LP_VAL so the C code
+       * stores the converted value back into the LpVal parameter.  After the
+       * assignment, the symbol type is narrowed so all subsequent uses get the
+       * specific type.  This makes patterns like
+       *   def foo(x): x = int(x); return x >> 4
+       * work correctly without manual parameter renaming.
+       *
+       * Implementation: defer the type change to _after_ the assignment is emitted,
+       * because the assignment codepath uses existing->type for emit_cast and we
+       * need it to remain LP_VAL during the assignment itself. */
+      int _param_narrow = 0;
+      LpType _param_narrow_type = LP_UNKNOWN;
+      if (existing && existing->is_param && existing->declared &&
+          existing->type == LP_VAL && t != LP_UNKNOWN && t != LP_VAL) {
+        _param_narrow = 1;
+        _param_narrow_type = t;
+      }
       if (!existing) {
         const char *class_name = NULL;
         if (t == LP_OBJECT && node->assign.value->type == NODE_CALL &&
@@ -5288,11 +5345,21 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
               }
             } else {
               buf_printf(assign_buf, "lp_%s = ", node->assign.name);
-              emit_cast(cg, assign_buf, node->assign.value, existing->type);
+              /* Narrowed param: C variable is still LpVal, so store as LpVal */
+              if (existing->is_param && existing->type != LP_VAL &&
+                  existing->type != LP_UNKNOWN) {
+                emit_cast(cg, assign_buf, node->assign.value, LP_VAL);
+              } else {
+                emit_cast(cg, assign_buf, node->assign.value, existing->type);
+              }
               buf_write(assign_buf, ";\n");
             }
           }
         }
+      }
+      /* Apply deferred type narrowing for parameters (see comment above) */
+      if (_param_narrow && existing) {
+        existing->type = _param_narrow_type;
       }
     }
     break;
@@ -7682,13 +7749,16 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
         buf_printf(&cg->funcs, "%s __restrict__ lp_%s", lp_type_to_c(pt),
                    p->name);
         Symbol *sym = scope_define(func_scope, p->name, pt);
-        if (sym)
+        if (sym) {
           sym->declared = 1;
+          sym->is_param = 1;
+        }
       } else {
         buf_printf(&cg->funcs, "%s lp_%s", lp_type_to_c(pt), p->name);
         Symbol *sym = scope_define(func_scope, p->name, pt);
         if (sym) {
           sym->declared = 1;
+          sym->is_param = 1;
           /* Propagate non_negative from call-site analysis (2.5-pass) */
           if (pt == LP_INT) {
             Symbol *fn_sym = scope_lookup(cg->scope, node->func_def.name);
