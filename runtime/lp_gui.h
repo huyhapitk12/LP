@@ -260,9 +260,12 @@ static LRESULT CALLBACK _lp_gui_wndproc(HWND h,UINT m,WPARAM w,LPARAM l){
     case WM_KEYDOWN:_lp_keys[w&0xFF]=1;if(_lp_on_kdown)_lp_on_kdown((int)w);return 0;
     case WM_KEYUP:_lp_keys[w&0xFF]=0;if(_lp_on_kup)_lp_on_kup((int)w);return 0;
     case WM_MOUSEMOVE:_lp_mx=LOWORD(l);_lp_my=HIWORD(l);if(_lp_on_mmove)_lp_on_mmove(_lp_mx,_lp_my,0);return 0;
-    case WM_LBUTTONDOWN:if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),1);return 0;
-    case WM_RBUTTONDOWN:if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),2);return 0;
-    case WM_MBUTTONDOWN:if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),3);return 0;
+    case WM_LBUTTONDOWN:_lp_keys[VK_LBUTTON]=1;if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),1);return 0;
+    case WM_LBUTTONUP:_lp_keys[VK_LBUTTON]=0;return 0;
+    case WM_RBUTTONDOWN:_lp_keys[VK_RBUTTON]=1;if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),2);return 0;
+    case WM_RBUTTONUP:_lp_keys[VK_RBUTTON]=0;return 0;
+    case WM_MBUTTONDOWN:_lp_keys[VK_MBUTTON]=1;if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),3);return 0;
+    case WM_MBUTTONUP:_lp_keys[VK_MBUTTON]=0;return 0;
     case WM_PAINT:{LpCanvas2D*c=_lp_fc2d(h);if(c&&c->memDC){PAINTSTRUCT ps;HDC dc=BeginPaint(h,&ps);BitBlt(dc,0,0,c->w,c->h,c->memDC,0,0,SRCCOPY);EndPaint(h,&ps);return 0;}break;}
     case WM_SIZE:{
         LpCanvas3D*g=_lp_fc3d(h);
@@ -302,7 +305,7 @@ static inline int lp_gui_set_timer(int h,int ms){return(int)SetTimer((HWND)(intp
 static inline int lp_gui_set_fps(int h,int fps){return lp_gui_set_timer(h,fps>0?1000/fps:16);}
 /* Event loops */
 static inline void lp_gui_run(int h){(void)h;MSG m;while(GetMessage(&m,NULL,0,0)){TranslateMessage(&m);DispatchMessage(&m);}}
-static inline void lp_gui_run_game(int h){(void)h;MSG m;for(;;){while(PeekMessage(&m,NULL,0,0,PM_REMOVE)){if(m.message==WM_QUIT)return;TranslateMessage(&m);DispatchMessage(&m);}if(_lp_on_timer)_lp_on_timer();Sleep(1);}}
+static inline void lp_gui_run_game(int h){(void)h;MSG m;for(;;){while(PeekMessage(&m,NULL,0,0,PM_REMOVE)){if(m.message==WM_QUIT)return;TranslateMessage(&m);DispatchMessage(&m);}Sleep(1);}}
 
 /* === Basic Widgets === */
 static inline int lp_gui_label(int p,const char*t,int x,int y){
@@ -491,12 +494,12 @@ typedef uint64_t VkSemaphore,VkFence,VkDeviceMemory,VkBuffer,VkSampler,VkDescrip
 #define VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE 24
 #define VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE 26
 #define VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE 27
-#define VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE 37
 #define VK_STRUCTURE_TYPE_RENDER_PASS_CREATE 38
+#define VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE 37
 #define VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE 39
 #define VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE 40
-#define VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN 41
-#define VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN 42
+#define VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN 42
+#define VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN 43
 #define VK_STRUCTURE_TYPE_BUFFER_CREATE 12
 #define VK_STRUCTURE_TYPE_MEMORY_ALLOCATE 5
 #define VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE 1000009000
