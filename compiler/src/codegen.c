@@ -5853,10 +5853,19 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
        * expression evaluates to a native type (int64_t, double, etc.),
        * wrap it with emit_lp_val so the C types match.  This handles patterns
        * like  def f(v): v = float(v); return 0.0 - v  where param narrowing
-       * changes the expression type after the return type was inferred. */
+       * changes the expression type after the return type was inferred.
+       *
+       * IMPORTANT: only call emit_lp_val() for types that are losslessly
+       * representable inside the LpVal union.  For non-boxable types
+       * (LP_PTR, LP_OBJECT, native arrays, etc.), emit the expression
+       * directly so GCC surfaces a type-mismatch error rather than silently
+       * returning lp_val_null(). */
       LpType _ret_t = cg->current_func_ret;
       LpType _expr_t = infer_type(cg, node->return_stmt.value);
-      if (_ret_t == LP_VAL && _expr_t != LP_UNKNOWN && _expr_t != LP_VAL) {
+      if (_ret_t == LP_VAL && _expr_t != LP_UNKNOWN && _expr_t != LP_VAL &&
+          (_expr_t == LP_INT || _expr_t == LP_FLOAT ||
+           _expr_t == LP_STRING || _expr_t == LP_BOOL ||
+           _expr_t == LP_LIST || _expr_t == LP_DICT)) {
         emit_lp_val(cg, buf, node->return_stmt.value);
       } else if (_ret_t != LP_UNKNOWN && _ret_t != LP_VAL &&
                  _expr_t != _ret_t) {
