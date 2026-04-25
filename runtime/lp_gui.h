@@ -300,6 +300,23 @@ static inline void lp_gui_on_mouse_click(LpGuiMouseCB cb){_lp_on_mclick=cb;}
 static inline int lp_gui_get_key_state(int k){return _lp_keys[k&0xFF];}
 static inline int lp_gui_get_mouse_x(void){return _lp_mx;}
 static inline int lp_gui_get_mouse_y(void){return _lp_my;}
+/* Cursor control (FPS mouse) */
+static inline void lp_gui_hide_cursor(void){while(ShowCursor(FALSE)>=0);}
+static inline void lp_gui_show_cursor(void){while(ShowCursor(TRUE)<0);}
+static inline void lp_gui_clip_to_window(int h){
+    HWND hwnd=(HWND)(intptr_t)h;RECT rc;GetClientRect(hwnd,&rc);
+    POINT tl={rc.left,rc.top};ClientToScreen(hwnd,&tl);
+    POINT br={rc.right,rc.bottom};ClientToScreen(hwnd,&br);
+    RECT sr={tl.x,tl.y,br.x,br.y};ClipCursor(&sr);
+}
+static inline void lp_gui_release_cursor(void){ClipCursor(NULL);}
+static inline void lp_gui_center_cursor(int h){
+    HWND hwnd=(HWND)(intptr_t)h;RECT rc;GetClientRect(hwnd,&rc);
+    int cx=(rc.left+rc.right)/2,cy=(rc.top+rc.bottom)/2;
+    POINT pt={cx,cy};ClientToScreen(hwnd,&pt);
+    SetCursorPos(pt.x,pt.y);
+    _lp_mx=cx;_lp_my=cy;
+}
 /* Timer */
 static inline int lp_gui_set_timer(int h,int ms){return(int)SetTimer((HWND)(intptr_t)h,1,ms>0?ms:16,NULL);}
 static inline int lp_gui_set_fps(int h,int fps){return lp_gui_set_timer(h,fps>0?1000/fps:16);}
