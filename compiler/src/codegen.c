@@ -4825,10 +4825,9 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                        "#define _raw_%s ((int64_t* "
                        "__restrict__)__builtin_assume_aligned(lp_%s->data, 32))",
                        node->assign.name, node->assign.name);
-          } else if (t == LP_NATIVE_ARRAY_1D &&
-                     node->assign.value &&
-                     node->assign.value->type == NODE_CALL) {
-            /* Function call returning native int array (e.g. result = raycast(...)) */
+          } else if (t == LP_NATIVE_ARRAY_1D && node->assign.value &&
+                     node->assign.value->type != NODE_LIST_EXPR) {
+            /* Function call or other expression returning LpIntArray* */
             buf_printf(assign_buf, "LpIntArray* lp_%s = ", node->assign.name);
             gen_expr(cg, assign_buf, node->assign.value);
             buf_write(assign_buf, ";\n");
@@ -5167,6 +5166,18 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 buf_printf(assign_buf, "lp_%s->data[%d] = %lldLL;\n",
                            node->assign.name, _ei, (long long)_iv);
               }
+            } else if (existing->type == LP_NATIVE_ARRAY_1D &&
+                       node->assign.value &&
+                       node->assign.value->type != NODE_LIST_EXPR) {
+              /* Function call or other expression returning LpIntArray* */
+              write_indent(assign_buf, assign_indent);
+              buf_printf(assign_buf, "LpIntArray* lp_%s = ", node->assign.name);
+              gen_expr(cg, assign_buf, node->assign.value);
+              buf_write(assign_buf, ";\n");
+              buf_printf(assign_buf,
+                         "#define _raw_%s ((int64_t* "
+                         "__restrict__)__builtin_assume_aligned(lp_%s->data, 32))",
+                         node->assign.name, node->assign.name);
             } else if (existing->type == LP_NATIVE_ARRAY_2D) {
               buf_printf(assign_buf, "LpIntArray2D* lp_%s = NULL;\n",
                          node->assign.name);
@@ -7745,13 +7756,12 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
      * GCC will apply IPA strength reduction with LTO but the result IS correct.
      * The ~4% gap vs C++ is inherent in LP's static linkage vs C++ extern
      * linkage. */
-    buf_write(&cg->funcs, "static __attribute__((hot, noclone, optimize(\"O3,unroll-loops,strict-aliasing,omit-frame-pointer,fast-math\"),flatten)) ");
+    buf_write(&cg->funcs, "static __attribute__((hot, noclone, optimize(\"O3,unroll-loops,omit-frame-pointer\"))) ");
   } else {
     buf_write(
         &cg->funcs,
         "static inline __attribute__((hot, "
-        "optimize(\"O3,unroll-loops,strict-aliasing,omit-frame-pointer,fast-"
-        "math\"), target(\"avx512f,avx512vl,avx512dq,avx2,fma\"),flatten)) ");
+        "optimize(\"O3,unroll-loops,omit-frame-pointer\"))) ");
   }
   buf_printf(&cg->funcs, "%s lp_%s(", lp_type_to_c(ret), node->func_def.name);
   for (int i = 0; i < node->func_def.params.count; i++) {
