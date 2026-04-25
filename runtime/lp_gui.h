@@ -270,6 +270,7 @@ static LRESULT CALLBACK _lp_gui_wndproc(HWND h,UINT m,WPARAM w,LPARAM l){
     case WM_SIZE:{
         LpCanvas3D*g=_lp_fc3d(h);
         if(g&&g->backend==LP_GUI_BACKEND_OPENGL){g->w=LOWORD(l);g->h=HIWORD(l);wglMakeCurrent(g->hdc,g->hglrc);glViewport(0,0,g->w,g->h);}
+        if(!g){int ww=LOWORD(l),hh=HIWORD(l);if(ww>0&&hh>0){for(int i=0;i<_lp_c3d_n;i++)MoveWindow(_lp_c3d[i].hwnd,0,0,ww,hh,TRUE);for(int i=0;i<_lp_c2d_n;i++)MoveWindow(_lp_c2d[i].hwnd,0,0,ww,hh,TRUE);}}
         break;}
     }
     return DefWindowProcA(h,m,w,l);
@@ -317,6 +318,9 @@ static inline void lp_gui_center_cursor(int h){
     SetCursorPos(pt.x,pt.y);
     _lp_mx=cx;_lp_my=cy;
 }
+/* Canvas size getters */
+static inline int lp_gui_get_canvas_w(int h){LpCanvas3D*g=_lp_fc3d((HWND)(intptr_t)h);return g?g->w:0;}
+static inline int lp_gui_get_canvas_h(int h){LpCanvas3D*g=_lp_fc3d((HWND)(intptr_t)h);return g?g->h:0;}
 /* Timer */
 static inline int lp_gui_set_timer(int h,int ms){return(int)SetTimer((HWND)(intptr_t)h,1,ms>0?ms:16,NULL);}
 static inline int lp_gui_set_fps(int h,int fps){return lp_gui_set_timer(h,fps>0?1000/fps:16);}
