@@ -179,6 +179,8 @@ typedef struct {
   int uses_tensor;   /* needs lp_tensor.h */
   int has_main;            /* True if main() function was defined by user */
   LpType main_return_type; /* Return type of main() function */
+  LpType current_func_ret; /* Return type of the function currently being compiled
+                              (for type-safe return wrapping) */
   int thread_adapter_count;
   /* Hybrid ASM: functions compiled directly to ASM object files */
   char *asm_compiled_funcs[32];
