@@ -63,10 +63,10 @@ static int _lp_mx=0,_lp_my=0,_lp_keys[256]={0};
 static int _lp_gui_backend_pref=LP_GUI_BACKEND_AUTO,_lp_gui_backend_active=LP_GUI_BACKEND_OPENGL,_lp_gui_vsync=1;
 static char _lp_gui_dx_name[256]="",_lp_gui_dx_vendor[64]="Unknown",_lp_gui_vk_info[256]="Vulkan loader unavailable";
 static LpCanvas3D*_lp_active3d=NULL;
-static LpGuiVertex _lp_gui_batch[65536];static int _lp_gui_batch_n=0,_lp_gui_mode=0,_lp_gui_topology=0;
+static LpGuiVertex _lp_gui_batch[262144];static int _lp_gui_batch_n=0,_lp_gui_mode=0,_lp_gui_topology=0;
 static LpGuiVertex _lp_gui_quad[4];static int _lp_gui_quad_n=0;
 /* Mesh cache — avoids rebuilding world geometry every frame */
-static LpGuiVertex _lp_gui_mesh_cache[65536];static int _lp_gui_mesh_cache_n=0;
+static LpGuiVertex _lp_gui_mesh_cache[262144];static int _lp_gui_mesh_cache_n=0;
 static float _lp_gui_cr=1.0f,_lp_gui_cg=1.0f,_lp_gui_cb=1.0f,_lp_gui_ca=1.0f;
 static float _lp_gui_nx=0,_lp_gui_ny=1.0f,_lp_gui_nz=0,_lp_gui_tu=0,_lp_gui_tv=0;
 static int _lp_gui_lighting=0,_lp_gui_texturing=0;
