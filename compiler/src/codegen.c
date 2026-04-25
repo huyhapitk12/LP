@@ -4825,6 +4825,16 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                        "#define _raw_%s ((int64_t* "
                        "__restrict__)__builtin_assume_aligned(lp_%s->data, 32))",
                        node->assign.name, node->assign.name);
+          } else if (t == LP_NATIVE_ARRAY_1D && node->assign.value &&
+                     node->assign.value->type != NODE_LIST_EXPR) {
+            /* Function call or other expression returning LpIntArray* */
+            buf_printf(assign_buf, "LpIntArray* lp_%s = ", node->assign.name);
+            gen_expr(cg, assign_buf, node->assign.value);
+            buf_write(assign_buf, ";\n");
+            buf_printf(assign_buf,
+                       "#define _raw_%s ((int64_t* "
+                       "__restrict__)__builtin_assume_aligned(lp_%s->data, 32))",
+                       node->assign.name, node->assign.name);
           } else if (t == LP_NATIVE_ARRAY_2D) {
             buf_printf(assign_buf, "LpIntArray2D* lp_%s = NULL;",
                        node->assign.name);
@@ -5145,6 +5155,18 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                 buf_printf(assign_buf, "lp_%s->data[%d] = %lldLL;\n",
                            node->assign.name, _ei, (long long)_iv);
               }
+            } else if (existing->type == LP_NATIVE_ARRAY_1D &&
+                       node->assign.value &&
+                       node->assign.value->type != NODE_LIST_EXPR) {
+              /* Function call or other expression returning LpIntArray* */
+              write_indent(assign_buf, assign_indent);
+              buf_printf(assign_buf, "LpIntArray* lp_%s = ", node->assign.name);
+              gen_expr(cg, assign_buf, node->assign.value);
+              buf_write(assign_buf, ";\n");
+              buf_printf(assign_buf,
+                         "#define _raw_%s ((int64_t* "
+                         "__restrict__)__builtin_assume_aligned(lp_%s->data, 32))",
+                         node->assign.name, node->assign.name);
             } else if (existing->type == LP_NATIVE_ARRAY_2D) {
               buf_printf(assign_buf, "LpIntArray2D* lp_%s = NULL;\n",
                          node->assign.name);
