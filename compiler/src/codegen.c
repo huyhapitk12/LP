@@ -4825,6 +4825,17 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
                        "#define _raw_%s ((int64_t* "
                        "__restrict__)__builtin_assume_aligned(lp_%s->data, 32))",
                        node->assign.name, node->assign.name);
+          } else if (t == LP_NATIVE_ARRAY_1D &&
+                     node->assign.value &&
+                     node->assign.value->type == NODE_CALL) {
+            /* Function call returning native int array (e.g. result = raycast(...)) */
+            buf_printf(assign_buf, "LpIntArray* lp_%s = ", node->assign.name);
+            gen_expr(cg, assign_buf, node->assign.value);
+            buf_write(assign_buf, ";\n");
+            buf_printf(assign_buf,
+                       "#define _raw_%s ((int64_t* "
+                       "__restrict__)__builtin_assume_aligned(lp_%s->data, 32))",
+                       node->assign.name, node->assign.name);
           } else if (t == LP_NATIVE_ARRAY_2D) {
             buf_printf(assign_buf, "LpIntArray2D* lp_%s = NULL;",
                        node->assign.name);
@@ -4892,6 +4903,17 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
               gen_expr(cg, assign_buf, auto_array_count);
               buf_write(assign_buf, ");");
             }
+          } else if (t == LP_NATIVE_ARRAY_FLOAT_1D &&
+                     node->assign.value &&
+                     node->assign.value->type == NODE_CALL) {
+            /* Function call returning native float array */
+            buf_printf(assign_buf, "LpFloatArray* lp_%s = ", node->assign.name);
+            gen_expr(cg, assign_buf, node->assign.value);
+            buf_write(assign_buf, ";\n");
+            buf_printf(assign_buf,
+                       "#define _raw_%s ((double* "
+                       "__restrict__)__builtin_assume_aligned(lp_%s->data, 32))",
+                       node->assign.name, node->assign.name);
           } else {
             buf_printf(assign_buf, "LpFloatArray* lp_%s = NULL;",
                        node->assign.name);
