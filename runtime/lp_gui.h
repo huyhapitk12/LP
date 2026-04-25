@@ -269,7 +269,8 @@ static LRESULT CALLBACK _lp_gui_wndproc(HWND h,UINT m,WPARAM w,LPARAM l){
     case WM_PAINT:{LpCanvas2D*c=_lp_fc2d(h);if(c&&c->memDC){PAINTSTRUCT ps;HDC dc=BeginPaint(h,&ps);BitBlt(dc,0,0,c->w,c->h,c->memDC,0,0,SRCCOPY);EndPaint(h,&ps);return 0;}break;}
     case WM_SIZE:{
         LpCanvas3D*g=_lp_fc3d(h);
-        if(g&&g->backend==LP_GUI_BACKEND_OPENGL){g->w=LOWORD(l);g->h=HIWORD(l);wglMakeCurrent(g->hdc,g->hglrc);glViewport(0,0,g->w,g->h);}
+        if(g){g->w=LOWORD(l);g->h=HIWORD(l);if(g->w<1)g->w=1;if(g->h<1)g->h=1;
+            if(g->backend==LP_GUI_BACKEND_OPENGL){wglMakeCurrent(g->hdc,g->hglrc);glViewport(0,0,g->w,g->h);}}
         if(!g){int ww=LOWORD(l),hh=HIWORD(l);if(ww>0&&hh>0){for(int i=0;i<_lp_c3d_n;i++)MoveWindow(_lp_c3d[i].hwnd,0,0,ww,hh,TRUE);for(int i=0;i<_lp_c2d_n;i++)MoveWindow(_lp_c2d[i].hwnd,0,0,ww,hh,TRUE);}}
         break;}
     }
@@ -917,6 +918,9 @@ static inline void lp_gui_present3d(int cv){
         PresentInfo pi={VK_STRUCTURE_TYPE_PRESENT_INFO,NULL,1,&vk->semDone,1,&vk->swapchain,&imgIdx,NULL};
         p_vkQueuePresentKHR(vk->queue,&pi);
         return;}
+    /* Ensure viewport matches actual canvas size before swap */
+    {RECT cr;GetClientRect(c->hwnd,&cr);int cw=cr.right-cr.left,ch=cr.bottom-cr.top;
+    if(cw>0&&ch>0&&(cw!=c->w||ch!=c->h)){c->w=cw;c->h=ch;wglMakeCurrent(c->hdc,c->hglrc);glViewport(0,0,cw,ch);}}
     SwapBuffers(c->hdc);}
 static inline void lp_gui_begin3d(int mode){
     _lp_gui_mode=mode;_lp_gui_batch_n=0;_lp_gui_quad_n=0;
@@ -933,6 +937,10 @@ static inline void lp_gui_normal3d(double x,double y,double z){_lp_gui_nx=(float
 static inline void lp_gui_texcoord2d(double u,double v){if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;glTexCoord2f((float)u,(float)v);}
 /* Camera & Transform */
 static inline void lp_gui_perspective(double fov,double aspect,double near_,double far_){
+    /* Auto-correct aspect ratio from active canvas size */
+    if(_lp_active3d&&_lp_active3d->w>0&&_lp_active3d->h>0){
+        aspect=(double)_lp_active3d->w/(double)_lp_active3d->h;}
+    if(aspect<0.1)aspect=1.333;
     _lp_m4_init();_lp_gui_proj=_lp_m4_perspective((float)fov,(float)aspect,(float)near_,(float)far_);
     if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;glMatrixMode(GL_PROJECTION);glLoadIdentity();gluPerspective(fov,aspect,near_,far_);glMatrixMode(GL_MODELVIEW);}
 static inline void lp_gui_ortho(double l,double r,double b,double t,double n,double f){
