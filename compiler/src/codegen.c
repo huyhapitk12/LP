@@ -1206,7 +1206,9 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
           if (strcmp(func_name, "get_value") == 0 ||
               strcmp(func_name, "get_mouse_x") == 0 || strcmp(func_name, "get_mouse_y") == 0 ||
               strcmp(func_name, "get_canvas_w") == 0 || strcmp(func_name, "get_canvas_h") == 0 ||
-              strcmp(func_name, "get_resizable") == 0)
+              strcmp(func_name, "get_resizable") == 0 ||
+              strcmp(func_name, "save_batch") == 0 ||
+              strcmp(func_name, "get_backend") == 0 || strcmp(func_name, "get_vsync") == 0)
             return LP_INT;
           if (strcmp(func_name, "confirm") == 0 || strcmp(func_name, "get_key_state") == 0 ||
               strcmp(func_name, "directx_available") == 0 || strcmp(func_name, "vulkan_available") == 0)

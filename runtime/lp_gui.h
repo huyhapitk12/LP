@@ -59,13 +59,14 @@ static LpGuiKeyCB _lp_on_kdown=NULL,_lp_on_kup=NULL;
 static LpGuiMouseCB _lp_on_mmove=NULL,_lp_on_mclick=NULL;
 static LpCanvas2D _lp_c2d[LP_GUI_MAX];static int _lp_c2d_n=0;
 static LpCanvas3D _lp_c3d[LP_GUI_MAX];static int _lp_c3d_n=0;
-static int _lp_c3d_resize[LP_GUI_MAX];/* 1=auto-resize, 0=fixed */
 static int _lp_mx=0,_lp_my=0,_lp_keys[256]={0};
 static int _lp_gui_backend_pref=LP_GUI_BACKEND_AUTO,_lp_gui_backend_active=LP_GUI_BACKEND_OPENGL,_lp_gui_vsync=1;
 static char _lp_gui_dx_name[256]="",_lp_gui_dx_vendor[64]="Unknown",_lp_gui_vk_info[256]="Vulkan loader unavailable";
 static LpCanvas3D*_lp_active3d=NULL;
-static LpGuiVertex _lp_gui_batch[262144];static int _lp_gui_batch_n=0,_lp_gui_mode=0,_lp_gui_topology=0;
+static LpGuiVertex _lp_gui_batch[65536];static int _lp_gui_batch_n=0,_lp_gui_mode=0,_lp_gui_topology=0;
 static LpGuiVertex _lp_gui_quad[4];static int _lp_gui_quad_n=0;
+/* Mesh cache — avoids rebuilding world geometry every frame */
+static LpGuiVertex _lp_gui_mesh_cache[65536];static int _lp_gui_mesh_cache_n=0;
 static float _lp_gui_cr=1.0f,_lp_gui_cg=1.0f,_lp_gui_cb=1.0f,_lp_gui_ca=1.0f;
 static float _lp_gui_nx=0,_lp_gui_ny=1.0f,_lp_gui_nz=0,_lp_gui_tu=0,_lp_gui_tv=0;
 static int _lp_gui_lighting=0,_lp_gui_texturing=0;
@@ -96,16 +97,10 @@ static LpGuiVertex _lp_gui_make_vertex(float x,float y,float z){_lp_m4_init();Lp
 static void _lp_gui_batch_add(LpGuiVertex v){if(_lp_gui_batch_n<(int)(sizeof(_lp_gui_batch)/sizeof(_lp_gui_batch[0])))_lp_gui_batch[_lp_gui_batch_n++]=v;}
 static void _lp_gui_emit_vertex(float x,float y,float z){
     LpGuiVertex v;
-    if(_lp_gui_backend_active==LP_GUI_BACKEND_DIRECTX11||_lp_gui_backend_active==LP_GUI_BACKEND_VULKAN){
-        v.x=x;v.y=y;v.z=z;v.w=1.0f; /* DX11/Vulkan: GPU MVP via constant/push buffer */
-    }else{
-        /* OpenGL: skip CPU MVP — GL matrix stack (gluLookAt/gluPerspective) handles it */
-        v.x=x;v.y=y;v.z=z;v.w=1.0f;
-    }
+    v.x=x;v.y=y;v.z=z;v.w=1.0f; /* Raw positions — GL matrix stack / DX11-Vulkan GPU handles MVP */
     v.r=_lp_gui_cr;v.g=_lp_gui_cg;v.b=_lp_gui_cb;v.a=_lp_gui_ca;
     v.nx=_lp_gui_nx;v.ny=_lp_gui_ny;v.nz=_lp_gui_nz;v.nw=0;
     v.u=_lp_gui_tu;v.v=_lp_gui_tv;v._p0=v._p1=0;
-    /* Vulkan GPU: Lambert lighting handled by SPIR-V shader via push constants */
     if(_lp_gui_mode==1){_lp_gui_quad[_lp_gui_quad_n++]=v;if(_lp_gui_quad_n==4){_lp_gui_batch_add(_lp_gui_quad[0]);_lp_gui_batch_add(_lp_gui_quad[1]);_lp_gui_batch_add(_lp_gui_quad[2]);_lp_gui_batch_add(_lp_gui_quad[0]);_lp_gui_batch_add(_lp_gui_quad[2]);_lp_gui_batch_add(_lp_gui_quad[3]);_lp_gui_quad_n=0;}}else _lp_gui_batch_add(v);
 }
 static inline const char*_lp_gui_vendor_name(UINT id){
@@ -251,7 +246,7 @@ static inline int _lp_gui_canvasdx11(int p,int x,int y,int w,int h){
     if(g->dx_dss)ID3D11DeviceContext_OMSetDepthStencilState(g->dx_ctx,g->dx_dss,0);}
     if(!_lp_gui_dx_init_pipeline(g)){if(g->dx_dsv)ID3D11DepthStencilView_Release(g->dx_dsv);if(g->dx_rtv)ID3D11RenderTargetView_Release(g->dx_rtv);if(g->dx_ctx)ID3D11DeviceContext_Release(g->dx_ctx);if(g->dx_device)ID3D11Device_Release(g->dx_device);if(g->dx_swap)IDXGISwapChain_Release(g->dx_swap);DestroyWindow(hw);ZeroMemory(g,sizeof(*g));return 0;}
     ID3D11DeviceContext_OMSetRenderTargets(g->dx_ctx,1,&g->dx_rtv,g->dx_dsv);
-    _lp_c3d_resize[_lp_c3d_n]=1;_lp_c3d_n++;_lp_gui_backend_active=LP_GUI_BACKEND_DIRECTX11;_lp_active3d=g;lp_gui_directx_available();_lp_m4_init();
+    _lp_c3d_n++;_lp_gui_backend_active=LP_GUI_BACKEND_DIRECTX11;_lp_active3d=g;lp_gui_directx_available();_lp_m4_init();
     return(int)(intptr_t)hw;
 }
 /* WndProc */
@@ -262,20 +257,13 @@ static LRESULT CALLBACK _lp_gui_wndproc(HWND h,UINT m,WPARAM w,LPARAM l){
     case WM_KEYDOWN:_lp_keys[w&0xFF]=1;if(_lp_on_kdown)_lp_on_kdown((int)w);return 0;
     case WM_KEYUP:_lp_keys[w&0xFF]=0;if(_lp_on_kup)_lp_on_kup((int)w);return 0;
     case WM_MOUSEMOVE:_lp_mx=LOWORD(l);_lp_my=HIWORD(l);if(_lp_on_mmove)_lp_on_mmove(_lp_mx,_lp_my,0);return 0;
-    case WM_LBUTTONDOWN:_lp_keys[VK_LBUTTON]=1;if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),1);return 0;
-    case WM_LBUTTONUP:_lp_keys[VK_LBUTTON]=0;return 0;
-    case WM_RBUTTONDOWN:_lp_keys[VK_RBUTTON]=1;if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),2);return 0;
-    case WM_RBUTTONUP:_lp_keys[VK_RBUTTON]=0;return 0;
-    case WM_MBUTTONDOWN:_lp_keys[VK_MBUTTON]=1;if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),3);return 0;
-    case WM_MBUTTONUP:_lp_keys[VK_MBUTTON]=0;return 0;
+    case WM_LBUTTONDOWN:if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),1);return 0;
+    case WM_RBUTTONDOWN:if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),2);return 0;
+    case WM_MBUTTONDOWN:if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),3);return 0;
     case WM_PAINT:{LpCanvas2D*c=_lp_fc2d(h);if(c&&c->memDC){PAINTSTRUCT ps;HDC dc=BeginPaint(h,&ps);BitBlt(dc,0,0,c->w,c->h,c->memDC,0,0,SRCCOPY);EndPaint(h,&ps);return 0;}break;}
     case WM_SIZE:{
         LpCanvas3D*g=_lp_fc3d(h);
-        if(g){g->w=LOWORD(l);g->h=HIWORD(l);if(g->w<1)g->w=1;if(g->h<1)g->h=1;
-            if(g->backend==LP_GUI_BACKEND_OPENGL){wglMakeCurrent(g->hdc,g->hglrc);glViewport(0,0,g->w,g->h);}}
-        if(!g){int ww=LOWORD(l),hh=HIWORD(l);if(ww>0&&hh>0){
-            for(int i=0;i<_lp_c3d_n;i++){if(_lp_c3d_resize[i])MoveWindow(_lp_c3d[i].hwnd,0,0,ww,hh,TRUE);}
-            for(int i=0;i<_lp_c2d_n;i++)MoveWindow(_lp_c2d[i].hwnd,0,0,ww,hh,TRUE);}}
+        if(g&&g->backend==LP_GUI_BACKEND_OPENGL){g->w=LOWORD(l);g->h=HIWORD(l);wglMakeCurrent(g->hdc,g->hglrc);glViewport(0,0,g->w,g->h);}
         break;}
     }
     return DefWindowProcA(h,m,w,l);
@@ -306,32 +294,12 @@ static inline void lp_gui_on_mouse_click(LpGuiMouseCB cb){_lp_on_mclick=cb;}
 static inline int lp_gui_get_key_state(int k){return _lp_keys[k&0xFF];}
 static inline int lp_gui_get_mouse_x(void){return _lp_mx;}
 static inline int lp_gui_get_mouse_y(void){return _lp_my;}
-/* Cursor control (FPS mouse) */
-static inline void lp_gui_hide_cursor(void){while(ShowCursor(FALSE)>=0);}
-static inline void lp_gui_show_cursor(void){while(ShowCursor(TRUE)<0);}
-static inline void lp_gui_clip_to_window(int h){
-    HWND hwnd=(HWND)(intptr_t)h;RECT rc;GetClientRect(hwnd,&rc);
-    POINT tl={rc.left,rc.top};ClientToScreen(hwnd,&tl);
-    POINT br={rc.right,rc.bottom};ClientToScreen(hwnd,&br);
-    RECT sr={tl.x,tl.y,br.x,br.y};ClipCursor(&sr);
-}
-static inline void lp_gui_release_cursor(void){ClipCursor(NULL);}
-static inline void lp_gui_center_cursor(int h){
-    HWND hwnd=(HWND)(intptr_t)h;RECT rc;GetClientRect(hwnd,&rc);
-    int cx=(rc.left+rc.right)/2,cy=(rc.top+rc.bottom)/2;
-    POINT pt={cx,cy};ClientToScreen(hwnd,&pt);
-    SetCursorPos(pt.x,pt.y);
-    _lp_mx=cx;_lp_my=cy;
-}
-/* Canvas size getters */
-static inline int lp_gui_get_canvas_w(int h){LpCanvas3D*g=_lp_fc3d((HWND)(intptr_t)h);return g?g->w:0;}
-static inline int lp_gui_get_canvas_h(int h){LpCanvas3D*g=_lp_fc3d((HWND)(intptr_t)h);return g?g->h:0;}
 /* Timer */
 static inline int lp_gui_set_timer(int h,int ms){return(int)SetTimer((HWND)(intptr_t)h,1,ms>0?ms:16,NULL);}
 static inline int lp_gui_set_fps(int h,int fps){return lp_gui_set_timer(h,fps>0?1000/fps:16);}
 /* Event loops */
 static inline void lp_gui_run(int h){(void)h;MSG m;while(GetMessage(&m,NULL,0,0)){TranslateMessage(&m);DispatchMessage(&m);}}
-static inline void lp_gui_run_game(int h){(void)h;MSG m;for(;;){while(PeekMessage(&m,NULL,0,0,PM_REMOVE)){if(m.message==WM_QUIT)return;TranslateMessage(&m);DispatchMessage(&m);}Sleep(1);}}
+static inline void lp_gui_run_game(int h){(void)h;MSG m;for(;;){while(PeekMessage(&m,NULL,0,0,PM_REMOVE)){if(m.message==WM_QUIT)return;TranslateMessage(&m);DispatchMessage(&m);}if(_lp_on_timer)_lp_on_timer();Sleep(1);}}
 
 /* === Basic Widgets === */
 static inline int lp_gui_label(int p,const char*t,int x,int y){
@@ -480,15 +448,17 @@ static inline void lp_gui_draw_image(int cv,const char*path,int x,int y,int w,in
 static const char _lp_vk_vs_hex[]="03022307000001000b000d00300000000000000011000200010000000b00060001000000474c534c2e7374642e343530000000000e00030000000000010000000f000e0000000000040000006d61696e000000000d000000190000001e0000001f0000002300000024000000290000002a0000002d0000000300030002000000c201000004000a00474c5f474f4f474c455f6370705f7374796c655f6c696e655f646972656374697665000004000800474c5f474f4f474c455f696e636c7564655f6469726563746976650005000400040000006d61696e00000000050006000b000000676c5f50657256657274657800000000060006000b00000000000000676c5f506f736974696f6e00060007000b00000001000000676c5f506f696e7453697a6500000000060007000b00000002000000676c5f436c697044697374616e636500060007000b00000003000000676c5f43756c6c44697374616e636500050003000d000000000000000500030012000000504300000600040012000000000000006d7670000600060012000000010000006c69676874506f73000000000600060012000000020000006c69676874436f6c00000000060005001200000003000000616d6269656e7400060005001200000004000000666c6167730000000500030014000000706300000500040019000000696e506f73000000050004001e00000076436f6c00000000050004001f000000696e436f6c0000000500040023000000764e726d000000000500040024000000696e4e726d000000050003002900000076555600050004002a000000696e555600000000050004002d0000007657506f73000000470003000b00000002000000480005000b000000000000000b00000000000000480005000b000000010000000b00000001000000480005000b000000020000000b00000003000000480005000b000000030000000b000000040000004700030012000000020000004800040012000000000000000500000048000500120000000000000007000000100000004800050012000000000000002300000000000000480005001200000001000000230000004000000048000500120000000200000023000000500000004800050012000000030000002300000060000000480005001200000004000000230000007000000047000400190000001e00000000000000470004001e0000001e00000000000000470004001f0000001e0000000100000047000400230000001e0000000100000047000400240000001e0000000200000047000400290000001e00000002000000470004002a0000001e00000003000000470004002d0000001e00000003000000130002000200000021000300030000000200000016000300060000002000000017000400070000000600000004000000150004000800000020000000000000002b0004000800000009000000010000001c0004000a00000006000000090000001e0006000b00000007000000060000000a0000000a000000200004000c000000030000000b0000003b0004000c0000000d00000003000000150004000e00000020000000010000002b0004000e0000000f000000000000001800040010000000070000000400000017000400110000000e000000040000001e000700120000001000000007000000070000000700000011000000200004001300000009000000120000003b00040013000000140000000900000020000400150000000900000010000000200004001800000001000000070000003b000400180000001900000001000000200004001c00000003000000070000003b0004001c0000001e000000030000003b000400180000001f0000000100000017000400210000000600000003000000200004002200000003000000210000003b0004002200000023000000030000003b00040018000000240000000100000017000400270000000600000002000000200004002800000003000000270000003b0004002800000029000000030000003b000400180000002a000000010000003b000400220000002d000000030000003600050002000000040000000000000003000000f800020005000000410005001500000016000000140000000f0000003d0004001000000017000000160000003d000400070000001a0000001900000091000500070000001b000000170000001a000000410005001c0000001d0000000d0000000f0000003e0003001d0000001b0000003d00040007000000200000001f0000003e0003001e000000200000003d0004000700000025000000240000004f000800210000002600000025000000250000000000000001000000020000003e00030023000000260000003d000400070000002b0000002a0000004f000700270000002c0000002b0000002b00000000000000010000003e000300290000002c0000003d000400070000002e000000190000004f000800210000002f0000002e0000002e0000000000000001000000020000003e0003002d0000002f000000fd00010038000100";
 static const char _lp_vk_fs_hex[]="03022307000001000b000d005e0000000000000011000200010000000b00060001000000474c534c2e7374642e343530000000000e00030000000000010000000f000a0004000000040000006d61696e000000000b00000025000000390000003f0000005c0000001000030004000000070000000300030002000000c201000004000a00474c5f474f4f474c455f6370705f7374796c655f6c696e655f646972656374697665000004000800474c5f474f4f474c455f696e636c7564655f6469726563746976650005000400040000006d61696e00000000050003000900000063000000050004000b00000076436f6c000000000500030010000000504300000600040010000000000000006d7670000600060010000000010000006c69676874506f73000000000600060010000000020000006c69676874436f6c00000000060005001000000003000000616d6269656e7400060005001000000004000000666c61677300000005000300120000007063000005000300210000007465780005000300250000007655560005000300320000004c00000005000400390000007657506f73000000050004003e0000006469666600000000050004003f000000764e726d00000000050005005c0000006f7574436f6c6f7200000000470004000b0000001e0000000000000047000300100000000200000048000400100000000000000005000000480005001000000000000000070000001000000048000500100000000000000023000000000000004800050010000000010000002300000040000000480005001000000002000000230000005000000048000500100000000300000023000000600000004800050010000000040000002300000070000000470004002100000021000000000000004700040021000000220000000000000047000400250000001e0000000200000047000400390000001e00000003000000470004003f0000001e00000001000000470004005c0000001e0000000000000013000200020000002100030003000000020000001600030006000000200000001700040007000000060000000400000020000400080000000700000007000000200004000a00000001000000070000003b0004000a0000000b00000001000000180004000d0000000700000004000000150004000e0000002000000001000000170004000f0000000e000000040000001e000700100000000d0000000700000007000000070000000f000000200004001100000009000000100000003b0004001100000012000000090000002b0004000e0000001300000004000000150004001400000020000000000000002b0004001400000015000000010000002000040016000000090000000e0000002b0004000e0000001900000000000000140002001a000000190009001e000000060000000100000000000000000000000000000001000000000000001b0003001f0000001e0000002000040020000000000000001f0000003b00040020000000210000000000000017000400230000000600000002000000200004002400000001000000230000003b0004002400000025000000010000002b000400140000002a0000000000000017000400300000000600000003000000200004003100000007000000300000002b0004000e000000330000000100000020000400340000000900000007000000200004003800000001000000300000003b000400380000003900000001000000200004003d00000007000000060000003b000400380000003f000000010000002b0004000600000044000000000000002b0004000e00000048000000030000002b0004000e0000004c000000020000002b000400140000005800000002000000200004005b00000003000000070000003b0004005b0000005c000000030000003600050002000000040000000000000003000000f8000200050000003b0004000800000009000000070000003b0004003100000032000000070000003b0004003d0000003e000000070000003d000400070000000c0000000b0000003e000300090000000c0000004100060016000000170000001200000013000000150000003d0004000e0000001800000017000000ab0005001a0000001b0000001800000019000000f70003001d00000000000000fa0004001b0000001c0000001d000000f80002001c0000003d0004001f00000022000000210000003d00040023000000260000002500000057000500070000002700000022000000260000003d00040007000000280000000900000085000500070000002900000028000000270000003e0003000900000029000000f90002001d000000f80002001d00000041000600160000002b00000012000000130000002a0000003d0004000e0000002c0000002b000000ab0005001a0000002d0000002c00000019000000f70003002f00000000000000fa0004002d0000002e0000002f000000f80002002e00000041000500340000003500000012000000330000003d0004000700000036000000350000004f000800300000003700000036000000360000000000000001000000020000003d000400300000003a0000003900000083000500300000003b000000370000003a0000000c000600300000003c00000001000000450000003b0000003e000300320000003c0000003d00040030000000400000003f0000000c00060030000000410000000100000045000000400000003d00040030000000420000003200000094000500060000004300000041000000420000000c0007000600000045000000010000002800000043000000440000003e0003003e000000450000003d0004000700000046000000090000004f0008003000000047000000460000004600000000000000010000000200000041000500340000004900000012000000480000003d000400070000004a000000490000004f000800300000004b0000004a0000004a00000000000000010000000200000041000500340000004d000000120000004c0000003d000400070000004e0000004d0000004f000800300000004f0000004e0000004e0000000000000001000000020000003d00040006000000500000003e0000008e00050030000000510000004f000000500000008100050030000000520000004b000000510000008500050030000000530000004700000052000000410005003d00000054000000090000002a00000051000500060000005500000053000000000000003e0003005400000055000000410005003d00000056000000090000001500000051000500060000005700000053000000010000003e0003005600000057000000410005003d00000059000000090000005800000051000500060000005a00000053000000020000003e000300590000005a000000f90002002f000000f80002002f0000003d000400070000005d000000090000003e0003005c0000005d000000fd00010038000100";
 
+static inline unsigned int _lp_hex_val(char c){
+    if(c>='0'&&c<='9')return(unsigned int)(c-'0');
+    if(c>='a'&&c<='f')return(unsigned int)(c-'a'+10);
+    if(c>='A'&&c<='F')return(unsigned int)(c-'A'+10);
+    return 0;
+}
 static unsigned char*_lp_vk_hex_decode(const char*hex,int*out_len){
     int slen=(int)strlen(hex);*out_len=slen/2;
     unsigned char*buf=(unsigned char*)malloc(*out_len);
-    for(int i=0;i<*out_len;i++){
-        unsigned int hi,lo;
-        hi=(hex[i*2]>='a')?hex[i*2]-'a'+10:hex[i*2]-'0';
-        lo=(hex[i*2+1]>='a')?hex[i*2+1]-'a'+10:hex[i*2+1]-'0';
-        buf[i]=(unsigned char)((hi<<4)|lo);
-    }
+    for(int i=0;i<*out_len;i++)
+        buf[i]=(unsigned char)((_lp_hex_val(hex[i*2])<<4)|_lp_hex_val(hex[i*2+1]));
     return buf;
 }
 
@@ -826,8 +796,7 @@ static inline int lp_gui_canvas3d(int p,int x,int y,int w,int h){
             p_vkBindBufferMemory(vk->dev,vk->vbuf,vk->vbufMem,0);
             p_vkMapMemory(vk->dev,vk->vbufMem,0,(VkDeviceSize)vk->vbufSize,0,&vk->vbufMap);
             /* Register canvas */
-            LpCanvas3D*g3=&_lp_c3d[_lp_c3d_n];ZeroMemory(g3,sizeof(*g3));g3->hwnd=hw;g3->w=ww;g3->h=hh;g3->backend=LP_GUI_BACKEND_VULKAN;
-            _lp_c3d_resize[_lp_c3d_n]=1;_lp_c3d_n++;
+            LpCanvas3D*g3=&_lp_c3d[_lp_c3d_n++];ZeroMemory(g3,sizeof(*g3));g3->hwnd=hw;g3->w=ww;g3->h=hh;g3->backend=LP_GUI_BACKEND_VULKAN;
             _lp_active3d=g3;_lp_vk_active=vk;_lp_vk_n++;_lp_gui_backend_active=LP_GUI_BACKEND_VULKAN;_lp_m4_init();
             fprintf(stderr,"[LP GUI] Vulkan GPU backend initialized successfully.\n");
             return(int)(intptr_t)hw;
@@ -843,8 +812,7 @@ static inline int lp_gui_canvas3d(int p,int x,int y,int w,int h){
     int ww=w>0?w:640,hh=h>0?h:480;
     HWND hw=CreateWindowExA(0,"LpGL","",WS_CHILD|WS_VISIBLE,x,y,ww,hh,(HWND)(intptr_t)p,NULL,_lp_hInst,NULL);
     if(_lp_c3d_n<LP_GUI_MAX){
-        LpCanvas3D*g=&_lp_c3d[_lp_c3d_n];ZeroMemory(g,sizeof(*g));g->hwnd=hw;g->w=ww;g->h=hh;g->backend=LP_GUI_BACKEND_OPENGL;
-        _lp_c3d_resize[_lp_c3d_n]=1;_lp_c3d_n++;
+        LpCanvas3D*g=&_lp_c3d[_lp_c3d_n++];ZeroMemory(g,sizeof(*g));g->hwnd=hw;g->w=ww;g->h=hh;g->backend=LP_GUI_BACKEND_OPENGL;
         g->hdc=GetDC(hw);
         PIXELFORMATDESCRIPTOR pfd={sizeof(pfd),1,PFD_DRAW_TO_WINDOW|PFD_SUPPORT_OPENGL|PFD_DOUBLEBUFFER,
             PFD_TYPE_RGBA,32,0,0,0,0,0,0,0,0,0,0,0,0,0,24,8,0,PFD_MAIN_PLANE,0,0,0,0};
@@ -924,44 +892,61 @@ static inline void lp_gui_present3d(int cv){
         PresentInfo pi={VK_STRUCTURE_TYPE_PRESENT_INFO,NULL,1,&vk->semDone,1,&vk->swapchain,&imgIdx,NULL};
         p_vkQueuePresentKHR(vk->queue,&pi);
         return;}
-    /* Ensure viewport matches actual canvas size before swap (auto-resize only) */
-    {int ri=-1;for(int i=0;i<_lp_c3d_n;i++){if(_lp_c3d[i].hwnd==c->hwnd){ri=i;break;}}
-    if(ri>=0&&_lp_c3d_resize[ri]){RECT cr;GetClientRect(c->hwnd,&cr);int cw=cr.right-cr.left,ch=cr.bottom-cr.top;
-    if(cw>0&&ch>0&&(cw!=c->w||ch!=c->h)){c->w=cw;c->h=ch;wglMakeCurrent(c->hdc,c->hglrc);glViewport(0,0,cw,ch);}}}
     SwapBuffers(c->hdc);}
+/* OpenGL batched draw — replaces slow glBegin/glEnd/glVertex3f immediate mode */
+static inline void _lp_gui_gl_draw_batch(void){
+    if(_lp_gui_batch_n<=0)return;
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_COLOR_ARRAY);
+    glVertexPointer(3,GL_FLOAT,(GLsizei)sizeof(LpGuiVertex),(const void*)((char*)&_lp_gui_batch[0].x));
+    glColorPointer(4,GL_FLOAT,(GLsizei)sizeof(LpGuiVertex),(const void*)((char*)&_lp_gui_batch[0].r));
+    GLenum mode=GL_TRIANGLES; /* quads already expanded to 2 triangles by _lp_gui_emit_vertex */
+    if(_lp_gui_mode==2)mode=GL_LINES;
+    else if(_lp_gui_mode==3)mode=GL_POINTS;
+    else if(_lp_gui_mode==4)mode=GL_LINE_LOOP;
+    else if(_lp_gui_mode==5)mode=GL_TRIANGLE_FAN;
+    else if(_lp_gui_mode==6)mode=GL_TRIANGLE_STRIP;
+    glDrawArrays(mode,0,_lp_gui_batch_n);
+    glDisableClientState(GL_VERTEX_ARRAY);
+    glDisableClientState(GL_COLOR_ARRAY);
+}
+/* Save current batch to mesh cache (call after end3d, before next begin3d) */
+static inline int lp_gui_save_batch(void){
+    if(_lp_gui_batch_n>0&&(unsigned)_lp_gui_batch_n<=sizeof(_lp_gui_mesh_cache)/sizeof(_lp_gui_mesh_cache[0])){
+        memcpy(_lp_gui_mesh_cache,_lp_gui_batch,(size_t)_lp_gui_batch_n*sizeof(LpGuiVertex));
+        _lp_gui_mesh_cache_n=_lp_gui_batch_n;
+        _lp_gui_batch_n=0;
+        return 1;
+    }
+    return 0;
+}
+/* Draw cached mesh directly without rebuilding — mode: 0=tri,1=quad(tri),2=lines,3=points */
+static inline void lp_gui_draw_cached(int mode){
+    if(_lp_gui_mesh_cache_n<=0)return;
+    int saved_mode=_lp_gui_mode;_lp_gui_mode=mode;
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_COLOR_ARRAY);
+    glVertexPointer(3,GL_FLOAT,(GLsizei)sizeof(LpGuiVertex),(const void*)((char*)&_lp_gui_mesh_cache[0].x));
+    glColorPointer(4,GL_FLOAT,(GLsizei)sizeof(LpGuiVertex),(const void*)((char*)&_lp_gui_mesh_cache[0].r));
+    GLenum m=GL_TRIANGLES;
+    if(mode==2)m=GL_LINES;else if(mode==3)m=GL_POINTS;else if(mode==4)m=GL_LINE_LOOP;else if(mode==5)m=GL_TRIANGLE_FAN;else if(mode==6)m=GL_TRIANGLE_STRIP;
+    glDrawArrays(m,0,_lp_gui_mesh_cache_n);
+    glDisableClientState(GL_VERTEX_ARRAY);
+    glDisableClientState(GL_COLOR_ARRAY);
+    _lp_gui_mode=saved_mode;
+}
 static inline void lp_gui_begin3d(int mode){
     _lp_gui_mode=mode;_lp_gui_batch_n=0;_lp_gui_quad_n=0;
     if(mode==2)_lp_gui_topology=D3D11_PRIMITIVE_TOPOLOGY_LINELIST;else if(mode==3)_lp_gui_topology=D3D11_PRIMITIVE_TOPOLOGY_POINTLIST;else _lp_gui_topology=D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-    /* OpenGL: no glBegin needed — using vertex arrays in end3d */
-    (void)0;}
-static inline void lp_gui_end3d(void){
-    if(_lp_gui_batch_n<=0)return;
-    if(_lp_gui_backend_active==LP_GUI_BACKEND_DIRECTX11){_lp_gui_dx_draw_batch();return;}
-    if(_lp_gui_backend_active==LP_GUI_BACKEND_VULKAN){return;}
-    /* OpenGL: use vertex arrays instead of glBegin/glEnd */
-    GLenum glmode=GL_TRIANGLES;
-    if(_lp_gui_mode==2)glmode=GL_LINES;else if(_lp_gui_mode==3)glmode=GL_POINTS;
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glEnableClientState(GL_COLOR_ARRAY);
-    glEnableClientState(GL_NORMAL_ARRAY);
-    glVertexPointer(4,GL_FLOAT,sizeof(LpGuiVertex),(void*)&_lp_gui_batch[0].x);
-    glColorPointer(4,GL_FLOAT,sizeof(LpGuiVertex),(void*)&_lp_gui_batch[0].r);
-    glNormalPointer(GL_FLOAT,sizeof(LpGuiVertex),(void*)&_lp_gui_batch[0].nx);
-    glDrawArrays(glmode,0,_lp_gui_batch_n);
-    glDisableClientState(GL_VERTEX_ARRAY);
-    glDisableClientState(GL_COLOR_ARRAY);
-    glDisableClientState(GL_NORMAL_ARRAY);}
+}
+static inline void lp_gui_end3d(void){if(_lp_gui_backend_active==LP_GUI_BACKEND_DIRECTX11){_lp_gui_dx_draw_batch();return;}if(_lp_gui_backend_active==LP_GUI_BACKEND_VULKAN){return;}if(_lp_gui_backend_active==LP_GUI_BACKEND_OPENGL){_lp_gui_gl_draw_batch();return;}}
 static inline void lp_gui_vertex3d(double x,double y,double z){_lp_gui_emit_vertex((float)x,(float)y,(float)z);}
-static inline void lp_gui_color3d(double r,double g,double b){_lp_gui_cr=(float)r;_lp_gui_cg=(float)g;_lp_gui_cb=(float)b;_lp_gui_ca=1.0f;if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;glColor3f((float)r,(float)g,(float)b);}
-static inline void lp_gui_color4d(double r,double g,double b,double a){_lp_gui_cr=(float)r;_lp_gui_cg=(float)g;_lp_gui_cb=(float)b;_lp_gui_ca=(float)a;if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;glColor4f((float)r,(float)g,(float)b,(float)a);}
-static inline void lp_gui_normal3d(double x,double y,double z){_lp_gui_nx=(float)x;_lp_gui_ny=(float)y;_lp_gui_nz=(float)z;if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;glNormal3f((float)x,(float)y,(float)z);}
-static inline void lp_gui_texcoord2d(double u,double v){if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;glTexCoord2f((float)u,(float)v);}
+static inline void lp_gui_color3d(double r,double g,double b){_lp_gui_cr=(float)r;_lp_gui_cg=(float)g;_lp_gui_cb=(float)b;_lp_gui_ca=1.0f;}
+static inline void lp_gui_color4d(double r,double g,double b,double a){_lp_gui_cr=(float)r;_lp_gui_cg=(float)g;_lp_gui_cb=(float)b;_lp_gui_ca=(float)a;}
+static inline void lp_gui_normal3d(double x,double y,double z){_lp_gui_nx=(float)x;_lp_gui_ny=(float)y;_lp_gui_nz=(float)z;}
+static inline void lp_gui_texcoord2d(double u,double v){_lp_gui_tu=(float)u;_lp_gui_tv=(float)v;}
 /* Camera & Transform */
 static inline void lp_gui_perspective(double fov,double aspect,double near_,double far_){
-    /* Auto-correct aspect ratio from active canvas size */
-    if(_lp_active3d&&_lp_active3d->w>0&&_lp_active3d->h>0){
-        aspect=(double)_lp_active3d->w/(double)_lp_active3d->h;}
-    if(aspect<0.1)aspect=1.333;
     _lp_m4_init();_lp_gui_proj=_lp_m4_perspective((float)fov,(float)aspect,(float)near_,(float)far_);
     if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;glMatrixMode(GL_PROJECTION);glLoadIdentity();gluPerspective(fov,aspect,near_,far_);glMatrixMode(GL_MODELVIEW);}
 static inline void lp_gui_ortho(double l,double r,double b,double t,double n,double f){
@@ -983,70 +968,39 @@ static inline void lp_gui_mode_modelview(void){if(_lp_gui_backend_active!=LP_GUI
 static inline void lp_gui_draw_cube(double x,double y,double z,double s,int color){
     float r=((color)&0xFF)/255.0f,g=((color>>8)&0xFF)/255.0f,b=((color>>16)&0xFF)/255.0f;
     float hs=(float)s*0.5f;
-    if(_lp_gui_backend_active==LP_GUI_BACKEND_DIRECTX11){
-        float vx[8][3]={{-hs,-hs,hs},{hs,-hs,hs},{hs,hs,hs},{-hs,hs,hs},{-hs,-hs,-hs},{hs,-hs,-hs},{hs,hs,-hs},{-hs,hs,-hs}};
-        int idx[36]={0,1,2,0,2,3,5,4,7,5,7,6,3,2,6,3,6,7,4,5,1,4,1,0,1,5,6,1,6,2,4,0,3,4,3,7};
-        lp_gui_push_matrix();lp_gui_translate3d(x,y,z);lp_gui_color3d(r,g,b);lp_gui_begin3d(0);
-        for(int i=0;i<36;i++)lp_gui_vertex3d(vx[idx[i]][0],vx[idx[i]][1],vx[idx[i]][2]);
-        lp_gui_end3d();lp_gui_pop_matrix();return;
-    }
-    if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;
-    glPushMatrix();glTranslatef((float)x,(float)y,(float)z);
-    glBegin(GL_QUADS);
-    glColor3f(r,g,b);
-    /* Front */  glNormal3f(0,0,1);glVertex3f(-hs,-hs,hs);glVertex3f(hs,-hs,hs);glVertex3f(hs,hs,hs);glVertex3f(-hs,hs,hs);
-    /* Back */   glNormal3f(0,0,-1);glVertex3f(hs,-hs,-hs);glVertex3f(-hs,-hs,-hs);glVertex3f(-hs,hs,-hs);glVertex3f(hs,hs,-hs);
-    /* Top */    glNormal3f(0,1,0);glVertex3f(-hs,hs,hs);glVertex3f(hs,hs,hs);glVertex3f(hs,hs,-hs);glVertex3f(-hs,hs,-hs);
-    /* Bottom */ glNormal3f(0,-1,0);glVertex3f(-hs,-hs,-hs);glVertex3f(hs,-hs,-hs);glVertex3f(hs,-hs,hs);glVertex3f(-hs,-hs,hs);
-    /* Right */  glNormal3f(1,0,0);glVertex3f(hs,-hs,hs);glVertex3f(hs,-hs,-hs);glVertex3f(hs,hs,-hs);glVertex3f(hs,hs,hs);
-    /* Left */   glNormal3f(-1,0,0);glVertex3f(-hs,-hs,-hs);glVertex3f(-hs,-hs,hs);glVertex3f(-hs,hs,hs);glVertex3f(-hs,hs,-hs);
-    glEnd();glPopMatrix();}
+    float vx[8][3]={{-hs,-hs,hs},{hs,-hs,hs},{hs,hs,hs},{-hs,hs,hs},{-hs,-hs,-hs},{hs,-hs,-hs},{hs,hs,-hs},{-hs,hs,-hs}};
+    int idx[36]={0,1,2,0,2,3,5,4,7,5,7,6,3,2,6,3,6,7,4,5,1,4,1,0,1,5,6,1,6,2,4,0,3,4,3,7};
+    lp_gui_push_matrix();lp_gui_translate3d(x,y,z);lp_gui_color3d(r,g,b);lp_gui_begin3d(0);
+    for(int i=0;i<36;i++)lp_gui_vertex3d(vx[idx[i]][0],vx[idx[i]][1],vx[idx[i]][2]);
+    lp_gui_end3d();lp_gui_pop_matrix();}
 static inline void lp_gui_draw_sphere(double x,double y,double z,double radius,int slices,int stacks,int color){
     float cr=((color)&0xFF)/255.0f,cg=((color>>8)&0xFF)/255.0f,cb=((color>>16)&0xFF)/255.0f;
     int sl=slices>0?slices:16,st=stacks>0?stacks:16;
-    if(_lp_gui_backend_active==LP_GUI_BACKEND_DIRECTX11){
-        /* CPU sphere triangulation for DX11 */
-        lp_gui_push_matrix();lp_gui_translate3d(x,y,z);lp_gui_color3d(cr,cg,cb);lp_gui_begin3d(0);
-        for(int i=0;i<st;i++)for(int j=0;j<sl;j++){
-            float t0=(float)i/st,t1=(float)(i+1)/st,p0=(float)j/sl,p1=(float)(j+1)/sl;
-            float phi0=3.14159265f*t0,phi1=3.14159265f*t1,th0=6.28318530f*p0,th1=6.28318530f*p1;
-            float r0=sinf(phi0)*(float)radius,y0=cosf(phi0)*(float)radius,r1=sinf(phi1)*(float)radius,y1=cosf(phi1)*(float)radius;
-            float ax=r0*sinf(th0),az=r0*cosf(th0),bx=r1*sinf(th0),bz=r1*cosf(th0);
-            float cx_=r1*sinf(th1),cz=r1*cosf(th1),dx=r0*sinf(th1),dz=r0*cosf(th1);
-            lp_gui_vertex3d(ax,y0,az);lp_gui_vertex3d(bx,y1,bz);lp_gui_vertex3d(cx_,y1,cz);
-            lp_gui_vertex3d(ax,y0,az);lp_gui_vertex3d(cx_,y1,cz);lp_gui_vertex3d(dx,y0,dz);
-        }
-        lp_gui_end3d();lp_gui_pop_matrix();return;
+    /* Use batched rendering for all backends */
+    lp_gui_push_matrix();lp_gui_translate3d(x,y,z);lp_gui_color3d(cr,cg,cb);lp_gui_begin3d(0);
+    for(int i=0;i<st;i++)for(int j=0;j<sl;j++){
+        float t0=(float)i/st,t1=(float)(i+1)/st,p0=(float)j/sl,p1=(float)(j+1)/sl;
+        float phi0=3.14159265f*t0,phi1=3.14159265f*t1,th0=6.28318530f*p0,th1=6.28318530f*p1;
+        float r0=sinf(phi0)*(float)radius,y0=cosf(phi0)*(float)radius,r1=sinf(phi1)*(float)radius,y1=cosf(phi1)*(float)radius;
+        float ax=r0*sinf(th0),az=r0*cosf(th0),bx=r1*sinf(th0),bz=r1*cosf(th0);
+        float cx_=r1*sinf(th1),cz=r1*cosf(th1),dx=r0*sinf(th1),dz=r0*cosf(th1);
+        lp_gui_vertex3d(ax,y0,az);lp_gui_vertex3d(bx,y1,bz);lp_gui_vertex3d(cx_,y1,cz);
+        lp_gui_vertex3d(ax,y0,az);lp_gui_vertex3d(cx_,y1,cz);lp_gui_vertex3d(dx,y0,dz);
     }
-    if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;
-    glPushMatrix();glTranslatef((float)x,(float)y,(float)z);glColor3f(cr,cg,cb);
-    GLUquadric*q=gluNewQuadric();gluQuadricNormals(q,GLU_SMOOTH);
-    gluSphere(q,radius,sl,st);gluDeleteQuadric(q);glPopMatrix();}
+    lp_gui_end3d();lp_gui_pop_matrix();}
 static inline void lp_gui_draw_plane(double y,double sz,int color){
     float r=((color)&0xFF)/255.0f,g=((color>>8)&0xFF)/255.0f,b=((color>>16)&0xFF)/255.0f;
     float hs=(float)sz*0.5f;
-    if(_lp_gui_backend_active==LP_GUI_BACKEND_DIRECTX11){
-        lp_gui_color3d(r,g,b);lp_gui_begin3d(0);
-        lp_gui_vertex3d(-hs,y,-hs);lp_gui_vertex3d(hs,y,-hs);lp_gui_vertex3d(hs,y,hs);
-        lp_gui_vertex3d(-hs,y,-hs);lp_gui_vertex3d(hs,y,hs);lp_gui_vertex3d(-hs,y,hs);
-        lp_gui_end3d();return;
-    }
-    if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;
-    glBegin(GL_QUADS);glColor3f(r,g,b);glNormal3f(0,1,0);
-    glVertex3f(-hs,(float)y,-hs);glVertex3f(hs,(float)y,-hs);glVertex3f(hs,(float)y,hs);glVertex3f(-hs,(float)y,hs);
-    glEnd();}
+    lp_gui_color3d(r,g,b);lp_gui_begin3d(0);
+    lp_gui_vertex3d(-hs,y,-hs);lp_gui_vertex3d(hs,y,-hs);lp_gui_vertex3d(hs,y,hs);
+    lp_gui_vertex3d(-hs,y,-hs);lp_gui_vertex3d(hs,y,hs);lp_gui_vertex3d(-hs,y,hs);
+    lp_gui_end3d();}
 static inline void lp_gui_draw_grid(double y,double sz,int div,int color){
     float r=((color)&0xFF)/255.0f,g=((color>>8)&0xFF)/255.0f,b=((color>>16)&0xFF)/255.0f;
     float hs=(float)sz*0.5f;float step=(float)sz/(div>0?div:10);
-    if(_lp_gui_backend_active==LP_GUI_BACKEND_DIRECTX11){
-        lp_gui_color3d(r,g,b);lp_gui_begin3d(2);
-        for(float i=-hs;i<=hs+0.001f;i+=step){lp_gui_vertex3d(i,y,-hs);lp_gui_vertex3d(i,y,hs);lp_gui_vertex3d(-hs,y,i);lp_gui_vertex3d(hs,y,i);}
-        lp_gui_end3d();return;
-    }
-    if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;
-    glBegin(GL_LINES);glColor3f(r,g,b);
-    for(float i=-hs;i<=hs+0.001f;i+=step){glVertex3f(i,(float)y,-hs);glVertex3f(i,(float)y,hs);glVertex3f(-hs,(float)y,i);glVertex3f(hs,(float)y,i);}
-    glEnd();}
+    lp_gui_color3d(r,g,b);lp_gui_begin3d(2);
+    for(float i=-hs;i<=hs+0.001f;i+=step){lp_gui_vertex3d(i,y,-hs);lp_gui_vertex3d(i,y,hs);lp_gui_vertex3d(-hs,y,i);lp_gui_vertex3d(hs,y,i);}
+    lp_gui_end3d();}
 /* Lighting */
 static inline void lp_gui_enable_lighting(void){_lp_gui_lighting=1;if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;glEnable(GL_LIGHTING);glEnable(GL_COLOR_MATERIAL);glColorMaterial(GL_FRONT_AND_BACK,GL_AMBIENT_AND_DIFFUSE);}
 static inline void lp_gui_disable_lighting(void){_lp_gui_lighting=0;if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;glDisable(GL_LIGHTING);glDisable(GL_COLOR_MATERIAL);}
@@ -1103,11 +1057,6 @@ static inline void lp_gui_set_vsync(int on){_lp_gui_vsync=on?1:0;if(_lp_wglSwapI
 static inline void lp_gui_set_msaa(int samples){
     if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;
     if(samples>1){glEnable(GL_MULTISAMPLE);}else{glDisable(GL_MULTISAMPLE);}}
-/* Canvas resize mode: 1 = auto-resize with window (default), 0 = fixed size */
-static inline void lp_gui_set_resizable(int cv,int on){
-    for(int i=0;i<_lp_c3d_n;i++){if(_lp_c3d[i].hwnd==(HWND)(intptr_t)cv){_lp_c3d_resize[i]=on?1:0;return;}}}
-static inline int lp_gui_get_resizable(int cv){
-    for(int i=0;i<_lp_c3d_n;i++){if(_lp_c3d[i].hwnd==(HWND)(intptr_t)cv)return _lp_c3d_resize[i];}return 0;}
 
 #else
 /* ══════════ Linux/macOS Fallback (console stubs) ══════════ */
@@ -1129,7 +1078,7 @@ static inline int lp_gui_progress(int p,int x,int y,int w,int h){(void)p;(void)x
 static inline int lp_gui_tab(int p,int x,int y,int w,int h){(void)p;(void)x;(void)y;(void)w;(void)h;return 1;}
 static inline int lp_gui_image(int p,const char*path,int x,int y,int w,int h){(void)p;(void)path;(void)x;(void)y;(void)w;(void)h;return 1;}
 static inline void lp_gui_set_text(int h,const char*t){(void)h;(void)t;}
-static inline const char*lp_gui_get_text(int h){(void)h;return strdup("");}
+static inline const char*lp_gui_get_text(int h){(void)h;char*b=(char*)malloc(1);if(b)b[0]=0;return b;}
 static inline void lp_gui_set_value(int h,int v){(void)h;(void)v;}
 static inline int lp_gui_get_value(int h){(void)h;return 0;}
 static inline void lp_gui_add_item(int h,const char*t){(void)h;(void)t;}
