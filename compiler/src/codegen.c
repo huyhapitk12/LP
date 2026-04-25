@@ -7745,13 +7745,12 @@ static void gen_func_def(CodeGen *cg, AstNode *node, const char *class_name) {
      * GCC will apply IPA strength reduction with LTO but the result IS correct.
      * The ~4% gap vs C++ is inherent in LP's static linkage vs C++ extern
      * linkage. */
-    buf_write(&cg->funcs, "static __attribute__((hot, noclone, optimize(\"O3,unroll-loops,strict-aliasing,omit-frame-pointer,fast-math\"),flatten)) ");
+    buf_write(&cg->funcs, "static __attribute__((hot, noclone, optimize(\"O3,unroll-loops,omit-frame-pointer\"))) ");
   } else {
     buf_write(
         &cg->funcs,
         "static inline __attribute__((hot, "
-        "optimize(\"O3,unroll-loops,strict-aliasing,omit-frame-pointer,fast-"
-        "math\"), target(\"avx512f,avx512vl,avx512dq,avx2,fma\"),flatten)) ");
+        "optimize(\"O3,unroll-loops,omit-frame-pointer\"))) ");
   }
   buf_printf(&cg->funcs, "%s lp_%s(", lp_type_to_c(ret), node->func_def.name);
   for (int i = 0; i < node->func_def.params.count; i++) {
