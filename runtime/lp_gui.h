@@ -99,7 +99,8 @@ static void _lp_gui_emit_vertex(float x,float y,float z){
     if(_lp_gui_backend_active==LP_GUI_BACKEND_DIRECTX11||_lp_gui_backend_active==LP_GUI_BACKEND_VULKAN){
         v.x=x;v.y=y;v.z=z;v.w=1.0f; /* DX11/Vulkan: GPU MVP via constant/push buffer */
     }else{
-        v=_lp_gui_make_vertex(x,y,z); /* OpenGL: CPU MVP */
+        /* OpenGL: skip CPU MVP — GL matrix stack (gluLookAt/gluPerspective) handles it */
+        v.x=x;v.y=y;v.z=z;v.w=1.0f;
     }
     v.r=_lp_gui_cr;v.g=_lp_gui_cg;v.b=_lp_gui_cb;v.a=_lp_gui_ca;
     v.nx=_lp_gui_nx;v.ny=_lp_gui_ny;v.nz=_lp_gui_nz;v.nw=0;
