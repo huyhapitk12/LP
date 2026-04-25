@@ -912,13 +912,13 @@ static inline void _lp_gui_gl_draw_batch(void){
 }
 /* Save current batch to mesh cache (call after end3d, before next begin3d) */
 static inline int lp_gui_save_batch(void){
-    if(_lp_gui_batch_n>0&&(unsigned)_lp_gui_batch_n<=sizeof(_lp_gui_mesh_cache)/sizeof(_lp_gui_mesh_cache[0])){
-        memcpy(_lp_gui_mesh_cache,_lp_gui_batch,(size_t)_lp_gui_batch_n*sizeof(LpGuiVertex));
-        _lp_gui_mesh_cache_n=_lp_gui_batch_n;
-        _lp_gui_batch_n=0;
-        return 1;
-    }
-    return 0;
+    if(_lp_gui_batch_n<=0)return 0;
+    int max_n=(int)(sizeof(_lp_gui_mesh_cache)/sizeof(_lp_gui_mesh_cache[0]));
+    int n=_lp_gui_batch_n;if(n>max_n)n=max_n;
+    memcpy(_lp_gui_mesh_cache,_lp_gui_batch,(size_t)n*sizeof(LpGuiVertex));
+    _lp_gui_mesh_cache_n=n;
+    _lp_gui_batch_n=0;
+    return 1;
 }
 /* Draw cached mesh directly without rebuilding — mode: 0=tri,1=quad(tri),2=lines,3=points */
 static inline void lp_gui_draw_cached(int mode){
