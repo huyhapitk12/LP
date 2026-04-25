@@ -59,6 +59,7 @@ static LpGuiKeyCB _lp_on_kdown=NULL,_lp_on_kup=NULL;
 static LpGuiMouseCB _lp_on_mmove=NULL,_lp_on_mclick=NULL;
 static LpCanvas2D _lp_c2d[LP_GUI_MAX];static int _lp_c2d_n=0;
 static LpCanvas3D _lp_c3d[LP_GUI_MAX];static int _lp_c3d_n=0;
+static int _lp_c3d_resize[LP_GUI_MAX];/* 1=auto-resize, 0=fixed */
 static int _lp_mx=0,_lp_my=0,_lp_keys[256]={0};
 static int _lp_gui_backend_pref=LP_GUI_BACKEND_AUTO,_lp_gui_backend_active=LP_GUI_BACKEND_OPENGL,_lp_gui_vsync=1;
 static char _lp_gui_dx_name[256]="",_lp_gui_dx_vendor[64]="Unknown",_lp_gui_vk_info[256]="Vulkan loader unavailable";
@@ -249,7 +250,7 @@ static inline int _lp_gui_canvasdx11(int p,int x,int y,int w,int h){
     if(g->dx_dss)ID3D11DeviceContext_OMSetDepthStencilState(g->dx_ctx,g->dx_dss,0);}
     if(!_lp_gui_dx_init_pipeline(g)){if(g->dx_dsv)ID3D11DepthStencilView_Release(g->dx_dsv);if(g->dx_rtv)ID3D11RenderTargetView_Release(g->dx_rtv);if(g->dx_ctx)ID3D11DeviceContext_Release(g->dx_ctx);if(g->dx_device)ID3D11Device_Release(g->dx_device);if(g->dx_swap)IDXGISwapChain_Release(g->dx_swap);DestroyWindow(hw);ZeroMemory(g,sizeof(*g));return 0;}
     ID3D11DeviceContext_OMSetRenderTargets(g->dx_ctx,1,&g->dx_rtv,g->dx_dsv);
-    _lp_c3d_n++;_lp_gui_backend_active=LP_GUI_BACKEND_DIRECTX11;_lp_active3d=g;lp_gui_directx_available();_lp_m4_init();
+    _lp_c3d_resize[_lp_c3d_n]=1;_lp_c3d_n++;_lp_gui_backend_active=LP_GUI_BACKEND_DIRECTX11;_lp_active3d=g;lp_gui_directx_available();_lp_m4_init();
     return(int)(intptr_t)hw;
 }
 /* WndProc */
@@ -271,7 +272,9 @@ static LRESULT CALLBACK _lp_gui_wndproc(HWND h,UINT m,WPARAM w,LPARAM l){
         LpCanvas3D*g=_lp_fc3d(h);
         if(g){g->w=LOWORD(l);g->h=HIWORD(l);if(g->w<1)g->w=1;if(g->h<1)g->h=1;
             if(g->backend==LP_GUI_BACKEND_OPENGL){wglMakeCurrent(g->hdc,g->hglrc);glViewport(0,0,g->w,g->h);}}
-        if(!g){int ww=LOWORD(l),hh=HIWORD(l);if(ww>0&&hh>0){for(int i=0;i<_lp_c3d_n;i++)MoveWindow(_lp_c3d[i].hwnd,0,0,ww,hh,TRUE);for(int i=0;i<_lp_c2d_n;i++)MoveWindow(_lp_c2d[i].hwnd,0,0,ww,hh,TRUE);}}
+        if(!g){int ww=LOWORD(l),hh=HIWORD(l);if(ww>0&&hh>0){
+            for(int i=0;i<_lp_c3d_n;i++){if(_lp_c3d_resize[i])MoveWindow(_lp_c3d[i].hwnd,0,0,ww,hh,TRUE);}
+            for(int i=0;i<_lp_c2d_n;i++)MoveWindow(_lp_c2d[i].hwnd,0,0,ww,hh,TRUE);}}
         break;}
     }
     return DefWindowProcA(h,m,w,l);
@@ -822,7 +825,8 @@ static inline int lp_gui_canvas3d(int p,int x,int y,int w,int h){
             p_vkBindBufferMemory(vk->dev,vk->vbuf,vk->vbufMem,0);
             p_vkMapMemory(vk->dev,vk->vbufMem,0,(VkDeviceSize)vk->vbufSize,0,&vk->vbufMap);
             /* Register canvas */
-            LpCanvas3D*g3=&_lp_c3d[_lp_c3d_n++];ZeroMemory(g3,sizeof(*g3));g3->hwnd=hw;g3->w=ww;g3->h=hh;g3->backend=LP_GUI_BACKEND_VULKAN;
+            LpCanvas3D*g3=&_lp_c3d[_lp_c3d_n];ZeroMemory(g3,sizeof(*g3));g3->hwnd=hw;g3->w=ww;g3->h=hh;g3->backend=LP_GUI_BACKEND_VULKAN;
+            _lp_c3d_resize[_lp_c3d_n]=1;_lp_c3d_n++;
             _lp_active3d=g3;_lp_vk_active=vk;_lp_vk_n++;_lp_gui_backend_active=LP_GUI_BACKEND_VULKAN;_lp_m4_init();
             fprintf(stderr,"[LP GUI] Vulkan GPU backend initialized successfully.\n");
             return(int)(intptr_t)hw;
@@ -838,7 +842,8 @@ static inline int lp_gui_canvas3d(int p,int x,int y,int w,int h){
     int ww=w>0?w:640,hh=h>0?h:480;
     HWND hw=CreateWindowExA(0,"LpGL","",WS_CHILD|WS_VISIBLE,x,y,ww,hh,(HWND)(intptr_t)p,NULL,_lp_hInst,NULL);
     if(_lp_c3d_n<LP_GUI_MAX){
-        LpCanvas3D*g=&_lp_c3d[_lp_c3d_n++];ZeroMemory(g,sizeof(*g));g->hwnd=hw;g->w=ww;g->h=hh;g->backend=LP_GUI_BACKEND_OPENGL;
+        LpCanvas3D*g=&_lp_c3d[_lp_c3d_n];ZeroMemory(g,sizeof(*g));g->hwnd=hw;g->w=ww;g->h=hh;g->backend=LP_GUI_BACKEND_OPENGL;
+        _lp_c3d_resize[_lp_c3d_n]=1;_lp_c3d_n++;
         g->hdc=GetDC(hw);
         PIXELFORMATDESCRIPTOR pfd={sizeof(pfd),1,PFD_DRAW_TO_WINDOW|PFD_SUPPORT_OPENGL|PFD_DOUBLEBUFFER,
             PFD_TYPE_RGBA,32,0,0,0,0,0,0,0,0,0,0,0,0,0,24,8,0,PFD_MAIN_PLANE,0,0,0,0};
@@ -918,9 +923,10 @@ static inline void lp_gui_present3d(int cv){
         PresentInfo pi={VK_STRUCTURE_TYPE_PRESENT_INFO,NULL,1,&vk->semDone,1,&vk->swapchain,&imgIdx,NULL};
         p_vkQueuePresentKHR(vk->queue,&pi);
         return;}
-    /* Ensure viewport matches actual canvas size before swap */
-    {RECT cr;GetClientRect(c->hwnd,&cr);int cw=cr.right-cr.left,ch=cr.bottom-cr.top;
-    if(cw>0&&ch>0&&(cw!=c->w||ch!=c->h)){c->w=cw;c->h=ch;wglMakeCurrent(c->hdc,c->hglrc);glViewport(0,0,cw,ch);}}
+    /* Ensure viewport matches actual canvas size before swap (auto-resize only) */
+    {int ri=-1;for(int i=0;i<_lp_c3d_n;i++){if(_lp_c3d[i].hwnd==c->hwnd){ri=i;break;}}
+    if(ri>=0&&_lp_c3d_resize[ri]){RECT cr;GetClientRect(c->hwnd,&cr);int cw=cr.right-cr.left,ch=cr.bottom-cr.top;
+    if(cw>0&&ch>0&&(cw!=c->w||ch!=c->h)){c->w=cw;c->h=ch;wglMakeCurrent(c->hdc,c->hglrc);glViewport(0,0,cw,ch);}}}
     SwapBuffers(c->hdc);}
 static inline void lp_gui_begin3d(int mode){
     _lp_gui_mode=mode;_lp_gui_batch_n=0;_lp_gui_quad_n=0;
@@ -1082,6 +1088,11 @@ static inline void lp_gui_set_vsync(int on){_lp_gui_vsync=on?1:0;if(_lp_wglSwapI
 static inline void lp_gui_set_msaa(int samples){
     if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;
     if(samples>1){glEnable(GL_MULTISAMPLE);}else{glDisable(GL_MULTISAMPLE);}}
+/* Canvas resize mode: 1 = auto-resize with window (default), 0 = fixed size */
+static inline void lp_gui_set_resizable(int cv,int on){
+    for(int i=0;i<_lp_c3d_n;i++){if(_lp_c3d[i].hwnd==(HWND)(intptr_t)cv){_lp_c3d_resize[i]=on?1:0;return;}}}
+static inline int lp_gui_get_resizable(int cv){
+    for(int i=0;i<_lp_c3d_n;i++){if(_lp_c3d[i].hwnd==(HWND)(intptr_t)cv)return _lp_c3d_resize[i];}return 0;}
 
 #else
 /* ══════════ Linux/macOS Fallback (console stubs) ══════════ */
