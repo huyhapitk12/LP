@@ -64,7 +64,7 @@ static int _lp_mx=0,_lp_my=0,_lp_keys[256]={0};
 static int _lp_gui_backend_pref=LP_GUI_BACKEND_AUTO,_lp_gui_backend_active=LP_GUI_BACKEND_OPENGL,_lp_gui_vsync=1;
 static char _lp_gui_dx_name[256]="",_lp_gui_dx_vendor[64]="Unknown",_lp_gui_vk_info[256]="Vulkan loader unavailable";
 static LpCanvas3D*_lp_active3d=NULL;
-static LpGuiVertex _lp_gui_batch[65536];static int _lp_gui_batch_n=0,_lp_gui_mode=0,_lp_gui_topology=0;
+static LpGuiVertex _lp_gui_batch[262144];static int _lp_gui_batch_n=0,_lp_gui_mode=0,_lp_gui_topology=0;
 static LpGuiVertex _lp_gui_quad[4];static int _lp_gui_quad_n=0;
 static float _lp_gui_cr=1.0f,_lp_gui_cg=1.0f,_lp_gui_cb=1.0f,_lp_gui_ca=1.0f;
 static float _lp_gui_nx=0,_lp_gui_ny=1.0f,_lp_gui_nz=0,_lp_gui_tu=0,_lp_gui_tv=0;
@@ -932,12 +932,26 @@ static inline void lp_gui_present3d(int cv){
 static inline void lp_gui_begin3d(int mode){
     _lp_gui_mode=mode;_lp_gui_batch_n=0;_lp_gui_quad_n=0;
     if(mode==2)_lp_gui_topology=D3D11_PRIMITIVE_TOPOLOGY_LINELIST;else if(mode==3)_lp_gui_topology=D3D11_PRIMITIVE_TOPOLOGY_POINTLIST;else _lp_gui_topology=D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-    if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;
-    GLenum m=GL_TRIANGLES;
-    if(mode==1)m=GL_QUADS;else if(mode==2)m=GL_LINES;else if(mode==3)m=GL_POINTS;else if(mode==4)m=GL_LINE_LOOP;else if(mode==5)m=GL_TRIANGLE_FAN;else if(mode==6)m=GL_TRIANGLE_STRIP;
-    glBegin(m);}
-static inline void lp_gui_end3d(void){if(_lp_gui_backend_active==LP_GUI_BACKEND_DIRECTX11){_lp_gui_dx_draw_batch();return;}if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;glEnd();}
-static inline void lp_gui_vertex3d(double x,double y,double z){if(_lp_gui_backend_active==LP_GUI_BACKEND_DIRECTX11||_lp_gui_backend_active==LP_GUI_BACKEND_VULKAN){_lp_gui_emit_vertex((float)x,(float)y,(float)z);return;}if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;glVertex3f((float)x,(float)y,(float)z);}
+    /* OpenGL: no glBegin needed — using vertex arrays in end3d */
+    (void)0;}
+static inline void lp_gui_end3d(void){
+    if(_lp_gui_batch_n<=0)return;
+    if(_lp_gui_backend_active==LP_GUI_BACKEND_DIRECTX11){_lp_gui_dx_draw_batch();return;}
+    if(_lp_gui_backend_active==LP_GUI_BACKEND_VULKAN){return;}
+    /* OpenGL: use vertex arrays instead of glBegin/glEnd */
+    GLenum glmode=GL_TRIANGLES;
+    if(_lp_gui_mode==2)glmode=GL_LINES;else if(_lp_gui_mode==3)glmode=GL_POINTS;
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_COLOR_ARRAY);
+    glEnableClientState(GL_NORMAL_ARRAY);
+    glVertexPointer(4,GL_FLOAT,sizeof(LpGuiVertex),(void*)&_lp_gui_batch[0].x);
+    glColorPointer(4,GL_FLOAT,sizeof(LpGuiVertex),(void*)&_lp_gui_batch[0].r);
+    glNormalPointer(GL_FLOAT,sizeof(LpGuiVertex),(void*)&_lp_gui_batch[0].nx);
+    glDrawArrays(glmode,0,_lp_gui_batch_n);
+    glDisableClientState(GL_VERTEX_ARRAY);
+    glDisableClientState(GL_COLOR_ARRAY);
+    glDisableClientState(GL_NORMAL_ARRAY);}
+static inline void lp_gui_vertex3d(double x,double y,double z){_lp_gui_emit_vertex((float)x,(float)y,(float)z);}
 static inline void lp_gui_color3d(double r,double g,double b){_lp_gui_cr=(float)r;_lp_gui_cg=(float)g;_lp_gui_cb=(float)b;_lp_gui_ca=1.0f;if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;glColor3f((float)r,(float)g,(float)b);}
 static inline void lp_gui_color4d(double r,double g,double b,double a){_lp_gui_cr=(float)r;_lp_gui_cg=(float)g;_lp_gui_cb=(float)b;_lp_gui_ca=(float)a;if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;glColor4f((float)r,(float)g,(float)b,(float)a);}
 static inline void lp_gui_normal3d(double x,double y,double z){_lp_gui_nx=(float)x;_lp_gui_ny=(float)y;_lp_gui_nz=(float)z;if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;glNormal3f((float)x,(float)y,(float)z);}
