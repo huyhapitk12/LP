@@ -39,6 +39,7 @@ __declspec(dllimport) void __stdcall Sleep(unsigned long dwMilliseconds);
 #include "process_utils.h"
 #include "semantic_check.h"
 #include "error_reporter.h"
+#include "type_inference.h"
 
 #if defined(_WIN32)
   #define LP_LWINHTTP "-lwinhttp"
@@ -461,8 +462,15 @@ static int lp_generated_c_uses_gui(const char *c_path) {
     return 0;
 }
 
+static int g_use_glfw = 0;
+
 static void lp_add_gui_linker_flags(ArgList *al, int uses_gui, const char *target_os) {
     if (!uses_gui || !lp_target_is_windows(target_os)) return;
+
+    if (g_use_glfw) {
+        al_add(al, "-DLP_USE_GLFW");
+        al_add(al, "-lglfw3");
+    }
 
     al_add(al, "-lgdi32");
     al_add(al, "-lopengl32");
@@ -613,6 +621,7 @@ int main(int argc, char **argv) {
             else if (strcmp(argv[i], "--static") == 0) static_link = 1;
             else if (strcmp(argv[i], "--strip") == 0) strip = 1;
             else if (strcmp(argv[i], "--no-console") == 0) no_console = 1;
+            else if (strcmp(argv[i], "--glfw") == 0) g_use_glfw = 1;
             else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) output_exe = argv[++i];
             else if (strcmp(argv[i], "--target") == 0 && i + 1 < argc) target_os = argv[++i];
         }
@@ -971,12 +980,15 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
             printf("LP Language v0.1.0\n");
             return 0;
+        } else if (strcmp(argv[i], "--glfw") == 0) {
+            g_use_glfw = 1;
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             printf("LP Language v0.1.0 - Lightweight Native Compiler\n");
             printf("Accepts .lp and .py files\n\n");
             printf("Usage:\n");
             printf("  lp <file.lp|.py>            Run (GCC hybrid, full features)\n");
             printf("  lp <file.lp|.py> --asm      Run using pure native ASM backend\n");
+            printf("  lp <file.lp|.py> --glfw     Use GLFW backend for GUI\n");
             printf("  lp <file.lp|.py> -o out.c   Generate C code\n");
             printf("  lp <file.lp|.py> -c out.exe Compile to executable\n");
             printf("  lp <file.lp|.py> -asm out.s Generate assembly\n");
@@ -1039,6 +1051,13 @@ int main(int argc, char **argv) {
         }
         lp_semantic_free(&sem_checker);
         lp_error_list_free(&sem_errors);
+    }
+
+    /* ── Type Inference Pass ── */
+    {
+        TypeEnv type_env;
+        type_inference_init(&type_env);
+        type_infer_program(&type_env, program);
     }
 
     /* ══════════════════════════════════════════════════════════════

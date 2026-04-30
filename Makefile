@@ -24,7 +24,8 @@ SRCS := $(SRC_DIR)/main.c \
 	$(SRC_DIR)/repl.c \
 	$(SRC_DIR)/process_utils.c \
 	$(SRC_DIR)/error_reporter.c \
-	$(SRC_DIR)/semantic_check.c
+	$(SRC_DIR)/semantic_check.c \
+	$(SRC_DIR)/type_inference.c
 
 TARGET := $(BUILD_DIR)/lp
 

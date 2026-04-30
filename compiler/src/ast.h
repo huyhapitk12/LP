@@ -8,7 +8,7 @@
 typedef enum {
     NODE_PROGRAM, NODE_FUNC_DEF, NODE_CLASS_DEF, NODE_IF, NODE_FOR, NODE_WHILE,
     NODE_RETURN, NODE_ASSIGN, NODE_AUG_ASSIGN, NODE_SUBSCRIPT_ASSIGN, NODE_EXPR_STMT,
-    NODE_PASS, NODE_BREAK, NODE_CONTINUE, NODE_CONST_DECL,
+    NODE_PASS, NODE_BREAK, NODE_CONTINUE, NODE_CONST_DECL, NODE_GLOBAL,
     NODE_IMPORT, NODE_WITH,
     /* Expressions */
     NODE_BIN_OP, NODE_UNARY_OP, NODE_CALL, NODE_NAME, NODE_KWARG,
@@ -68,6 +68,7 @@ typedef struct {
 struct AstNode {
     NodeType type;
     int line;
+    int inferred_type; /* Holds LpType enum value (default -1 = unknown) */
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
@@ -111,6 +112,8 @@ struct AstNode {
         struct { AstNode *expr; char *alias; NodeList body; } with_stmt;
         struct { NodeList body; NodeList except_body; char *except_type; char *except_alias; NodeList finally_body; } try_stmt;
         struct { AstNode *exc; } raise_stmt;
+        /* Global statement: global x, y */
+        struct { NodeList names; } global_stmt;
         /* List comprehension: [expr for var in iter if cond] */
         struct { AstNode *expr; char *var; AstNode *iter; AstNode *cond; } list_comp;
         /* Dict comprehension: {key: val for var in iter if cond} */

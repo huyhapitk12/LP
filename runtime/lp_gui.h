@@ -9,7 +9,9 @@
 #define LP_GUI_BACKEND_OPENGL 1
 #define LP_GUI_BACKEND_DIRECTX11 2
 #define LP_GUI_BACKEND_VULKAN 3
-#ifdef _WIN32
+#if defined(LP_USE_GLFW)
+#include "lp_gui_glfw.h"
+#elif defined(_WIN32)
 #ifndef COBJMACROS
 #define COBJMACROS
 #endif
@@ -47,7 +49,9 @@ typedef struct{
     IDXGISwapChain*dx_swap;ID3D11Device*dx_device;ID3D11DeviceContext*dx_ctx;ID3D11RenderTargetView*dx_rtv;
     ID3D11DepthStencilView*dx_dsv;ID3D11DepthStencilState*dx_dss;
     ID3D11VertexShader*dx_vs;ID3D11PixelShader*dx_ps;ID3D11InputLayout*dx_layout;ID3D11Buffer*dx_vbuf;
-}LpCanvas3D;
+    /* Static mesh cache buffer — GPU-resident, only updated when mesh changes */
+    ID3D11Buffer*dx_static_vbuf;int dx_static_n;int dx_static_dirty;
+}LpCanvas3D;
 typedef struct{float x,y,z,w,r,g,b,a,nx,ny,nz,nw,u,v,_p0,_p1;}LpGuiVertex; /* 64B */
 typedef struct{float m[16];}LpGuiMat4;
 /* Globals */
@@ -83,6 +87,7 @@ static inline int lp_gui_rgb(int r,int g,int b){return(int)RGB(r,g,b);}
 /* Canvas lookup */
 static LpCanvas2D*_lp_fc2d(HWND h){for(int i=0;i<_lp_c2d_n;i++)if(_lp_c2d[i].hwnd==h)return&_lp_c2d[i];return NULL;}
 static LpCanvas3D*_lp_fc3d(HWND h){for(int i=0;i<_lp_c3d_n;i++)if(_lp_c3d[i].hwnd==h)return&_lp_c3d[i];return NULL;}
+static inline LpCanvas2D*_lp_c2d_from(int h);
 static LRESULT CALLBACK _lp_gui_wndproc(HWND h,UINT m,WPARAM w,LPARAM l);
 static void _lp_m4_identity(LpGuiMat4*m){ZeroMemory(m,sizeof(*m));m->m[0]=m->m[5]=m->m[10]=m->m[15]=1.0f;}
 static void _lp_m4_init(void){if(_lp_gui_mat_init)return;_lp_m4_identity(&_lp_gui_model);_lp_m4_identity(&_lp_gui_view);_lp_m4_identity(&_lp_gui_proj);_lp_gui_mat_init=1;}
@@ -91,6 +96,8 @@ static LpGuiMat4 _lp_m4_translate(float x,float y,float z){LpGuiMat4 m;_lp_m4_id
 static LpGuiMat4 _lp_m4_scale(float x,float y,float z){LpGuiMat4 m;_lp_m4_identity(&m);m.m[0]=x;m.m[5]=y;m.m[10]=z;return m;}
 static LpGuiMat4 _lp_m4_rotate(float a,float x,float y,float z){LpGuiMat4 m;_lp_m4_identity(&m);float l=sqrtf(x*x+y*y+z*z);if(l<=0.00001f)return m;x/=l;y/=l;z/=l;float c=cosf(a*0.01745329252f),s=sinf(a*0.01745329252f),t=1.0f-c;m.m[0]=t*x*x+c;m.m[4]=t*x*y-s*z;m.m[8]=t*x*z+s*y;m.m[1]=t*x*y+s*z;m.m[5]=t*y*y+c;m.m[9]=t*y*z-s*x;m.m[2]=t*x*z-s*y;m.m[6]=t*y*z+s*x;m.m[10]=t*z*z+c;return m;}
 static LpGuiMat4 _lp_m4_perspective(float fov,float aspect,float zn,float zf){LpGuiMat4 m;ZeroMemory(&m,sizeof(m));float f=1.0f/tanf(fov*0.00872664626f);m.m[0]=f/aspect;m.m[5]=f;m.m[10]=(zf+zn)/(zn-zf);m.m[11]=-1.0f;m.m[14]=(2.0f*zf*zn)/(zn-zf);return m;}
+/* DX11 perspective: Z maps to [0,1] (left-handed clip space) */
+static LpGuiMat4 _lp_m4_perspective_dx(float fov,float aspect,float zn,float zf){LpGuiMat4 m;ZeroMemory(&m,sizeof(m));float f=1.0f/tanf(fov*0.00872664626f);m.m[0]=-(f/aspect);/* negate X: fixes horizontal mirror from right-handed lookat in DX11 */m.m[5]=f;m.m[10]=zf/(zn-zf);m.m[11]=-1.0f;m.m[14]=zn*zf/(zn-zf);return m;}
 static LpGuiMat4 _lp_m4_ortho(float l,float r,float b,float t,float n,float f){LpGuiMat4 m;_lp_m4_identity(&m);m.m[0]=2.0f/(r-l);m.m[5]=2.0f/(t-b);m.m[10]=-2.0f/(f-n);m.m[12]=-(r+l)/(r-l);m.m[13]=-(t+b)/(t-b);m.m[14]=-(f+n)/(f-n);return m;}
 static LpGuiMat4 _lp_m4_lookat(float ex,float ey,float ez,float cx,float cy,float cz,float ux,float uy,float uz){float fx=cx-ex,fy=cy-ey,fz=cz-ez;float fl=sqrtf(fx*fx+fy*fy+fz*fz);if(fl<=0.00001f)fl=1.0f;fx/=fl;fy/=fl;fz/=fl;float ul=sqrtf(ux*ux+uy*uy+uz*uz);if(ul<=0.00001f){ux=0;uy=1;uz=0;ul=1;}ux/=ul;uy/=ul;uz/=ul;float sx=fy*uz-fz*uy,sy=fz*ux-fx*uz,sz=fx*uy-fy*ux;float sl=sqrtf(sx*sx+sy*sy+sz*sz);if(sl<=0.00001f)sl=1.0f;sx/=sl;sy/=sl;sz/=sl;float vx=sy*fz-sz*fy,vy=sz*fx-sx*fz,vz=sx*fy-sy*fx;LpGuiMat4 m;_lp_m4_identity(&m);m.m[0]=sx;m.m[4]=sy;m.m[8]=sz;m.m[1]=vx;m.m[5]=vy;m.m[9]=vz;m.m[2]=-fx;m.m[6]=-fy;m.m[10]=-fz;m.m[12]=-(sx*ex+sy*ey+sz*ez);m.m[13]=-(vx*ex+vy*ey+vz*ez);m.m[14]=(fx*ex+fy*ey+fz*ez);return m;}
 static LpGuiVertex _lp_gui_make_vertex(float x,float y,float z){_lp_m4_init();LpGuiMat4 mv=_lp_m4_mul(_lp_gui_view,_lp_gui_model);LpGuiMat4 mvp=_lp_m4_mul(_lp_gui_proj,mv);LpGuiVertex v;v.x=mvp.m[0]*x+mvp.m[4]*y+mvp.m[8]*z+mvp.m[12];v.y=mvp.m[1]*x+mvp.m[5]*y+mvp.m[9]*z+mvp.m[13];v.z=mvp.m[2]*x+mvp.m[6]*y+mvp.m[10]*z+mvp.m[14];v.w=mvp.m[3]*x+mvp.m[7]*y+mvp.m[11]*z+mvp.m[15];v.r=_lp_gui_cr;v.g=_lp_gui_cg;v.b=_lp_gui_cb;v.a=_lp_gui_ca;v.nx=_lp_gui_nx;v.ny=_lp_gui_ny;v.nz=_lp_gui_nz;v.nw=0;v.u=_lp_gui_tu;v.v=_lp_gui_tv;v._p0=v._p1=0;return v;}
@@ -179,7 +186,7 @@ static inline int _lp_gui_dx_init_pipeline(LpCanvas3D*g){
     {D3D11_SAMPLER_DESC sd;ZeroMemory(&sd,sizeof(sd));sd.Filter=D3D11_FILTER_MIN_MAG_MIP_LINEAR;sd.AddressU=sd.AddressV=sd.AddressW=D3D11_TEXTURE_ADDRESS_WRAP;sd.MaxLOD=D3D11_FLOAT32_MAX;
     ID3D11Device_CreateSamplerState(g->dx_device,&sd,&_lp_gui_dx_sampler);}
     /* Create rasterizer */
-    {D3D11_RASTERIZER_DESC rd;ZeroMemory(&rd,sizeof(rd));rd.FillMode=D3D11_FILL_SOLID;rd.CullMode=D3D11_CULL_BACK;rd.FrontCounterClockwise=FALSE;rd.DepthClipEnable=TRUE;
+    {D3D11_RASTERIZER_DESC rd;ZeroMemory(&rd,sizeof(rd));rd.FillMode=D3D11_FILL_SOLID;rd.CullMode=D3D11_CULL_NONE;rd.FrontCounterClockwise=FALSE;rd.DepthClipEnable=TRUE;
     ID3D11Device_CreateRasterizerState(g->dx_device,&rd,&_lp_gui_dx_rast);}
     return 1;
 fail:
@@ -203,7 +210,7 @@ static inline void _lp_gui_dx_draw_batch(void){
         D3D11_MAPPED_SUBRESOURCE cbmap;
         if(SUCCEEDED(ID3D11DeviceContext_Map(g->dx_ctx,(ID3D11Resource*)_lp_gui_dx_cb,0,D3D11_MAP_WRITE_DISCARD,0,&cbmap))){
             LpDxCB*cb=(LpDxCB*)cbmap.pData;
-            for(int r=0;r<4;r++)for(int c=0;c<4;c++)cb->mvp[r*4+c]=mvp.m[c*4+r]; /* transpose for HLSL */
+            memcpy(cb->mvp,mvp.m,16*sizeof(float)); /* C column-major == HLSL column-major, no transpose needed */
             cb->lightPos[0]=_lp_gui_lx;cb->lightPos[1]=_lp_gui_ly;cb->lightPos[2]=_lp_gui_lz;cb->lightPos[3]=1;
             cb->lightCol[0]=_lp_gui_lr;cb->lightCol[1]=_lp_gui_lg;cb->lightCol[2]=_lp_gui_lb;cb->lightCol[3]=1;
             cb->ambient[0]=cb->ambient[1]=cb->ambient[2]=_lp_gui_ambient;cb->ambient[3]=1;
@@ -257,13 +264,28 @@ static LRESULT CALLBACK _lp_gui_wndproc(HWND h,UINT m,WPARAM w,LPARAM l){
     case WM_KEYDOWN:_lp_keys[w&0xFF]=1;if(_lp_on_kdown)_lp_on_kdown((int)w);return 0;
     case WM_KEYUP:_lp_keys[w&0xFF]=0;if(_lp_on_kup)_lp_on_kup((int)w);return 0;
     case WM_MOUSEMOVE:_lp_mx=LOWORD(l);_lp_my=HIWORD(l);if(_lp_on_mmove)_lp_on_mmove(_lp_mx,_lp_my,0);return 0;
-    case WM_LBUTTONDOWN:if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),1);return 0;
-    case WM_RBUTTONDOWN:if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),2);return 0;
-    case WM_MBUTTONDOWN:if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),3);return 0;
+    case WM_LBUTTONDOWN:_lp_keys[1]=1;if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),1);return 0;
+    case WM_LBUTTONUP:_lp_keys[1]=0;return 0;
+    case WM_RBUTTONDOWN:_lp_keys[2]=1;if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),2);return 0;
+    case WM_RBUTTONUP:_lp_keys[2]=0;return 0;
+    case WM_MBUTTONDOWN:_lp_keys[4]=1;if(_lp_on_mclick)_lp_on_mclick(LOWORD(l),HIWORD(l),3);return 0;
+    case WM_MBUTTONUP:_lp_keys[4]=0;return 0;
     case WM_PAINT:{LpCanvas2D*c=_lp_fc2d(h);if(c&&c->memDC){PAINTSTRUCT ps;HDC dc=BeginPaint(h,&ps);BitBlt(dc,0,0,c->w,c->h,c->memDC,0,0,SRCCOPY);EndPaint(h,&ps);return 0;}break;}
     case WM_SIZE:{
+        int w = LOWORD(l), h_sz = HIWORD(l);
         LpCanvas3D*g=_lp_fc3d(h);
-        if(g&&g->backend==LP_GUI_BACKEND_OPENGL){g->w=LOWORD(l);g->h=HIWORD(l);wglMakeCurrent(g->hdc,g->hglrc);glViewport(0,0,g->w,g->h);}
+        if(g&&g->backend==LP_GUI_BACKEND_OPENGL){g->w=w;g->h=h_sz;wglMakeCurrent(g->hdc,g->hglrc);glViewport(0,0,g->w,g->h);}
+        /* Resize child windows manually if parent receives WM_SIZE */
+        for(int i=0; i<_lp_c3d_n; i++) {
+            if(GetParent(_lp_c3d[i].hwnd) == h) {
+                MoveWindow(_lp_c3d[i].hwnd, 0, 0, w, h_sz, TRUE);
+            }
+        }
+        for(int i=0; i<_lp_c2d_n; i++) {
+            if(GetParent(_lp_c2d[i].hwnd) == h) {
+                MoveWindow(_lp_c2d[i].hwnd, 0, 0, w, h_sz, TRUE);
+            }
+        }
         break;}
     }
     return DefWindowProcA(h,m,w,l);
@@ -282,8 +304,8 @@ static inline int lp_gui_window(const char*t,int w,int h){
         CW_USEDEFAULT,CW_USEDEFAULT,rc.right-rc.left,rc.bottom-rc.top,NULL,NULL,_lp_hInst,NULL);
     return(int)(intptr_t)hw;
 }
-static inline void lp_gui_close(int h){DestroyWindow((HWND)(intptr_t)h);}
-static inline void lp_gui_set_title(int h,const char*t){SetWindowTextA((HWND)(intptr_t)h,t?t:"");}
+static inline void lp_gui_close(int h){DestroyWindow((HWND)(uintptr_t)(unsigned int)h);}
+static inline void lp_gui_set_title(int h,const char*t){SetWindowTextA((HWND)(uintptr_t)(unsigned int)h,t?t:"");}
 /* Callbacks */
 static inline void lp_gui_on_timer(LpGuiCB cb){_lp_on_timer=cb;}
 static inline void lp_gui_on_key_down(LpGuiKeyCB cb){_lp_on_kdown=cb;}
@@ -292,14 +314,20 @@ static inline void lp_gui_on_mouse_move(LpGuiMouseCB cb){_lp_on_mmove=cb;}
 static inline void lp_gui_on_mouse_click(LpGuiMouseCB cb){_lp_on_mclick=cb;}
 /* Input polling */
 static inline int lp_gui_get_key_state(int k){return _lp_keys[k&0xFF];}
-static inline int lp_gui_get_mouse_x(void){return _lp_mx;}
-static inline int lp_gui_get_mouse_y(void){return _lp_my;}
+static inline int lp_gui_get_mouse_x(void){POINT p;GetCursorPos(&p);return p.x;}
+static inline int lp_gui_get_mouse_y(void){POINT p;GetCursorPos(&p);return p.y;}
+static inline void lp_gui_set_mouse_pos(int hwnd,int x,int y){
+    (void)hwnd;SetCursorPos(x,y);}
+static inline void lp_gui_show_cursor(int show){ShowCursor(show?TRUE:FALSE);}
+static inline int lp_gui_get_tick_count(void){return GetTickCount();}
+static inline int lp_gui_get_canvas_w(int cv){LpCanvas3D*c=_lp_fc3d((HWND)(uintptr_t)(unsigned int)cv);if(c)return c->w;LpCanvas2D*c2=_lp_c2d_from(cv);if(c2)return c2->w;return 0;}
+static inline int lp_gui_get_canvas_h(int cv){LpCanvas3D*c=_lp_fc3d((HWND)(uintptr_t)(unsigned int)cv);if(c)return c->h;LpCanvas2D*c2=_lp_c2d_from(cv);if(c2)return c2->h;return 0;}
 /* Timer */
-static inline int lp_gui_set_timer(int h,int ms){return(int)SetTimer((HWND)(intptr_t)h,1,ms>0?ms:16,NULL);}
+static inline int lp_gui_set_timer(int h,int ms){return(int)SetTimer((HWND)(uintptr_t)(unsigned int)h,1,ms>0?ms:16,NULL);}
 static inline int lp_gui_set_fps(int h,int fps){return lp_gui_set_timer(h,fps>0?1000/fps:16);}
 /* Event loops */
 static inline void lp_gui_run(int h){(void)h;MSG m;while(GetMessage(&m,NULL,0,0)){TranslateMessage(&m);DispatchMessage(&m);}}
-static inline void lp_gui_run_game(int h){(void)h;MSG m;for(;;){while(PeekMessage(&m,NULL,0,0,PM_REMOVE)){if(m.message==WM_QUIT)return;TranslateMessage(&m);DispatchMessage(&m);}if(_lp_on_timer)_lp_on_timer();Sleep(1);}}
+static inline void lp_gui_run_game(int h){(void)h;MSG m;for(;;){while(PeekMessage(&m,NULL,0,0,PM_REMOVE)){if(m.message==WM_QUIT)return;TranslateMessage(&m);DispatchMessage(&m);}if(_lp_on_timer)_lp_on_timer();}}
 
 /* === Basic Widgets === */
 static inline int lp_gui_label(int p,const char*t,int x,int y){
@@ -333,26 +361,26 @@ static inline int lp_gui_image(int p,const char*path,int x,int y,int w,int h){
     return(int)(intptr_t)hw;}
 
 /* === Widget Operations === */
-static inline void lp_gui_set_text(int h,const char*t){SetWindowTextA((HWND)(intptr_t)h,t?t:"");}
-static inline const char*lp_gui_get_text(int h){int n=GetWindowTextLengthA((HWND)(intptr_t)h);char*b=(char*)malloc(n+2);if(b){GetWindowTextA((HWND)(intptr_t)h,b,n+1);b[n]=0;}return b?b:_strdup("");}
+static inline void lp_gui_set_text(int h,const char*t){SetWindowTextA((HWND)(uintptr_t)(unsigned int)h,t?t:"");}
+static inline const char*lp_gui_get_text(int h){int n=GetWindowTextLengthA((HWND)(uintptr_t)(unsigned int)h);char*b=(char*)malloc(n+2);if(b){GetWindowTextA((HWND)(uintptr_t)(unsigned int)h,b,n+1);b[n]=0;}return b?b:_strdup("");}
 static inline void lp_gui_set_value(int h,int v){
-    char cn[64];GetClassNameA((HWND)(intptr_t)h,cn,sizeof(cn));
-    if(strcmp(cn,TRACKBAR_CLASSA)==0)SendMessage((HWND)(intptr_t)h,TBM_SETPOS,TRUE,v);
-    else if(strcmp(cn,PROGRESS_CLASSA)==0)SendMessage((HWND)(intptr_t)h,PBM_SETPOS,v,0);}
+    char cn[64];GetClassNameA((HWND)(uintptr_t)(unsigned int)h,cn,sizeof(cn));
+    if(strcmp(cn,TRACKBAR_CLASSA)==0)SendMessage((HWND)(uintptr_t)(unsigned int)h,TBM_SETPOS,TRUE,v);
+    else if(strcmp(cn,PROGRESS_CLASSA)==0)SendMessage((HWND)(uintptr_t)(unsigned int)h,PBM_SETPOS,v,0);}
 static inline int lp_gui_get_value(int h){
-    char cn[64];GetClassNameA((HWND)(intptr_t)h,cn,sizeof(cn));
-    if(strcmp(cn,TRACKBAR_CLASSA)==0)return(int)SendMessage((HWND)(intptr_t)h,TBM_GETPOS,0,0);
-    if(strcmp(cn,PROGRESS_CLASSA)==0)return(int)SendMessage((HWND)(intptr_t)h,PBM_GETPOS,0,0);
-    return(int)SendMessage((HWND)(intptr_t)h,BM_GETCHECK,0,0);}
+    char cn[64];GetClassNameA((HWND)(uintptr_t)(unsigned int)h,cn,sizeof(cn));
+    if(strcmp(cn,TRACKBAR_CLASSA)==0)return(int)SendMessage((HWND)(uintptr_t)(unsigned int)h,TBM_GETPOS,0,0);
+    if(strcmp(cn,PROGRESS_CLASSA)==0)return(int)SendMessage((HWND)(uintptr_t)(unsigned int)h,PBM_GETPOS,0,0);
+    return(int)SendMessage((HWND)(uintptr_t)(unsigned int)h,BM_GETCHECK,0,0);}
 static inline void lp_gui_add_item(int h,const char*t){
-    char cn[64];GetClassNameA((HWND)(intptr_t)h,cn,sizeof(cn));
-    if(strcmp(cn,"ComboBox")==0)SendMessageA((HWND)(intptr_t)h,CB_ADDSTRING,0,(LPARAM)(t?t:""));
-    else if(strcmp(cn,"ListBox")==0)SendMessageA((HWND)(intptr_t)h,LB_ADDSTRING,0,(LPARAM)(t?t:""));}
-static inline void lp_gui_set_visible(int h,int v){ShowWindow((HWND)(intptr_t)h,v?SW_SHOW:SW_HIDE);}
-static inline void lp_gui_set_enabled(int h,int e){EnableWindow((HWND)(intptr_t)h,e);}
+    char cn[64];GetClassNameA((HWND)(uintptr_t)(unsigned int)h,cn,sizeof(cn));
+    if(strcmp(cn,"ComboBox")==0)SendMessageA((HWND)(uintptr_t)(unsigned int)h,CB_ADDSTRING,0,(LPARAM)(t?t:""));
+    else if(strcmp(cn,"ListBox")==0)SendMessageA((HWND)(uintptr_t)(unsigned int)h,LB_ADDSTRING,0,(LPARAM)(t?t:""));}
+static inline void lp_gui_set_visible(int h,int v){ShowWindow((HWND)(uintptr_t)(unsigned int)h,v?SW_SHOW:SW_HIDE);}
+static inline void lp_gui_set_enabled(int h,int e){EnableWindow((HWND)(uintptr_t)(unsigned int)h,e);}
 static inline void lp_gui_set_font(int h,const char*name,int sz){
     HFONT f=CreateFontA(-sz,0,0,0,FW_NORMAL,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,name?name:"Segoe UI");
-    SendMessage((HWND)(intptr_t)h,WM_SETFONT,(WPARAM)f,TRUE);}
+    SendMessage((HWND)(uintptr_t)(unsigned int)h,WM_SETFONT,(WPARAM)f,TRUE);}
 static inline void lp_gui_set_bg_color(int h,int color){(void)h;(void)color;/* requires subclassing - stub */}
 /* Dialogs */
 static inline void lp_gui_message_box(const char*t,const char*m){MessageBoxA(NULL,m?m:"",t?t:"LP",MB_OK|MB_ICONINFORMATION);}
@@ -393,7 +421,7 @@ static inline int lp_gui_canvas(int p,int x,int y,int w,int h){
         RECT r={0,0,c->w,c->h};HBRUSH br=CreateSolidBrush(RGB(0,0,0));FillRect(c->memDC,&r,br);DeleteObject(br);
     }
     return(int)(intptr_t)hw;}
-static inline LpCanvas2D*_lp_c2d_from(int h){return _lp_fc2d((HWND)(intptr_t)h);}
+static inline LpCanvas2D*_lp_c2d_from(int h){return _lp_fc2d((HWND)(uintptr_t)(unsigned int)h);}
 /* 2D Drawing */
 static inline void lp_gui_clear(int cv,int color){
     LpCanvas2D*c=_lp_c2d_from(cv);if(!c)return;
@@ -627,12 +655,12 @@ static int _lp_vk_load_funcs(HMODULE lib){
 
 
 static inline int lp_gui_canvas3d(int p,int x,int y,int w,int h){
-    if(_lp_gui_backend_pref==LP_GUI_BACKEND_DIRECTX11 && lp_gui_directx_available()){
+    if((_lp_gui_backend_pref==LP_GUI_BACKEND_DIRECTX11 || _lp_gui_backend_pref==LP_GUI_BACKEND_AUTO) && lp_gui_directx_available()){
         int dxh=_lp_gui_canvasdx11(p,x,y,w,h);
         if(dxh)return dxh;
     }
 
-    if(_lp_gui_backend_pref==LP_GUI_BACKEND_VULKAN&&_lp_vk_n<LP_VK_MAX){
+    if((_lp_gui_backend_pref==LP_GUI_BACKEND_VULKAN || _lp_gui_backend_pref==LP_GUI_BACKEND_AUTO) && _lp_vk_n<LP_VK_MAX){
         HMODULE vklib=LoadLibraryA("vulkan-1.dll");
         if(vklib&&_lp_vk_load_funcs(vklib)){
             if(!_lp_hInst)_lp_hInst=GetModuleHandle(NULL);
@@ -832,7 +860,7 @@ static inline int lp_gui_canvasdx11(int p,int x,int y,int w,int h){return _lp_gu
 
 /* 3D Rendering */
 static inline void lp_gui_clear3d(int cv,double r,double g,double b){
-    LpCanvas3D*c=_lp_fc3d((HWND)(intptr_t)cv);if(!c)return;
+    LpCanvas3D*c=_lp_fc3d((HWND)(uintptr_t)(unsigned int)cv);if(!c)return;
     _lp_active3d=c;_lp_gui_backend_active=c->backend;
     if(c->backend==LP_GUI_BACKEND_DIRECTX11&&c->dx_ctx&&c->dx_rtv){
         FLOAT clr[4]={(FLOAT)r,(FLOAT)g,(FLOAT)b,1.0f};ID3D11DeviceContext_ClearRenderTargetView(c->dx_ctx,c->dx_rtv,clr);
@@ -843,7 +871,7 @@ static inline void lp_gui_clear3d(int cv,double r,double g,double b){
         return;}
     wglMakeCurrent(c->hdc,c->hglrc);glClearColor((float)r,(float)g,(float)b,1.0f);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);}
 static inline void lp_gui_present3d(int cv){
-    LpCanvas3D*c=_lp_fc3d((HWND)(intptr_t)cv);if(!c)return;
+    LpCanvas3D*c=_lp_fc3d((HWND)(uintptr_t)(unsigned int)cv);if(!c)return;
     if(c->backend==LP_GUI_BACKEND_DIRECTX11&&c->dx_swap){IDXGISwapChain_Present(c->dx_swap,_lp_gui_vsync?1:0,0);return;}
     if(c->backend==LP_GUI_BACKEND_VULKAN&&_lp_vk_active){
         _LpVkCtx*vk=_lp_vk_active;
@@ -918,12 +946,66 @@ static inline int lp_gui_save_batch(void){
     memcpy(_lp_gui_mesh_cache,_lp_gui_batch,(size_t)n*sizeof(LpGuiVertex));
     _lp_gui_mesh_cache_n=n;
     _lp_gui_batch_n=0;
+    /* Mark GPU static buffer dirty so it gets re-uploaded on next draw_cached */
+    for(int _i=0;_i<_lp_c3d_n;_i++)if(_lp_c3d[_i].backend==LP_GUI_BACKEND_DIRECTX11)_lp_c3d[_i].dx_static_dirty=1;
     return 1;
 }
 /* Draw cached mesh directly without rebuilding — mode: 0=tri,1=quad(tri),2=lines,3=points */
 static inline void lp_gui_draw_cached(int mode){
     if(_lp_gui_mesh_cache_n<=0)return;
     int saved_mode=_lp_gui_mode;_lp_gui_mode=mode;
+    if(_lp_gui_backend_active==LP_GUI_BACKEND_DIRECTX11){
+        LpCanvas3D*g=_lp_active3d;if(!g||g->backend!=LP_GUI_BACKEND_DIRECTX11||!g->dx_ctx||!g->dx_vbuf)return;
+        if(mode==2)_lp_gui_topology=D3D11_PRIMITIVE_TOPOLOGY_LINELIST;
+        else if(mode==3)_lp_gui_topology=D3D11_PRIMITIVE_TOPOLOGY_POINTLIST;
+        else _lp_gui_topology=D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+        int n=_lp_gui_mesh_cache_n;
+        /* Map DX11 buffer DIRECTLY from mesh_cache — no intermediate batch copy */
+        D3D11_MAPPED_SUBRESOURCE map;
+        HRESULT hr=ID3D11DeviceContext_Map(g->dx_ctx,(ID3D11Resource*)g->dx_vbuf,0,D3D11_MAP_WRITE_DISCARD,0,&map);
+        if(FAILED(hr)){_lp_gui_mode=saved_mode;return;}
+        memcpy(map.pData,_lp_gui_mesh_cache,(size_t)n*sizeof(LpGuiVertex));
+        ID3D11DeviceContext_Unmap(g->dx_ctx,(ID3D11Resource*)g->dx_vbuf,0);
+        /* Reuse the existing draw path with correct n */
+        _lp_gui_batch_n=n;
+        UINT stride=sizeof(LpGuiVertex),offset=0;
+        D3D11_VIEWPORT vp;vp.TopLeftX=0;vp.TopLeftY=0;vp.Width=(FLOAT)g->w;vp.Height=(FLOAT)g->h;vp.MinDepth=0;vp.MaxDepth=1;
+        ID3D11DeviceContext_RSSetViewports(g->dx_ctx,1,&vp);
+        ID3D11DeviceContext_OMSetRenderTargets(g->dx_ctx,1,&g->dx_rtv,g->dx_dsv);
+        if(g->dx_dss)ID3D11DeviceContext_OMSetDepthStencilState(g->dx_ctx,g->dx_dss,0);
+        ID3D11DeviceContext_IASetInputLayout(g->dx_ctx,g->dx_layout);
+        ID3D11DeviceContext_IASetVertexBuffers(g->dx_ctx,0,1,&g->dx_vbuf,&stride,&offset);
+        ID3D11DeviceContext_IASetPrimitiveTopology(g->dx_ctx,(D3D11_PRIMITIVE_TOPOLOGY)_lp_gui_topology);
+        ID3D11DeviceContext_VSSetShader(g->dx_ctx,g->dx_vs,NULL,0);
+        ID3D11DeviceContext_PSSetShader(g->dx_ctx,g->dx_ps,NULL,0);
+        if(_lp_gui_dx_cb){
+            _lp_m4_init();LpGuiMat4 mv=_lp_m4_mul(_lp_gui_view,_lp_gui_model);LpGuiMat4 mvp=_lp_m4_mul(_lp_gui_proj,mv);
+            D3D11_MAPPED_SUBRESOURCE cbmap;
+            if(SUCCEEDED(ID3D11DeviceContext_Map(g->dx_ctx,(ID3D11Resource*)_lp_gui_dx_cb,0,D3D11_MAP_WRITE_DISCARD,0,&cbmap))){
+                LpDxCB*cb=(LpDxCB*)cbmap.pData;
+                memcpy(cb->mvp,mvp.m,16*sizeof(float));
+                cb->lightPos[0]=_lp_gui_lx;cb->lightPos[1]=_lp_gui_ly;cb->lightPos[2]=_lp_gui_lz;cb->lightPos[3]=1;
+                cb->lightCol[0]=_lp_gui_lr;cb->lightCol[1]=_lp_gui_lg;cb->lightCol[2]=_lp_gui_lb;cb->lightCol[3]=1;
+                cb->ambient[0]=cb->ambient[1]=cb->ambient[2]=_lp_gui_ambient;cb->ambient[3]=1;
+                cb->flags[0]=_lp_gui_lighting;cb->flags[1]=_lp_gui_texturing;cb->flags[2]=cb->flags[3]=0;
+                ID3D11DeviceContext_Unmap(g->dx_ctx,(ID3D11Resource*)_lp_gui_dx_cb,0);}
+            ID3D11DeviceContext_VSSetConstantBuffers(g->dx_ctx,0,1,&_lp_gui_dx_cb);
+            ID3D11DeviceContext_PSSetConstantBuffers(g->dx_ctx,0,1,&_lp_gui_dx_cb);}
+        if(_lp_gui_dx_sampler)ID3D11DeviceContext_PSSetSamplers(g->dx_ctx,0,1,&_lp_gui_dx_sampler);
+        if(_lp_gui_dx_rast)ID3D11DeviceContext_RSSetState(g->dx_ctx,_lp_gui_dx_rast);
+        ID3D11DeviceContext_Draw(g->dx_ctx,(UINT)n,0);
+        _lp_gui_batch_n=0;_lp_gui_mode=saved_mode;return;
+    }
+    if(_lp_gui_backend_active==LP_GUI_BACKEND_VULKAN){
+        /* Copy cache into batch — Vulkan presents in present3d */
+        int max_batch=(int)(sizeof(_lp_gui_batch)/sizeof(_lp_gui_batch[0]));
+        int n=_lp_gui_mesh_cache_n;if(n>max_batch)n=max_batch;
+        memcpy(_lp_gui_batch,_lp_gui_mesh_cache,(size_t)n*sizeof(LpGuiVertex));
+        _lp_gui_batch_n=n;
+        _lp_gui_mode=saved_mode;
+        return;
+    }
+    /* OpenGL path */
     glEnableClientState(GL_VERTEX_ARRAY);
     glEnableClientState(GL_COLOR_ARRAY);
     glVertexPointer(3,GL_FLOAT,(GLsizei)sizeof(LpGuiVertex),(const void*)((char*)&_lp_gui_mesh_cache[0].x));
@@ -947,7 +1029,11 @@ static inline void lp_gui_normal3d(double x,double y,double z){_lp_gui_nx=(float
 static inline void lp_gui_texcoord2d(double u,double v){_lp_gui_tu=(float)u;_lp_gui_tv=(float)v;}
 /* Camera & Transform */
 static inline void lp_gui_perspective(double fov,double aspect,double near_,double far_){
-    _lp_m4_init();_lp_gui_proj=_lp_m4_perspective((float)fov,(float)aspect,(float)near_,(float)far_);
+    _lp_m4_init();
+    if(_lp_gui_backend_active==LP_GUI_BACKEND_DIRECTX11||_lp_gui_backend_active==LP_GUI_BACKEND_VULKAN)
+        _lp_gui_proj=_lp_m4_perspective_dx((float)fov,(float)aspect,(float)near_,(float)far_);
+    else
+        _lp_gui_proj=_lp_m4_perspective((float)fov,(float)aspect,(float)near_,(float)far_);
     if(_lp_gui_backend_active!=LP_GUI_BACKEND_OPENGL)return;glMatrixMode(GL_PROJECTION);glLoadIdentity();gluPerspective(fov,aspect,near_,far_);glMatrixMode(GL_MODELVIEW);}
 static inline void lp_gui_ortho(double l,double r,double b,double t,double n,double f){
     _lp_m4_init();_lp_gui_proj=_lp_m4_ortho((float)l,(float)r,(float)b,(float)t,(float)n,(float)f);

@@ -63,6 +63,7 @@ AstNode *ast_new(LpArena *arena, NodeType type, int line) {
         memset(n, 0, sizeof(AstNode));
         n->type = type;
         n->line = line;
+        n->inferred_type = -1;
     }
     return n;
 }
@@ -149,6 +150,11 @@ void ast_free(AstNode *node) {
         case NODE_CONST_DECL:
             free(node->const_decl.name);
             ast_free(node->const_decl.value);
+            break;
+        case NODE_GLOBAL:
+            for (int i = 0; i < node->global_stmt.names.count; i++)
+                ast_free(node->global_stmt.names.items[i]);
+            free(node->global_stmt.names.items);
             break;
         case NODE_BIN_OP:
             ast_free(node->bin_op.left);
@@ -308,6 +314,7 @@ static const char *node_type_name(NodeType t) {
         case NODE_BREAK:         return "BREAK";
         case NODE_CONTINUE:      return "CONTINUE";
         case NODE_CONST_DECL:    return "CONST_DECL";
+        case NODE_GLOBAL:        return "GLOBAL";
         case NODE_IMPORT:        return "IMPORT";
         case NODE_WITH:          return "WITH";
         case NODE_BIN_OP:        return "BIN_OP";
@@ -517,6 +524,11 @@ void ast_dump(AstNode *node, int indent) {
         case NODE_CONST_DECL:
             printf(" name=%s\n", node->const_decl.name ? node->const_decl.name : "(null)");
             ast_dump(node->const_decl.value, indent + 1);
+            break;
+        case NODE_GLOBAL:
+            printf(" (%d names)\n", node->global_stmt.names.count);
+            for (int i = 0; i < node->global_stmt.names.count; i++)
+                ast_dump(node->global_stmt.names.items[i], indent + 1);
             break;
         case NODE_TRY:
             printf("\n");

@@ -102,6 +102,7 @@ static TokenType check_keyword(const char *s, int len) {
             if (memcmp(s, "except", 6) == 0) return TOK_EXCEPT;
             if (memcmp(s, "lambda", 6) == 0) return TOK_LAMBDA;
             if (memcmp(s, "device", 6) == 0) return TOK_DEVICE;
+            if (memcmp(s, "global", 6) == 0) return TOK_GLOBAL;
             break;
         case 7:
             if (memcmp(s, "finally", 7) == 0) return TOK_FINALLY;
@@ -415,7 +416,7 @@ const char *token_type_name(TokenType type) {
         "for", "while", "return", "import", "from", "as",
         "and", "or", "not", "in", "is",
         "True", "False", "None",
-        "pass", "break", "continue",
+        "pass", "break", "continue", "global",
         "const", "struct", "async", "await",
         "with", "try", "except", "finally", "raise",
         "lambda", "yield", "parallel",

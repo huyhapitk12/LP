@@ -806,6 +806,11 @@ static int list_expr_all_ints(AstNode *node) {
 static LpType infer_type(CodeGen *cg, AstNode *node) {
   if (!node)
     return LP_VOID;
+  /* NOTE: do NOT use node->inferred_type here. The type inference engine
+   * annotates AST nodes with Python-level types (LP_INT, LP_FLOAT), but codegen
+   * declares function params as LpVal. Using inferred_type causes codegen to
+   * think variables are LP_INT when their C declarations are LpVal, causing
+   * 76+ E051 type mismatch errors. */
   switch (node->type) {
   case NODE_INT_LIT:
     return LP_INT;
@@ -1205,6 +1210,7 @@ static LpType infer_type(CodeGen *cg, AstNode *node) {
             return LP_STRING;
           if (strcmp(func_name, "get_value") == 0 ||
               strcmp(func_name, "get_mouse_x") == 0 || strcmp(func_name, "get_mouse_y") == 0 ||
+              strcmp(func_name, "get_tick_count") == 0 ||
               strcmp(func_name, "get_canvas_w") == 0 || strcmp(func_name, "get_canvas_h") == 0 ||
               strcmp(func_name, "get_resizable") == 0 ||
               strcmp(func_name, "save_batch") == 0 ||
@@ -1470,6 +1476,64 @@ static void write_indent(Buffer *buf, int level) {
     buf_write(buf, "    ");
 }
 
+/* Helper: Emit expression, wrapping it in Auto-Boxing if needed */
+static void emit_box_expr(CodeGen *cg, Buffer *buf, AstNode *expr, LpType expected_type) {
+    LpType expr_type = expr ? (expr->inferred_type != LP_UNKNOWN ? expr->inferred_type : infer_type(cg, expr)) : LP_UNKNOWN;
+    if (expected_type == LP_VAL && expr_type != LP_VAL) {
+        if (expr_type == LP_INT) {
+            buf_write(buf, "lp_val_int(");
+            gen_expr(cg, buf, expr);
+            buf_write(buf, ")");
+            return;
+        } else if (expr_type == LP_FLOAT) {
+            buf_write(buf, "lp_val_float(");
+            gen_expr(cg, buf, expr);
+            buf_write(buf, ")");
+            return;
+        } else if (expr_type == LP_STRING) {
+            buf_write(buf, "lp_val_string(");
+            gen_expr(cg, buf, expr);
+            buf_write(buf, ")");
+            return;
+        } else if (expr_type == LP_BOOL) {
+            buf_write(buf, "lp_val_bool(");
+            gen_expr(cg, buf, expr);
+            buf_write(buf, ")");
+            return;
+        }
+    }
+    gen_expr(cg, buf, expr);
+}
+
+/* Helper: Emit expression, unwrapping it into expected Primitive if needed */
+static void emit_unbox_expr(CodeGen *cg, Buffer *buf, AstNode *expr, LpType expected_type) {
+    LpType expr_type = expr ? (expr->inferred_type != LP_UNKNOWN ? expr->inferred_type : infer_type(cg, expr)) : LP_UNKNOWN;
+    if (expr_type == LP_VAL && expected_type != LP_VAL && expected_type != LP_UNKNOWN) {
+        if (expected_type == LP_INT) {
+            buf_write(buf, "lp_int(");
+            gen_expr(cg, buf, expr);
+            buf_write(buf, ")");
+            return;
+        } else if (expected_type == LP_FLOAT) {
+            buf_write(buf, "lp_float(");
+            gen_expr(cg, buf, expr);
+            buf_write(buf, ")");
+            return;
+        } else if (expected_type == LP_BOOL) {
+            buf_write(buf, "lp_bool(");
+            gen_expr(cg, buf, expr);
+            buf_write(buf, ")");
+            return;
+        } else if (expected_type == LP_STRING) {
+            buf_write(buf, "lp_string(");
+            gen_expr(cg, buf, expr);
+            buf_write(buf, ")");
+            return;
+        }
+    }
+    gen_expr(cg, buf, expr);
+}
+
 static void gen_thread_spawn_expr(CodeGen *cg, Buffer *buf, AstNode *node) {
   AstNode *worker_node;
   Symbol *worker_sym;
@@ -1663,6 +1727,23 @@ static void emit_lp_val(CodeGen *cg, Buffer *buf, AstNode *expr) {
     buf_write(buf, ").count;i++) lp_list_append(_l, lp_val_str((");
     gen_expr(cg, buf, expr);
     buf_write(buf, ").items[i])); lp_val_list(_l); })");
+    break;
+  case LP_NATIVE_ARRAY_1D:
+  case LP_NATIVE_ARRAY_I32_1D:
+  case LP_NATIVE_ARRAY_I8_1D:
+    buf_write(buf, "({ LpList *_l = lp_list_new(); for(int i=0;i<(");
+    gen_expr(cg, buf, expr);
+    buf_write(buf, ")->len;i++) lp_list_append(_l, lp_val_int((");
+    gen_expr(cg, buf, expr);
+    buf_write(buf, ")->data[i])); lp_val_list(_l); })");
+    break;
+  case LP_NATIVE_ARRAY_FLOAT_1D:
+  case LP_NATIVE_ARRAY_F32_1D:
+    buf_write(buf, "({ LpList *_l = lp_list_new(); for(int i=0;i<(");
+    gen_expr(cg, buf, expr);
+    buf_write(buf, ")->len;i++) lp_list_append(_l, lp_val_float((");
+    gen_expr(cg, buf, expr);
+    buf_write(buf, ")->data[i])); lp_val_list(_l); })");
     break;
   case LP_VAL:
     gen_expr(cg, buf, expr);
@@ -4576,6 +4657,8 @@ static void gen_stmt(CodeGen *cg, Buffer *buf, AstNode *node, int indent) {
   }
 
   switch (node->type) {
+  case NODE_GLOBAL:
+    return; /* Global declaration hint is handled by scan_declarations. Ignore at runtime. */
   case NODE_ASSIGN: {
     Buffer *assign_buf = buf;
     int assign_indent = indent;
@@ -6930,6 +7013,19 @@ static void scan_declarations(CodeGen *cg, NodeList *body) {
   if (!body)
     return;
 
+  /* First pass: collect 'global' keyword declarations to avoid local shadowing
+   * for variables declared later in the file. */
+  const char *global_names[256];
+  int global_count = 0;
+  for (int i = 0; i < body->count; i++) {
+    AstNode *stmt = body->items[i];
+    if (stmt->type == NODE_GLOBAL) {
+      for (int j = 0; j < stmt->global_stmt.names.count && global_count < 256; j++) {
+        global_names[global_count++] = stmt->global_stmt.names.items[j]->name_expr.name;
+      }
+    }
+  }
+
   /* ── Fix 7 & Fix 4: first pass — collect immutable int variables and
    * detect arrays declared INSIDE for/while body (loop-local = hoist
    * candidates). We scan the current level only; recursive calls handle nested
@@ -7277,18 +7373,30 @@ static void scan_declarations(CodeGen *cg, NodeList *body) {
       if (t == LP_UNKNOWN)
         t = LP_INT;
 
-      Symbol *existing = scope_lookup(cg->scope, stmt->assign.name);
-      if (!existing) {
-        const char *class_name = NULL;
-        if (t == LP_OBJECT && stmt->assign.value &&
-            stmt->assign.value->type == NODE_CALL &&
-            stmt->assign.value->call.func->type == NODE_NAME) {
-          Symbol *cs = scope_lookup(
-              cg->scope, stmt->assign.value->call.func->name_expr.name);
-          if (cs && cs->type == LP_CLASS)
-            class_name = cs->name;
+      /* Check if variable is declared as global in this scope */
+      int is_global = 0;
+      for (int k = 0; k < global_count; k++) {
+        if (strcmp(global_names[k], stmt->assign.name) == 0) {
+          is_global = 1;
+          break;
         }
-        scope_define_obj(cg->scope, stmt->assign.name, t, class_name);
+      }
+
+      /* Skip local declaration if it's explicitly marked global */
+      if (!is_global) {
+        Symbol *existing = scope_lookup(cg->scope, stmt->assign.name);
+        if (!existing) {
+          const char *class_name = NULL;
+          if (t == LP_OBJECT && stmt->assign.value &&
+              stmt->assign.value->type == NODE_CALL &&
+              stmt->assign.value->call.func->type == NODE_NAME) {
+            Symbol *cs = scope_lookup(
+                cg->scope, stmt->assign.value->call.func->name_expr.name);
+            if (cs && cs->type == LP_CLASS)
+              class_name = cs->name;
+          }
+          scope_define_obj(cg->scope, stmt->assign.name, t, class_name);
+        }
       }
 
       /* ── Fix 4: register immutable positive-int variables for constant
@@ -7496,21 +7604,40 @@ static void emit_global_declarations(CodeGen *cg, Buffer *buf, Scope *scope) {
 }
 
 static LpType infer_return_type(CodeGen *cg, NodeList *body) {
+  /* Collect ALL return branch types; conflict means fallback to LP_VAL */
+  LpType found = LP_UNKNOWN;
   for (int i = 0; i < body->count; i++) {
     AstNode *stmt = body->items[i];
+    LpType t = LP_UNKNOWN;
     if (stmt->type == NODE_RETURN && stmt->return_stmt.value) {
-      LpType t = infer_type(cg, stmt->return_stmt.value);
-      if (t != LP_UNKNOWN)
-        return t;
+      t = infer_type(cg, stmt->return_stmt.value);
+    } else if (stmt->type == NODE_IF) {
+      t = infer_return_type(cg, &stmt->if_stmt.then_body);
+      if (t == LP_UNKNOWN && stmt->if_stmt.else_branch) {
+        AstNode *eb = stmt->if_stmt.else_branch;
+        if (eb->type == NODE_IF) {
+          NodeList tmp; tmp.items = &eb; tmp.count = 1;
+          t = infer_return_type(cg, &tmp);
+        } else {
+          NodeList *else_body = NULL;
+          /* else_branch can be an if-node or a block represented as a statement */
+          if (eb->type == NODE_PROGRAM) else_body = &eb->program.stmts;
+          if (else_body) t = infer_return_type(cg, else_body);
+        }
+      }
+    } else if (stmt->type == NODE_WHILE || stmt->type == NODE_FOR) {
+      /* Check loop bodies too */
+      NodeList *lb = (stmt->type == NODE_WHILE) ? &stmt->while_stmt.body : &stmt->for_stmt.body;
+      t = infer_return_type(cg, lb);
     }
-    /* Check inside if-else blocks too */
-    if (stmt->type == NODE_IF) {
-      LpType t = infer_return_type(cg, &stmt->if_stmt.then_body);
-      if (t != LP_UNKNOWN)
-        return t;
+    if (t == LP_UNKNOWN) continue;
+    if (found == LP_UNKNOWN) {
+      found = t;
+    } else if (found != t) {
+      return LP_VAL; /* Conflict: multiple different return types → dynamic */
     }
   }
-  return LP_UNKNOWN;
+  return found;
 }
 
 static LpType infer_function_return_type(CodeGen *cg, AstNode *node) {
@@ -7586,8 +7713,14 @@ static void populate_function_symbol(CodeGen *cg, Symbol *sym, AstNode *node,
       pt = LP_OBJECT;
     } else {
       pt = type_from_annotation(cg, p->type_ann);
-      if (pt == LP_UNKNOWN)
-        pt = LP_VAL;
+      if (pt == LP_UNKNOWN) {
+        /* Fall back to what inference already knows about this param from scope */
+        Symbol *ps = scope_lookup(cg->scope, p->name);
+        if (ps && ps->type != LP_UNKNOWN && ps->type != LP_VAL)
+          pt = ps->type;
+        else
+          pt = LP_VAL;
+      }
     }
 
     if (i < 16) {

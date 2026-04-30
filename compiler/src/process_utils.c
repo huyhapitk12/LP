@@ -247,9 +247,18 @@ int lp_run_capture(const char *file, const char *const argv[],
     DWORD bytes_read = 0;
     DWORD total_read = 0;
     if (output_buf && output_size > 0) {
-        while (ReadFile(hReadPipe, output_buf + total_read, (DWORD)(output_size - 1 - total_read), &bytes_read, NULL) && bytes_read > 0) {
-            total_read += bytes_read;
-            if (total_read >= output_size - 1) break;
+        char temp_buf[4096];
+        while (ReadFile(hReadPipe, temp_buf, sizeof(temp_buf), &bytes_read, NULL) && bytes_read > 0) {
+            if (total_read + bytes_read < output_size - 1) {
+                memcpy(output_buf + total_read, temp_buf, bytes_read);
+                total_read += bytes_read;
+            } else if (total_read < output_size - 1) {
+                DWORD space = (DWORD)(output_size - 1 - total_read);
+                memcpy(output_buf + total_read, temp_buf, space);
+                total_read += space;
+            }
+            /* If total_read is full, we still continue reading temp_buf to empty the pipe 
+               to prevent child processes from blocking on stdout/stderr write */
         }
         output_buf[total_read] = '\0';
     }

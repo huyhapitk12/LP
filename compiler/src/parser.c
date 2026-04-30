@@ -1651,6 +1651,22 @@ static AstNode *parse_import_stmt(Parser *p) {
     return n;
 }
 
+static AstNode *parse_global_stmt(Parser *p) {
+    int line = p->current.line;
+    advance(p); /* consume 'global' */
+    AstNode *n = ast_new(p->arena, NODE_GLOBAL, line);
+    node_list_init(&n->global_stmt.names);
+    
+    do {
+        expect(p, TOK_IDENTIFIER, "expected variable name after 'global'");
+        AstNode *name_node = ast_new(p->arena, NODE_NAME, p->previous.line);
+        name_node->name_expr.name = tok_to_str(p->previous);
+        node_list_push(&n->global_stmt.names, name_node);
+    } while (match(p, TOK_COMMA));
+    
+    return n;
+}
+
 static AstNode *parse_try_stmt(Parser *p) {
     int line = p->current.line;
     advance(p); /* consume 'try' */
@@ -1930,6 +1946,7 @@ static AstNode *parse_statement(Parser *p) {
         case TOK_WHILE:     stmt = parse_while_stmt(p); break;
         case TOK_RETURN:    stmt = parse_return_stmt(p); break;
         case TOK_CONST:     stmt = parse_const_stmt(p); break;
+        case TOK_GLOBAL:    stmt = parse_global_stmt(p); break;
         case TOK_IMPORT:    stmt = parse_import_stmt(p); break;
         case TOK_WITH:      stmt = parse_with_stmt(p); break;
         case TOK_TRY:       stmt = parse_try_stmt(p); break;

@@ -40,7 +40,7 @@ echo [LP Build] Using GCC: %GCC%
     "%~dp0compiler\src\main.c" "%~dp0compiler\src\lexer.c" "%~dp0compiler\src\ast.c" ^
     "%~dp0compiler\src\parser.c" "%~dp0compiler\src\codegen.c" "%~dp0compiler\src\codegen_asm.c" ^
     "%~dp0compiler\src\asm_optimize.c" "%~dp0compiler\src\repl.c" "%~dp0compiler\src\process_utils.c" ^
-    "%~dp0compiler\src\error_reporter.c" "%~dp0compiler\src\semantic_check.c" ^
+    "%~dp0compiler\src\error_reporter.c" "%~dp0compiler\src\semantic_check.c" "%~dp0compiler\src\type_inference.c" ^
     -I "%~dp0compiler\src" -I "%~dp0runtime" -o "%~dp0build\lp.exe" -lm
 
 if %ERRORLEVEL% NEQ 0 (
